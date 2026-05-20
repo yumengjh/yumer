@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useMarkdownEditor } from '../EditorContext';
 import { BlockHandle } from './BlockHandle';
 import { BlockMenu } from './BlockMenu';
+import { resolveBlockToolbarTarget, type BlockToolbarTarget } from './blockTarget';
 import './style.css';
 
 interface BlockToolbarProps {
@@ -14,9 +15,36 @@ const AUTO_SCROLL_MAX_SPEED = 12;
 const GHOST_OFFSET_X = 12;
 const GHOST_OFFSET_Y = 6;
 
+const BLOCK_EXTRA_OFFSET: Record<string, number> = {
+  // 列表项：bullet/数字占位，额外退�?
+  LI: 28,
+  // 引用块：左边�?+ padding
+  BLOCKQUOTE: 8,
+  // 代码块容器（TipTap 通常渲染�?pre�?
+  PRE: 8,
+  // 默认：段落、标题等无装饰块
+  DEFAULT: 0,
+};
+
+// 根据 data-type 属性的额外偏移（TipTap 自定义节点）
+const BLOCK_TYPE_EXTRA_OFFSET: Record<string, number> = {
+  taskItem: 32,      // 任务列表：checkbox 占位
+  callout: 12,      // 高亮/callout 块：有背�?+ padding
+  codeBlock: 8,     // 代码�?
+  blockquote: 8,
+};
+
+// 句柄宽度（block-handle__btn 的宽度）
+const HANDLE_WIDTH = 20;
+// 句柄与块可视边缘之间的最小间�?
+const MIN_GAP = 4;
+
+
 export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
   const editor = useMarkdownEditor();
   const [hoveredBlock, setHoveredBlock] = useState<HTMLElement | null>(null);
+  const [hoveredAnchor, setHoveredAnchor] = useState<HTMLElement | null>(null);
+  const [hoveredTableCell, setHoveredTableCell] = useState<HTMLTableCellElement | null>(null);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const [menuState, setMenuState] = useState<'closed' | 'open' | 'closing'>('closed');
   const [ready, setReady] = useState(false);
@@ -25,6 +53,14 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const menuAnchorRef = useRef<HTMLDivElement>(null);
   const prevBlockRef = useRef<HTMLElement | null>(null);
+  const prevAnchorRef = useRef<HTMLElement | null>(null);
+  const hoveredBlockRef = useRef<HTMLElement | null>(null);
+  const hoveredAnchorRef = useRef<HTMLElement | null>(null);
+  const pendingDeleteFallbackRef = useRef<{
+    element: HTMLElement | null;
+    clientX: number;
+    clientY: number;
+  } | null>(null);
 
   // ---- Drag refs ----
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -53,101 +89,37 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
     const tryMount = () => {
       try {
         if (editor.view.dom) { setReady(true); return; }
-      } catch {}
+      } catch {
+        // Editor DOM is not mounted yet; retry below.
+      }
       retryId = setTimeout(tryMount, 50);
     };
     tryMount();
     return () => { if (retryId) clearTimeout(retryId); };
   }, [editor]);
 
-  // 块切换时：从 null → block 不动画，block → block 动画
+  // 块切换时：从 null �?block 不动画，block �?block 动画
   useEffect(() => {
-    if (hoveredBlock && prevBlockRef.current && prevBlockRef.current !== hoveredBlock) {
+    if (hoveredAnchor && prevAnchorRef.current && prevAnchorRef.current !== hoveredAnchor) {
       setShouldAnimate(true);
     } else {
       setShouldAnimate(false);
     }
     prevBlockRef.current = hoveredBlock;
-  }, [hoveredBlock]);
+    prevAnchorRef.current = hoveredAnchor;
+  }, [hoveredBlock, hoveredAnchor]);
 
-  // const findBlockNode = useCallback((element: HTMLElement | null): HTMLElement | null => {
-  //   if (!element) return null;
-  //   let current: HTMLElement | null = element;
-  //   const editorElement = getEditorDom();
-  //   if (!editorElement) return null;
-  //   while (current && current !== editorElement) {
-  //     // 列表项（普通 / 任务列表）视为独立块
-  //     if (current.tagName === 'LI' || current.dataset.type === 'taskItem') return current;
-  //     if (current.parentElement === editorElement) return current;
-  //     current = current.parentElement;
-  //   }
-  //   return null;
-  // }, [getEditorDom]);
+  useEffect(() => {
+    hoveredBlockRef.current = hoveredBlock;
+    hoveredAnchorRef.current = hoveredAnchor;
+  }, [hoveredBlock, hoveredAnchor]);
 
-  const findBlockNode = useCallback((element: HTMLElement | null): HTMLElement | null => {
-  if (!editor) return null;
-  if (!element) return null;
-  const editorElement = getEditorDom();
-  if (!editorElement) return null;
-  const { view } = editor;
-
-  let deepest: { el: HTMLElement; depth: number } | null = null;
-  let current: HTMLElement | null = element;
-
-  while (current && current !== editorElement) {
-    try {
-      const pos = view.posAtDOM(current, 0);
-      const $pos = view.state.doc.resolve(pos);
-      const depth = $pos.depth;
-      const node = $pos.node(depth);
-
-      if (node.isBlock && depth >= 1) {
-        // 取深度最大的块（最细粒度）
-        if (!deepest || depth > deepest.depth) {
-          deepest = { el: current, depth };
-        }
-      }
-    } catch { /* 非内容节点，忽略 */ }
-
-    current = current.parentElement;
-  }
-
-  if (deepest) return deepest.el;
-
-  // fallback：顶层直接子元素
-  let topLevel: HTMLElement | null = element;
-  while (topLevel && topLevel.parentElement !== editorElement) {
-    topLevel = topLevel.parentElement;
-  }
-  return topLevel && topLevel !== editorElement ? topLevel : null;
-}, [editor, getEditorDom]);
-
-// ── 误差表：不同块类型需要额外向左退出的空间 ──────────────────
-// 正值 = 在计算出的 contentLeft 基础上再向左多退多少 px
-// 目的是确保工具栏不会压在块的背景/装饰上
-const BLOCK_EXTRA_OFFSET: Record<string, number> = {
-  // 列表项：bullet/数字占位，额外退出
-  LI: 4,
-  // 引用块：左边框 + padding
-  BLOCKQUOTE: 8,
-  // 代码块容器（TipTap 通常渲染为 pre）
-  PRE: 8,
-  // 默认：段落、标题等无装饰块
-  DEFAULT: 0,
-};
-
-// 根据 data-type 属性的额外偏移（TipTap 自定义节点）
-const BLOCK_TYPE_EXTRA_OFFSET: Record<string, number> = {
-  taskItem: 4,      // 任务列表：checkbox 占位
-  callout: 12,      // 高亮/callout 块：有背景 + padding
-  codeBlock: 8,     // 代码块
-  blockquote: 8,
-};
-
-// 句柄宽度（block-handle__btn 的宽度）
-const HANDLE_WIDTH = 20;
-// 句柄与块可视边缘之间的最小间隙
-const MIN_GAP = 4;
+  const findBlockTarget = useCallback((element: HTMLElement | null, clientY?: number): BlockToolbarTarget | null => {
+    if (!element) return null;
+    const editorElement = getEditorDom();
+    if (!editorElement) return null;
+    return resolveBlockToolbarTarget(element, editorElement, clientY);
+  }, [getEditorDom]);
 
 const updatePosition = useCallback((block: HTMLElement) => {
   const wrapper = wrapperRef.current;
@@ -155,22 +127,24 @@ const updatePosition = useCallback((block: HTMLElement) => {
   const wrapperRect = wrapper.getBoundingClientRect();
   const blockRect = block.getBoundingClientRect();
 
-  // 1. 块的可视左边缘（含 border）
+  // 1. 块的可视左边缘（�?border�?
   const blockVisualLeft = blockRect.left;
 
-  // 2. 读取块自身的 paddingLeft（部分块用 padding 来给 bullet/装饰留位）
+  // 2. 读取块自身的 paddingLeft（部分块�?padding 来给 bullet/装饰留位�?
   const computed = window.getComputedStyle(block);
-  const paddingLeft = parseFloat(computed.paddingLeft) || 0;
 
-  // 3. 从误差表查额外偏移
+  // 3. 从误差表查额外偏�?
   const tagExtra = BLOCK_EXTRA_OFFSET[block.tagName] ?? BLOCK_EXTRA_OFFSET.DEFAULT;
   const typeExtra = block.dataset.type
     ? (BLOCK_TYPE_EXTRA_OFFSET[block.dataset.type] ?? 0)
     : 0;
-  const extra = Math.max(tagExtra, typeExtra);
+  const taskItemExtra = block.classList.contains('task-list-item')
+    ? BLOCK_TYPE_EXTRA_OFFSET.taskItem
+    : 0;
+  const extra = Math.max(tagExtra, typeExtra, taskItemExtra);
 
-  // 4. 工具栏 left = 块可视左边缘 - 句柄宽度 - 最小间隙 - 额外偏移
-  //    转换为相对于 wrapper 的坐标
+  // 4. 工具�?left = 块可视左边缘 - 句柄宽度 - 最小间�?- 额外偏移
+  //    转换为相对于 wrapper 的坐�?
   const left = Math.max(
     0,
     blockVisualLeft - wrapperRect.left + wrapper.scrollLeft
@@ -190,17 +164,34 @@ const updatePosition = useCallback((block: HTMLElement) => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
 
-    const handleWrapperMouseMove = (e: MouseEvent) => {
+  const handleWrapperMouseMove = (e: MouseEvent) => {
       if (isDraggingActiveRef.current) return;
       if (menuVisible) return;
-      const block = findBlockNode(e.target as HTMLElement);
-      if (block && block !== hoveredBlock) {
+      const eventTarget = e.target as HTMLElement;
+      if (eventTarget.closest('.block-handle-wrapper') || eventTarget.closest('.block-menu-popover')) return;
+      const currentAnchor = hoveredAnchorRef.current;
+      if (currentAnchor) {
+        const anchorRect = currentAnchor.getBoundingClientRect();
+        const isMovingTowardCurrentHandle =
+          e.clientX < anchorRect.left &&
+          e.clientX >= position.left - 8 &&
+          e.clientY >= anchorRect.top - 6 &&
+          e.clientY <= anchorRect.bottom + 6;
+        if (isMovingTowardCurrentHandle) return;
+      }
+      const target = findBlockTarget(eventTarget, e.clientY);
+      const block = target?.element ?? null;
+      const anchor = target?.anchorElement ?? block;
+      const tableCell = target?.tableCellElement ?? null;
+      if (block && anchor && (block !== hoveredBlock || anchor !== hoveredAnchor || tableCell !== hoveredTableCell)) {
         if (hideTimeoutRef.current) {
           clearTimeout(hideTimeoutRef.current);
           hideTimeoutRef.current = null;
         }
         setHoveredBlock(block);
-        updatePosition(block);
+        setHoveredAnchor(anchor);
+        setHoveredTableCell(tableCell);
+        updatePosition(anchor);
       }
     };
 
@@ -209,7 +200,11 @@ const updatePosition = useCallback((block: HTMLElement) => {
       if (menuVisible) return;
       const related = e.relatedTarget as HTMLElement | null;
       if (!related || !wrapper.contains(related)) {
-        hideTimeoutRef.current = setTimeout(() => setHoveredBlock(null), 200);
+        hideTimeoutRef.current = setTimeout(() => {
+          setHoveredBlock(null);
+          setHoveredAnchor(null);
+          setHoveredTableCell(null);
+        }, 200);
       }
     };
 
@@ -221,7 +216,7 @@ const updatePosition = useCallback((block: HTMLElement) => {
       wrapper.removeEventListener('mouseleave', handleWrapperMouseLeave);
       if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
     };
-  }, [ready, getEditorDom, findBlockNode, updatePosition, hoveredBlock, wrapperRef, menuVisible]);
+  }, [ready, getEditorDom, findBlockTarget, updatePosition, hoveredBlock, hoveredAnchor, hoveredTableCell, wrapperRef, menuVisible, position.left]);
 
   const handleKeepVisible = useCallback(() => {
     if (hideTimeoutRef.current) {
@@ -233,19 +228,69 @@ const updatePosition = useCallback((block: HTMLElement) => {
   // 编辑器内容变化时重新计算位置（块位置可能已改变）
   useEffect(() => {
     if (!editor) return;
-    const onUpdate = () => setUpdateCount(c => c + 1);
+    const onUpdate = () => {
+      const editorDom = editor.view.dom;
+      const currentBlock = hoveredBlockRef.current;
+      const currentAnchor = hoveredAnchorRef.current;
+
+      if (
+        (currentBlock && !editorDom.contains(currentBlock)) ||
+        (currentAnchor && !editorDom.contains(currentAnchor))
+      ) {
+        const fallback = pendingDeleteFallbackRef.current;
+        pendingDeleteFallbackRef.current = null;
+
+        const fallbackElement = fallback?.element && editorDom.contains(fallback.element)
+          ? fallback.element
+          : fallback
+            ? document.elementFromPoint(fallback.clientX, fallback.clientY)
+            : null;
+
+        const nextTarget = resolveBlockToolbarTarget(fallbackElement, editorDom, fallback?.clientY);
+        if (nextTarget) {
+          setHoveredBlock(nextTarget.element);
+          setHoveredAnchor(nextTarget.anchorElement);
+          setHoveredTableCell(nextTarget.tableCellElement ?? null);
+          updatePosition(nextTarget.anchorElement);
+          setUpdateCount(c => c + 1);
+          return;
+        }
+
+        setHoveredBlock(null);
+        setHoveredAnchor(null);
+        setHoveredTableCell(null);
+        setMenuState('closed');
+        return;
+      }
+
+      setUpdateCount(c => c + 1);
+    };
     editor.on('transaction', onUpdate);
     return () => { editor.off('transaction', onUpdate); };
-  }, [editor]);
+  }, [editor, updatePosition]);
 
-  // hoveredBlock 变化或编辑器更新时刷新位置
+  const handleWillDeleteBlock = useCallback((fallbackBlock: HTMLElement | null) => {
+    if (!fallbackBlock) {
+      pendingDeleteFallbackRef.current = null;
+      return;
+    }
+
+    const rect = fallbackBlock.getBoundingClientRect();
+    pendingDeleteFallbackRef.current = {
+      element: fallbackBlock,
+      clientX: rect.left + Math.min(rect.width / 2, 24),
+      clientY: rect.top + rect.height / 2,
+    };
+  }, []);
+
+  // hoveredBlock 变化或编辑器更新时刷新位�?
   useEffect(() => {
-    if (!hoveredBlock) return;
-    updatePosition(hoveredBlock);
-    const onResize = () => updatePosition(hoveredBlock);
+    if (!hoveredAnchor) return;
+    updatePosition(hoveredAnchor);
+    const onResize = () => updatePosition(hoveredAnchor);
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
-  }, [hoveredBlock, updateCount, updatePosition]);
+  }, [hoveredAnchor, updateCount, updatePosition]);
 
   // 点击外部关闭菜单
   useEffect(() => {
@@ -275,7 +320,7 @@ const updatePosition = useCallback((block: HTMLElement) => {
 
       const sourceBlock = allBlockEls[sourceIdx];
 
-      // 获取源块的 ProseMirror 位置
+      // 获取源块�?ProseMirror 位置
       const $source = doc.resolve(view.posAtDOM(sourceBlock, 0));
       const sourceStart = $source.before(1);
       const sourceEnd = $source.after(1);
@@ -295,14 +340,14 @@ const updatePosition = useCallback((block: HTMLElement) => {
         insertPos = $target.before(1);
       }
 
-      // 两步事务：先删后插，用 mapping.mapPos 确保位置正确
+      // 两步事务：先删后插，�?mapping.mapPos 确保位置正确
       const tr = view.state.tr;
       tr.delete(sourceStart, sourceEnd);
       const mappedPos = tr.mapping.map(insertPos);
       tr.insert(mappedPos, sourceNode);
       view.dispatch(tr);
     } catch (err) {
-      console.error('[BlockToolbar] 移动块失败:', err);
+      console.error('[BlockToolbar] 移动块失�?', err);
     }
   }, [editor]);
 
@@ -328,7 +373,7 @@ const updatePosition = useCallback((block: HTMLElement) => {
     if (!wrapper) return;
     const wrapperRect = wrapper.getBoundingClientRect();
 
-    // 更新幽灵位置（position: fixed，直接用 viewport 坐标）
+    // 更新幽灵位置（position: fixed，直接用 viewport 坐标�?
     const ghost = ghostElementRef.current;
     if (ghost) {
       ghost.style.left = (clientX + GHOST_OFFSET_X) + 'px';
@@ -350,7 +395,7 @@ const updatePosition = useCallback((block: HTMLElement) => {
     const blocks = blockElementsRef.current;
     const sourceIdx = sourceIndexRef.current;
 
-    // 光标不在编辑器区域内 → 隐藏指示线
+    // 光标不在编辑器区域内 �?隐藏指示�?
     if (clientY < wrapperRect.top || clientY > wrapperRect.bottom || blocks.length <= 1) {
       dropTargetIndexRef.current = -1;
       const indicator = dropIndicatorRef.current;
@@ -406,7 +451,7 @@ const updatePosition = useCallback((block: HTMLElement) => {
     // 移除幽灵
     ghostElementRef.current?.remove();
     ghostElementRef.current = null;
-    // 移除指示线
+    // 移除指示�?
     dropIndicatorRef.current?.remove();
     dropIndicatorRef.current = null;
     // 恢复 body
@@ -447,7 +492,7 @@ const updatePosition = useCallback((block: HTMLElement) => {
         const dy = me.clientY - start.y;
         if (Math.sqrt(dx * dx + dy * dy) <= DRAG_THRESHOLD) return;
 
-        // 开始拖拽
+        // 开始拖�?
         isDraggingRef.current = true;
         isDraggingActiveRef.current = true;
 
@@ -503,10 +548,14 @@ const updatePosition = useCallback((block: HTMLElement) => {
       justDraggedRef.current = false;
       return;
     }
-    menuState === 'open' ? closeMenu() : openMenu();
+    if (menuState === 'open') {
+      closeMenu();
+    } else {
+      openMenu();
+    }
   }, [menuState, closeMenu, openMenu]);
 
-  // 拖拽结束时确保恢复
+  // 拖拽结束时确保恢�?
   useEffect(() => {
     return () => {
       if (isDraggingRef.current) {
@@ -532,7 +581,12 @@ const updatePosition = useCallback((block: HTMLElement) => {
             if (menuState === 'closing') setMenuState('closed');
           }}
         >
-          <BlockMenu onClose={closeMenu} hoveredBlock={hoveredBlock} />
+          <BlockMenu
+            onClose={closeMenu}
+            hoveredBlock={hoveredBlock}
+            hoveredTableCell={hoveredTableCell}
+            onWillDeleteBlock={handleWillDeleteBlock}
+          />
         </div>
       )}
     </div>

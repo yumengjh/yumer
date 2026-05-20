@@ -6,7 +6,10 @@
 }
 
 .block-handle-wrapper--animate {
-  transition: top 0.15s ease;
+  transition:
+    top 0.16s cubic-bezier(0.2, 0, 0, 1),
+    left 0.16s cubic-bezier(0.2, 0, 0, 1),
+    opacity 0.12s ease;
 }
 
 /* ---- 6 点拖拽手柄 ---- */
