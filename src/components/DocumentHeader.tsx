@@ -24,12 +24,14 @@ import {
   HistoryOutlined,
   InfoCircleOutlined,
   MenuOutlined,
+  TagsOutlined,
 } from "@ant-design/icons";
 import { useDocument } from "../contexts/DocumentContext";
 import { VersionDiffModal } from "./VersionDiffModal";
 import { DocumentListModal } from "./DocumentListModal";
 import { CreateDocumentModal } from "./CreateDocumentModal";
 import { DocumentInfoModal } from "./DocumentInfoModal";
+import { TagManagementModal } from "./TagManagementModal";
 import { useAuth } from "../contexts/AuthContext";
 import "./DocumentHeader.css";
 
@@ -66,6 +68,7 @@ export function DocumentHeader({ onSave, showTOC, onToggleTOC }: DocumentHeaderP
   const [listOpen, setListOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [tagManageOpen, setTagManageOpen] = useState(false);
 
   useEffect(() => {
     refreshDocs().catch(() => {});
@@ -278,6 +281,14 @@ export function DocumentHeader({ onSave, showTOC, onToggleTOC }: DocumentHeaderP
                 onClick={() => setDiffOpen(true)}
               />
             </Tooltip>
+            <Tooltip title="标签管理">
+              <Button
+                type="text"
+                icon={<TagsOutlined />}
+                size="small"
+                onClick={() => setTagManageOpen(true)}
+              />
+            </Tooltip>
             <Tooltip title="文档信息">
               <Button
                 type="text"
@@ -354,6 +365,10 @@ export function DocumentHeader({ onSave, showTOC, onToggleTOC }: DocumentHeaderP
           doc={currentDoc}
         />
       )}
+      <TagManagementModal
+        open={tagManageOpen}
+        onClose={() => setTagManageOpen(false)}
+      />
     </div>
   );
 }

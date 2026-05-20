@@ -1,17 +1,29 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { FileTextOutlined } from "@ant-design/icons";
+import { FileTextOutlined, UnorderedListOutlined } from "@ant-design/icons";
+import { Drawer, Button, Tooltip } from "antd";
+import { PublicDocTOC } from "./PublicDocTOC";
 import "./PublicDocHeader.css";
 
 interface PublicDocHeaderProps {
   title: string;
   icon?: string;
+  onToggleTocDesktop?: () => void;
 }
 
-export function PublicDocHeader({ title, icon }: PublicDocHeaderProps) {
+export function PublicDocHeader({ title, icon, onToggleTocDesktop }: PublicDocHeaderProps) {
   const [isVisible, setIsVisible] = useState(true);
   const [lastScrollY, setLastScrollY] = useState(0);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth <= 1024);
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
 
   useEffect(() => {
     // Only apply dynamic hiding on mobile (width <= 768px)
@@ -37,17 +49,41 @@ export function PublicDocHeader({ title, icon }: PublicDocHeaderProps) {
   return (
     <div className={`public-doc-header ${isVisible ? "visible" : "hidden"}`}>
       <div className="public-doc-header-left">
-        {/* 预留左侧区域 */}
-      </div>
-      <div className="public-doc-header-center">
         <div className="title-display">
           {icon ? <span>{icon}</span> : <FileTextOutlined style={{ fontSize: 13, opacity: 0.5 }} />}
           <span>{title || "无标题"}</span>
         </div>
       </div>
-      <div className="public-doc-header-right">
-        {/* 预留右侧区域 */}
+      <div className="public-doc-header-center">
       </div>
+      <div className="public-doc-header-right">
+        <Tooltip title="目录" placement="bottomRight">
+          <Button 
+            type="text" 
+            icon={<UnorderedListOutlined />} 
+            className="mobile-toc-btn"
+            onClick={() => {
+              if (isMobile) {
+                setDrawerOpen(true);
+              } else if (onToggleTocDesktop) {
+                onToggleTocDesktop();
+              }
+            }}
+          />
+        </Tooltip>
+      </div>
+      
+      <Drawer
+        title="目录"
+        placement="right"
+        onClose={() => setDrawerOpen(false)}
+        open={drawerOpen}
+        width={280}
+        styles={{ body: { padding: 0 } }}
+        className="mobile-toc-drawer"
+      >
+        <PublicDocTOC />
+      </Drawer>
     </div>
   );
 }

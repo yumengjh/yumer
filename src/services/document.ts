@@ -10,6 +10,12 @@ import {
 
 // ─── 类型定义 ───
 
+export interface DocumentUserSummary {
+  userId: string;
+  displayName: string | null;
+  avatar: string | null;
+}
+
 export interface Document {
   docId: string;
   workspaceId: string;
@@ -24,6 +30,12 @@ export interface Document {
   publishedHead?: number;
   tags?: string[];
   category?: string;
+  createdBy?: string;
+  updatedBy?: string;
+  creator?: DocumentUserSummary | null;
+  updater?: DocumentUserSummary | null;
+  viewCount?: number;
+  favoriteCount?: number;
   createdAt: string;
   updatedAt: string;
 }

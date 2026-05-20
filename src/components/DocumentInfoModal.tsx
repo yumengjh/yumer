@@ -9,6 +9,7 @@ import {
 } from "@ant-design/icons";
 import { useDocument } from "../contexts/DocumentContext";
 import type { Document } from "../services/document";
+import { getTags, type Tag } from "../services/tags";
 import "./DocumentInfoModal.css";
 
 interface DocumentInfoModalProps {
@@ -29,6 +30,8 @@ export function DocumentInfoModal({
   const [visibility, setVisibility] = useState("private");
   const [category, setCategory] = useState("");
   const [status, setStatus] = useState("normal");
+  const [tags, setTags] = useState<string[]>([]);
+  const [availableTags, setAvailableTags] = useState<Tag[]>([]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -39,6 +42,14 @@ export function DocumentInfoModal({
       setVisibility(doc.visibility || "private");
       setCategory(doc.category || "");
       setStatus(doc.status || "normal");
+      setTags(doc.tags || []);
+      
+      // Load available tags
+      if (doc.workspaceId) {
+        getTags(doc.workspaceId)
+          .then(res => setAvailableTags(res.items))
+          .catch(() => message.error("获取可用标签失败"));
+      }
     }
   }, [open, doc]);
 
@@ -57,6 +68,7 @@ export function DocumentInfoModal({
         visibility,
         category: category.trim() || undefined,
         status,
+        tags,
       });
       message.success("文档信息已更新");
       onClose();
@@ -65,7 +77,7 @@ export function DocumentInfoModal({
     } finally {
       setSaving(false);
     }
-  }, [doc.docId, title, icon, cover, visibility, category, status, updateDoc, onClose]);
+  }, [doc.docId, title, icon, cover, visibility, category, status, tags, updateDoc, onClose]);
 
   return (
     <Modal
@@ -158,6 +170,24 @@ export function DocumentInfoModal({
             onChange={(e) => setCategory(e.target.value)}
             placeholder="文档分类"
             maxLength={50}
+          />
+        </Form.Item>
+
+        <Form.Item label="标签">
+          <Select
+            mode="multiple"
+            placeholder="选择标签"
+            value={tags}
+            onChange={setTags}
+            options={availableTags.map(t => ({
+              value: t.tagId,
+              label: (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: t.color || '#ccc' }} />
+                  {t.name}
+                </span>
+              )
+            }))}
           />
         </Form.Item>
 

@@ -1,0 +1,83 @@
+.public-toc-panel {
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+}
+
+.public-toc-panel .toc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #1f2329;
+}
+
+.public-toc-panel .toc-header-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.public-toc-panel .toc-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 12px 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+.public-toc-panel .toc-item {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #4a4a4a;
+  font-size: 13px;
+  line-height: 1.5;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.public-toc-panel .toc-item:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+
+.public-toc-panel .toc-item-indent {
+  flex-shrink: 0;
+}
+
+.public-toc-panel .toc-item-icon {
+  width: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-right: 2px;
+}
+
+.public-toc-panel .toc-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  font-size: 10px;
+  color: #8f959e;
+  transition: background-color 0.15s;
+}
+
+.public-toc-panel .toc-toggle:hover {
+  background-color: rgba(0, 0, 0, 0.08);
+  color: #1f2329;
+}
+
+.public-toc-panel .toc-item-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
