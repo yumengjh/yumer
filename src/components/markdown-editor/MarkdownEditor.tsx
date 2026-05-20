@@ -43,8 +43,7 @@ import { EditorContextProvider } from "./EditorContext";
 import Toolbar from "./Toolbar";
 import BlockToolbar from "./BlockToolbar";
 import TableOfContents from "./TableOfContents";
-import { ensureDocumentIdentity } from "@/services/sync/identity";
-import type { TiptapDoc } from "@/services/tiptap-converter";
+import { BLOCK_IDENTITY_PATCH_META, patchEditorDocumentIdentity } from "./editorIdentity";
 import "./styles/editor.css";
 
 export interface MarkdownEditorRef {
@@ -185,16 +184,17 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
   }, [shikiHighlighter, themeMode]);
 
   const handleUpdate = useCallback(
-    ({ editor: ed }: { editor: import("@tiptap/core").Editor }) => {
-      if (!onChange) return;
-      const rawJson = ed.getJSON() as TiptapDoc;
-      const jsonWithIdentity = ensureDocumentIdentity(rawJson);
+    ({
+      editor: ed,
+      transaction,
+    }: {
+      editor: import("@tiptap/core").Editor;
+      transaction: import("@tiptap/pm/state").Transaction;
+    }) => {
+      if (!onChange || transaction.getMeta(BLOCK_IDENTITY_PATCH_META)) return;
 
-      if (jsonWithIdentity !== rawJson) {
-        ed.commands.setContent(jsonWithIdentity, { emitUpdate: false });
-      }
-
-      onChange(jsonWithIdentity as EditorContentType);
+      patchEditorDocumentIdentity(ed);
+      onChange(ed.getJSON() as EditorContentType);
     },
     [onChange],
   );
