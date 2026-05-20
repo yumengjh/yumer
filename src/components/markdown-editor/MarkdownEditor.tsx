@@ -43,7 +43,11 @@ import { EditorContextProvider } from "./EditorContext";
 import Toolbar from "./Toolbar";
 import BlockToolbar from "./BlockToolbar";
 import TableOfContents from "./TableOfContents";
-import { BLOCK_IDENTITY_PATCH_META, patchEditorDocumentIdentity } from "./editorIdentity";
+import {
+  BLOCK_IDENTITY_PATCH_META,
+  patchEditorBlockIdentityFromDoc,
+  patchEditorDocumentIdentity,
+} from "./editorIdentity";
 import "./styles/editor.css";
 
 export interface MarkdownEditorRef {
@@ -322,6 +326,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
       editor.commands.setContent(content || "<p></p>", { emitUpdate: false });
     } else if (content && typeof content === "object") {
       // Tiptap JSON 模式（新文档）
+      if (patchEditorBlockIdentityFromDoc(editor, content)) return;
       // 避免重复设置相同内容导致光标重置：先比较文档子节点数，再比较 JSON
       const currentJSON = editor.getJSON();
       const currentChildren = currentJSON.content ?? [];
