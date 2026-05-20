@@ -4,6 +4,7 @@ import DOMPurify from "isomorphic-dompurify";
 import { decodeDocSlug } from "@/lib/doc-slug";
 import { highlightCodeBlocks } from "@/lib/highlight";
 import { renderBlockTreeToHtml } from "@/services/generate-block-html";
+import { PublicDocHeader } from "@/components/PublicDocHeader";
 import "@/components/markdown-editor/styles/editor.css";
 import "./style.css";
 
@@ -31,21 +32,29 @@ async function getDocContent(slug: string) {
     return null;
   }
 
-  const res = await fetch(`${API_BASE}/documents/${docId}/content`, {
-    cache: "no-store",
-  });
-  if (!res.ok) return null;
-  const json = await res.json();
-  if (!json.success) return null;
+  const [contentRes, docRes] = await Promise.all([
+    fetch(`${API_BASE}/documents/${docId}/content`, { cache: "no-store" }),
+    fetch(`${API_BASE}/documents/${docId}`, { cache: "no-store" }),
+  ]);
 
-  const data: ContentResponse = json.data;
+  if (!contentRes.ok || !docRes.ok) return null;
+  
+  const [contentJson, docJson] = await Promise.all([
+    contentRes.json(),
+    docRes.json(),
+  ]);
+
+  if (!contentJson.success || !docJson.success) return null;
+
+  const data: ContentResponse = contentJson.data;
+  const docData = docJson.data;
   const rawHtml = renderBlockTreeToHtml(data.tree);
   const highlighted = await highlightCodeBlocks(rawHtml);
   const html = DOMPurify.sanitize(highlighted, {
     ADD_TAGS: ["code", "pre", "span"],
     ADD_ATTR: ["class", "data-language", "data-block-id", "style"],
   });
-  return { title: data.title, html };
+  return { title: data.title, html, icon: docData.icon };
 }
 
 type PageProps = {
@@ -70,10 +79,10 @@ export default async function DocPage({ params }: PageProps) {
 
   return (
     <div className="doc-page">
+      <PublicDocHeader title={doc.title} icon={doc.icon} />
       <div className="tiptap-shell">
         <div className="tiptap-card">
           <div className="tiptap-editor-wrapper">
-            <h1 className="doc-title">{doc.title || "无标题"}</h1>
             <div
               className="doc-content tiptap-editor"
               dangerouslySetInnerHTML={{ __html: doc.html }}
