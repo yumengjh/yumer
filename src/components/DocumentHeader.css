@@ -10,8 +10,12 @@
   position: sticky;
   top: 0;
   z-index: 100;
-  gap: 16px;
+  gap: 8px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  /* 关键：防止 header 自身产生横向滚动 */
+  overflow: hidden;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .document-header-left {
@@ -19,6 +23,7 @@
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
+  min-width: 0;
 }
 
 .document-header-center {
@@ -92,4 +97,69 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ── 移动端/桌面端切换 ── */
+
+/* 移动端折叠区：默认隐藏，移动端显示 */
+.header-actions-mobile {
+  display: none;
+}
+
+/* 桌面端完整操作区：默认显示，移动端隐藏 */
+.header-actions-desktop {
+  display: contents; /* 不产生额外盒子，子元素直接参与 flex */
+}
+
+.header-user-desktop,
+.header-logout-desktop {
+  display: contents;
+}
+
+@media (max-width: 768px) {
+  .document-header {
+    padding: 0 12px;
+    gap: 6px;
+  }
+
+  /* 隐藏桌面端操作区 */
+  .header-actions-desktop {
+    display: none;
+  }
+
+  /* 隐藏桌面端用户标签和退出按钮 */
+  .header-user-desktop {
+    display: none;
+  }
+
+  .header-logout-desktop {
+    display: none;
+  }
+
+  /* 移动端：显示"更多"折叠菜单 */
+  .header-actions-mobile {
+    display: flex;
+    align-items: center;
+  }
+
+  /* 文档左侧触发器在移动端缩短 */
+  .doc-list-trigger {
+    max-width: 120px;
+  }
+
+  /* 保存状态文字在极小屏时隐藏，只保留图标 */
+  .document-header-right .ant-typography {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .document-header {
+    padding: 0 8px;
+    gap: 4px;
+  }
+
+  .doc-list-trigger {
+    max-width: 80px;
+  }
 }

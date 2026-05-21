@@ -95,6 +95,20 @@
   }
 }
 
+@media (max-width: 768px) {
+  .tiptap-editor-wrapper {
+    margin: 12px auto;
+    padding: 24px 16px;
+  }
+
+  .tiptap-editor {
+    /* iOS Safari auto-zooms editable content whose computed font size is below 16px. */
+    font-size: max(16px, var(--app-editor-font-size, 15px));
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+}
+
 /* =====================================================
    编辑器正文区域 — 严格还原语雀
    ===================================================== */

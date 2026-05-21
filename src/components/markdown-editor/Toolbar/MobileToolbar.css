@@ -1,0 +1,95 @@
+/* =====================================================
+   MobileToolbar — 顶部吸附工具栏（移动端）
+   ===================================================== */
+
+/* 外层容器：sticky 吸附在 DocumentHeader（48px）正下方 */
+.mobile-toolbar-wrapper {
+  position: sticky;
+  top: 48px;             /* 与 DocumentHeader 的 height 保持一致 */
+  z-index: 99;           /* 比 DocumentHeader(100) 低一层 */
+  display: flex;
+  align-items: center;
+  background: var(--app-bg-page, #ffffff);
+  border-bottom: 1px solid var(--app-border, #e8e8e8);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+  padding: 0 4px;
+  height: 44px;
+}
+
+/* 横向滑动区域 */
+.mobile-toolbar-scroll {
+  display: flex;
+  flex: 1;
+  overflow-x: auto;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+  /* 隐藏滚动条 */
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.mobile-toolbar-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* 分隔 + "更多"按钮区 */
+.mobile-toolbar-more {
+  flex-shrink: 0;
+  padding: 0 4px;
+  border-left: 1px solid var(--app-border, #e8e8e8);
+}
+
+/* 工具按钮 */
+.mobile-toolbar-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  font-size: 17px;
+  color: var(--app-text-secondary, #555);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+.mobile-toolbar-btn:active,
+.mobile-toolbar-btn.is-pressed {
+  background: var(--app-bg-muted, #f0f0f0);
+}
+
+.mobile-toolbar-btn.is-active {
+  color: var(--toolbar-active-text, #111111);
+  background: var(--toolbar-active-bg, #f0f0f0);
+}
+
+.mobile-toolbar-btn.is-active.is-pressed {
+  background: var(--toolbar-active-bg, #f0f0f0);
+}
+
+/* ── 抽屉内样式 ── */
+.drawer-section {
+  margin-bottom: 20px;
+}
+
+.drawer-section h4 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--app-text-secondary, #666);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.drawer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 8px;
+}

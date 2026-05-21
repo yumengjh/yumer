@@ -9,7 +9,9 @@ import {
   Space,
   message,
   Tooltip,
+  Dropdown,
 } from "antd";
+import type { InputRef, MenuProps } from "antd";
 import {
   SaveOutlined,
   CheckCircleOutlined,
@@ -25,6 +27,7 @@ import {
   InfoCircleOutlined,
   MenuOutlined,
   TagsOutlined,
+  MoreOutlined,
 } from "@ant-design/icons";
 import { useDocument } from "../contexts/DocumentContext";
 import { VersionDiffModal } from "./VersionDiffModal";
@@ -59,7 +62,7 @@ export function DocumentHeader({ onSave, showTOC, onToggleTOC }: DocumentHeaderP
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleValue, setTitleValue] = useState("");
   const [titleSaving, setTitleSaving] = useState(false);
-  const titleInputRef = useRef<HTMLInputElement>(null);
+  const titleInputRef = useRef<InputRef>(null);
   const [publishing, setPublishing] = useState(false);
   const [visibilityChanging, setVisibilityChanging] = useState(false);
   const [diffOpen, setDiffOpen] = useState(false);
@@ -217,7 +220,7 @@ export function DocumentHeader({ onSave, showTOC, onToggleTOC }: DocumentHeaderP
           editingTitle ? (
             <div className="title-edit-group">
               <Input
-                ref={titleInputRef as any}
+                ref={titleInputRef}
                 className="title-edit-input"
                 value={titleValue}
                 onChange={(e) => setTitleValue(e.target.value)}
@@ -242,8 +245,22 @@ export function DocumentHeader({ onSave, showTOC, onToggleTOC }: DocumentHeaderP
       </div>
 
       <div className="document-header-right">
+        {/* 保存状态 — 始终显示 */}
+        {saveStatusLabel[saveStatus]}
+        {/* 保存按钮 — 始终显示 */}
+        <Tooltip title="手动保存">
+          <Button
+            type="text"
+            icon={<SaveOutlined />}
+            size="small"
+            onClick={onSave}
+            disabled={saveStatus === "flushing"}
+          />
+        </Tooltip>
+
+        {/* 桌面端完整操作区 */}
         {currentDoc && (
-          <>
+          <span className="header-actions-desktop">
             <Select
               size="small"
               value={currentDoc.visibility || "private"}
@@ -274,65 +291,102 @@ export function DocumentHeader({ onSave, showTOC, onToggleTOC }: DocumentHeaderP
               </Button>
             </Tooltip>
             <Tooltip title="版本对比">
-              <Button
-                type="text"
-                icon={<HistoryOutlined />}
-                size="small"
-                onClick={() => setDiffOpen(true)}
-              />
+              <Button type="text" icon={<HistoryOutlined />} size="small" onClick={() => setDiffOpen(true)} />
             </Tooltip>
             <Tooltip title="标签管理">
-              <Button
-                type="text"
-                icon={<TagsOutlined />}
-                size="small"
-                onClick={() => setTagManageOpen(true)}
-              />
+              <Button type="text" icon={<TagsOutlined />} size="small" onClick={() => setTagManageOpen(true)} />
             </Tooltip>
             <Tooltip title="文档信息">
-              <Button
-                type="text"
-                icon={<InfoCircleOutlined />}
-                size="small"
-                onClick={() => setInfoOpen(true)}
-              />
+              <Button type="text" icon={<InfoCircleOutlined />} size="small" onClick={() => setInfoOpen(true)} />
             </Tooltip>
-          </>
+            <Tooltip title={showTOC ? "隐藏目录" : "显示目录"}>
+              <Button type={showTOC ? "primary" : "text"} icon={<UnorderedListOutlined />} size="small" onClick={() => onToggleTOC(!showTOC)} />
+            </Tooltip>
+          </span>
         )}
-        {saveStatusLabel[saveStatus]}
-        <Tooltip title={showTOC ? "隐藏目录" : "显示目录"}>
-          <Button
-            type={showTOC ? "primary" : "text"}
-            icon={<UnorderedListOutlined />}
-            size="small"
-            onClick={() => onToggleTOC(!showTOC)}
-          />
-        </Tooltip>
-        <Tooltip title="手动保存">
-          <Button
-            type="text"
-            icon={<SaveOutlined />}
-            size="small"
-            onClick={onSave}
-            disabled={saveStatus === "flushing"}
-          />
-        </Tooltip>
-        <Tag
-          className="document-header-user"
-          closable={false}
-          color="blue"
-        >
+
+        {/* 移动端折叠操作区 */}
+        <span className="header-actions-mobile">
+          {currentDoc && (
+            <Dropdown
+              placement="bottomRight"
+              trigger={["click"]}
+              menu={{
+                items: [
+                  {
+                    key: "publish",
+                    icon: <SendOutlined />,
+                    label: "发布文档",
+                    onClick: handlePublish,
+                  },
+                  {
+                    key: "toc",
+                    icon: <UnorderedListOutlined />,
+                    label: showTOC ? "隐藏目录" : "显示目录",
+                    onClick: () => onToggleTOC(!showTOC),
+                  },
+                  {
+                    key: "history",
+                    icon: <HistoryOutlined />,
+                    label: "版本对比",
+                    onClick: () => setDiffOpen(true),
+                  },
+                  {
+                    key: "tags",
+                    icon: <TagsOutlined />,
+                    label: "标签管理",
+                    onClick: () => setTagManageOpen(true),
+                  },
+                  {
+                    key: "info",
+                    icon: <InfoCircleOutlined />,
+                    label: "文档信息",
+                    onClick: () => setInfoOpen(true),
+                  },
+                  { type: "divider" },
+                  {
+                    key: "visibility-private",
+                    icon: <LockOutlined />,
+                    label: "设为私有",
+                    onClick: () => handleVisibilityChange("private"),
+                  },
+                  {
+                    key: "visibility-public",
+                    icon: <GlobalOutlined />,
+                    label: "设为公开",
+                    onClick: () => handleVisibilityChange("public"),
+                  },
+                  { type: "divider" },
+                  {
+                    key: "logout",
+                    icon: <LogoutOutlined />,
+                    label: `退出 (${user?.displayName || user?.username})`,
+                    danger: true,
+                    onClick: logout,
+                  },
+                ] as MenuProps["items"],
+              }}
+            >
+              <Button type="text" icon={<MoreOutlined />} size="small" />
+            </Dropdown>
+          )}
+          {!currentDoc && (
+            <Tooltip title="退出登录">
+              <Button type="text" icon={<LogoutOutlined />} size="small" onClick={logout} danger />
+            </Tooltip>
+          )}
+        </span>
+
+        {/* 用户标签 — 仅桌面显示 */}
+        <Tag className="document-header-user header-user-desktop" closable={false} color="blue">
           {user?.displayName || user?.username}
         </Tag>
-        <Tooltip title="退出登录">
-          <Button
-            type="text"
-            icon={<LogoutOutlined />}
-            size="small"
-            onClick={logout}
-            danger
-          />
-        </Tooltip>
+        {/* 退出按钮 — 仅桌面显示 */}
+        <span className="header-logout-desktop">
+          <Tooltip title="退出登录">
+            <Button type="text" icon={<LogoutOutlined />} size="small" onClick={logout} danger />
+          </Tooltip>
+        </span>
       </div>
       {currentDoc && (
         <VersionDiffModal
