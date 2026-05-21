@@ -45,6 +45,11 @@ import {
 import TablePicker from "./TablePicker";
 import LinkPickerPopup from "./LinkPickerPopup";
 import SplitDropdown from "./SplitDropdown";
+import {
+  getToolbarState,
+  isToolbarItemActive,
+  runInlineMarkCommand,
+} from "./toolbarState";
 import "./style.css";
 
 type ToolbarItem = {
@@ -116,6 +121,7 @@ export default function Toolbar() {
   const [selectedBgColor, setSelectedBgColor] = useState("#FFFF00");
   const [lastTableSize, setLastTableSize] = useState({ rows: 3, cols: 3 });
   const tiptap = editor as Editor | null;
+  const toolbarState = getToolbarState(tiptap);
   const editorReady = Boolean(tiptap);
   const [, forceUpdate] = useState(0);
   const savedSelectionRef = useRef<Selection | null>(null);
@@ -219,16 +225,16 @@ export default function Toolbar() {
         tiptap.chain().focus().run();
         break;
       case "bold":
-        tiptap.chain().focus().toggleBold().run();
+        runInlineMarkCommand(tiptap, "bold");
         break;
       case "italic":
-        tiptap.chain().focus().toggleItalic().run();
+        runInlineMarkCommand(tiptap, "italic");
         break;
       case "strike":
-        tiptap.chain().focus().toggleStrike().run();
+        runInlineMarkCommand(tiptap, "strike");
         break;
       case "underline":
-        tiptap.chain().focus().toggleUnderline().run();
+        runInlineMarkCommand(tiptap, "underline");
         break;
       case "align-left":
         tiptap.chain().focus().setTextAlign("left").run();
@@ -263,22 +269,11 @@ export default function Toolbar() {
   };
 
   const getCurrentHeadingKey = (): string => {
-    if (!tiptap) return "0";
-    for (let i = 1; i <= 6; i++) {
-      if (tiptap.isActive("heading", { level: i as 1 | 2 | 3 | 4 | 5 | 6 })) {
-        return `${i}`;
-      }
-    }
-    return "0";
+    return `${toolbarState.headingLevel}`;
   };
 
   const getCurrentCodeLanguage = (): string => {
-    if (!tiptap || !tiptap.isActive("codeBlock")) return "text";
-    const language = tiptap.getAttributes("codeBlock")?.language;
-    if (typeof language === "string" && language.trim()) {
-      return language.trim().toLowerCase();
-    }
-    return "text";
+    return toolbarState.codeLanguage;
   };
 
   const dropdownHandlers: Record<string, (key: string) => void> = {
@@ -449,63 +444,15 @@ export default function Toolbar() {
   );
 
   const isActive = (id: string): boolean => {
-    if (!tiptap) return false;
-    switch (id) {
-      case "bold":
-        return tiptap.isActive("bold");
-      case "italic":
-        return tiptap.isActive("italic");
-      case "strike":
-        return tiptap.isActive("strike");
-      case "underline":
-        return tiptap.isActive("underline");
-      case "align-left":
-        return (tiptap.getAttributes("textAlign")?.textAlign || "left") === "left";
-      case "align-center":
-        return (tiptap.getAttributes("textAlign")?.textAlign || "left") === "center";
-      case "align-right":
-        return (tiptap.getAttributes("textAlign")?.textAlign || "left") === "right";
-      case "align-justify":
-        return (tiptap.getAttributes("textAlign")?.textAlign || "left") === "justify";
-      case "bullet-list":
-        return tiptap.isActive("bulletList");
-      case "check-list":
-        return tiptap.isActive("taskList");
-      case "ordered-list":
-        return tiptap.isActive("orderedList");
-      case "blockquote":
-        return tiptap.isActive("blockquote");
-      case "code-block":
-        return tiptap.isActive("codeBlock");
-      case "divider":
-        return tiptap.isActive("horizontalRule");
-      case "link":
-        return tiptap.isActive("link");
-      case "highlight-block":
-        return tiptap.isActive("highlightBlock");
-      default:
-        return false;
-    }
+    return isToolbarItemActive(toolbarState, id);
   };
 
   const getCurrentHeadingLevel = (): string => {
-    if (!tiptap) return "正文";
-    for (let i = 1; i <= 6; i++) {
-      if (tiptap.isActive("heading", { level: i as 1 | 2 | 3 | 4 | 5 | 6 })) {
-        return `标题 ${i}`;
-      }
-    }
-    return "正文";
+    return toolbarState.headingLevel > 0 ? `标题 ${toolbarState.headingLevel}` : "正文";
   };
 
   const getCurrentFontSize = (): string => {
-    if (!tiptap) return "15px";
-    const textStyle = tiptap.getAttributes("textStyle");
-    const fontSize = textStyle?.fontSize;
-    if (fontSize) {
-      return `${fontSize}px`;
-    }
-    return "15px";
+    return toolbarState.fontSize;
   };
 
   const alignItems = [
@@ -524,12 +471,7 @@ export default function Toolbar() {
   }));
 
   const getCurrentAlignment = (): { label: string; icon: ReactNode; key: string } => {
-    if (!tiptap) {
-      return { label: "左对齐", icon: <AlignLeftOutlined />, key: "left" };
-    }
-    const align = (tiptap.getAttributes("paragraph")?.textAlign ||
-      tiptap.getAttributes("heading")?.textAlign ||
-      "left") as string;
+    const align = toolbarState.textAlign;
     const alignMap: Record<string, { label: string; icon: ReactNode }> = {
       left: { label: "左对齐", icon: <AlignLeftOutlined /> },
       center: { label: "居中", icon: <AlignCenterOutlined /> },
@@ -543,26 +485,11 @@ export default function Toolbar() {
   };
 
   const getCurrentOrderedListType = (): string => {
-    if (!tiptap || !tiptap.isActive("orderedList")) {
-      return "decimal";
-    }
-    const attrs = tiptap.getAttributes("orderedList");
-    return attrs.listStyleType || "decimal";
+    return toolbarState.orderedListType;
   };
 
   const getCurrentLineHeight = (): string => {
-    if (!tiptap) return "";
-    const { from } = tiptap.state.selection;
-    const $pos = tiptap.state.doc.resolve(from);
-    // 获取最近的块级节点（paragraph 或 heading）
-    const depth = $pos.depth;
-    for (let d = depth; d >= 0; d--) {
-      const node = $pos.node(d);
-      if (node.type.name === "paragraph" || node.type.name === "heading") {
-        return node.attrs.lineHeight || "";
-      }
-    }
-    return "";
+    return toolbarState.lineHeight;
   };
 
   const toolbarGroups: ToolbarItem[][] = [
@@ -1193,7 +1120,8 @@ export default function Toolbar() {
                   className={`toolbar-button ${isActive(item.id) ? "active" : ""}`}
                   disabled={!editorReady}
                   aria-label={item.label}
-                  onMouseDown={() => {
+                  onMouseDown={(event) => {
+                    event.preventDefault();
                     if (tiptap) {
                       savedSelectionRef.current = tiptap.state.selection;
                     }
@@ -1243,6 +1171,7 @@ export default function Toolbar() {
                   className={`toolbar-button ${copiedMarks.length > 0 ? "active" : ""}`}
                   disabled={!editorReady}
                   aria-label={item.label}
+                  onMouseDown={(event) => event.preventDefault()}
                 >
                   <Tooltip placement="bottom" title={item.label}>
                     <span className="toolbar-content">{item.content}</span>
@@ -1256,6 +1185,7 @@ export default function Toolbar() {
                 className={`toolbar-button ${isActive(item.id) ? "active" : ""}`}
                 disabled={!editorReady}
                 aria-label={item.label}
+                onMouseDown={(event) => event.preventDefault()}
                 onClick={handleClick(item.id)}
               >
                 <Tooltip placement="bottom" title={item.label}>

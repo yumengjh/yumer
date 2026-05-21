@@ -43,6 +43,9 @@ export default function SplitDropdown({
           className={`split-dropdown-main ${active ? "active" : ""}`}
           disabled={disabled}
           aria-label={label}
+          onMouseDown={(e) => {
+            e.preventDefault();
+          }}
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -65,6 +68,9 @@ export default function SplitDropdown({
           className="split-dropdown-trigger"
           disabled={disabled}
           aria-label={`${label} - 选择`}
+          onMouseDown={(e) => {
+            e.preventDefault();
+          }}
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
