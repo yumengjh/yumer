@@ -9,7 +9,7 @@
   padding: 0;
   box-sizing: border-box;
   position: relative;
-  background: var(--app-bg-page);
+  background: #ffffff;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -21,7 +21,7 @@
   display: flex;
   flex-direction: column;
   flex: 1;
-  background: transparent;
+  background: #ffffff;
 }
 
 /* ---------- 旧工具栏（未使用，保留兼容）---------- */
@@ -68,37 +68,31 @@
   margin: 0 2px;
 }
 
-/* ---------- 编辑区包裹层 ---------- */
+/* ---------- 编辑区包裹层（语雀：全白、无纸张阴影）---------- */
 .tiptap-editor-wrapper {
-  margin: 40px auto;
-  padding: 80px 96px;
+  margin: 0 auto;
+  padding: 48px 24px 120px;
   background: #ffffff;
-  width: 840px;
-  max-width: calc(100% - 40px);
-  min-height: 1056px; /* A4-ish ratio */
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.02);
-  border: 1px solid var(--app-border-editor);
-  border-radius: 2px;
+  width: 100%;
+  max-width: 750px;
+  min-height: calc(100vh - 96px);
+  box-shadow: none;
+  border: none;
+  border-radius: 0;
   box-sizing: border-box;
-  transition: width 0.3s ease;
 }
 
 @media (max-width: 900px) {
   .tiptap-editor-wrapper {
-    margin: 20px auto;
-    padding: 40px 32px;
-    width: 100%;
+    padding: 32px 20px 80px;
     max-width: 100%;
-    border-radius: 0;
-    border-left: none;
-    border-right: none;
   }
 }
 
 @media (max-width: 768px) {
   .tiptap-editor-wrapper {
-    margin: 12px auto;
-    padding: 24px 16px;
+    padding: 24px 16px 64px;
+    min-height: calc(100vh - 88px);
   }
 
   .tiptap-editor {
@@ -231,7 +225,7 @@
   margin: 2px 0;
 }
 
-/* ---------- 代码块 — 语雀严格还原 ---------- */
+/* ---------- 代码块 — 语雀：浅灰底 + 细分割线 ---------- */
 .tiptap-editor pre {
   position: relative;
   margin: 16px 0;
@@ -247,8 +241,8 @@
     monospace !important;
   font-size: 13px;
   line-height: 1.6;
-  border: 1px solid var(--app-border-editor);
-  background: transparent;
+  border: 1px solid var(--app-border-lighter);
+  background: #f6f8fa;
   color: var(--app-text);
   tab-size: 2;
 }
@@ -308,8 +302,8 @@
   margin: 16px 0;
   overflow: hidden;
   border-radius: 4px;
-  border: 1px solid var(--app-border-editor);
-  background: var(--app-bg-page);
+  border: 1px solid var(--app-border-lighter);
+  background: #f6f8fa;
 }
 
 /* Node view 已有内容，隐藏旧版语言标签 */
@@ -380,9 +374,9 @@
   color: var(--app-code-dark-text);
 }
 
-/* ---------- 行内代码 — 严格还原语雀 ne-code-content ---------- */
+/* ---------- 行内代码 — 语雀 ne-code-content ---------- */
 .tiptap-editor code:not(pre code):not(.shiki code):not(.shiki) {
-  background-color: var(--app-bg-inline-code);
+  background-color: rgba(27, 31, 35, 0.05);
   color: inherit;
   word-break: break-all;
   font-family:
@@ -402,11 +396,11 @@
     "Segoe UI";
   line-height: 1.1;
   display: inline;
-  border: 1px solid var(--app-border-editor);
-  border-radius: 4px;
-  margin: 1px 3px;
-  padding: 0px 4px;
-  font-size: inherit;
+  border: none;
+  border-radius: 3px;
+  margin: 0 2px;
+  padding: 0 4px;
+  font-size: 0.92em;
 }
 
 /* 行内代码内部的 mark 元素（高亮颜色）需要显示 */
@@ -436,7 +430,7 @@
   border-top: 1px solid var(--app-border-lighter);
 }
 
-/* ---------- 表格 — 语雀严格还原（有完整边框）---------- */
+/* ---------- 表格 — 语雀：细线分割 ---------- */
 .tiptap-editor .tableWrapper {
   overflow-x: auto;
 }
@@ -447,18 +441,18 @@
   margin: 16px 0;
   font-size: 14px;
   line-height: 1.6;
-  border: 1px solid var(--app-border-editor);
+  border: 1px solid var(--app-border-lighter);
 }
 
 .tiptap-editor table th,
 .tiptap-editor table td {
   padding: 8px 16px;
   text-align: left;
-  border: 1px solid var(--app-border-editor);
+  border: 1px solid var(--app-border-lighter);
 }
 
 .tiptap-editor table th {
-  background: var(--app-bg-muted);
+  background: #fafafa;
   font-weight: 600;
   color: var(--app-text);
 }
@@ -595,7 +589,7 @@
   padding: 12px 16px;
   margin: 16px 0;
   position: relative;
-  border: 1px solid rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--app-border-lighter);
 }
 
 .highlight-block-view .highlight-block-color-bar {
@@ -608,9 +602,9 @@
   gap: 4px;
   padding: 4px 8px;
   background: #ffffff;
-  border: 1px solid var(--app-border-light, #e8e8e8);
+  border: 1px solid var(--app-border-lighter);
   border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: none;
   z-index: 10;
 }
 

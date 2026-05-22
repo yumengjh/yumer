@@ -1,189 +1,151 @@
-'use client';
+"use client";
 
-import { useState, useMemo } from 'react';
+import { useMemo } from "react";
+import Link from "next/link";
 import { encodeDocId } from "@/lib/doc-slug";
+import type { DocItem, WorkspaceInfo, UserInfo } from "./page";
 
 const DOC_PATH = "/blog";
-import { DocItem, WorkspaceInfo, UserInfo } from './page';
+const DEFAULT_AVATAR =
+  "https://gw.alipayobjects.com/zos/rmsportal/BiazfanxmamNRoxxVxka.png";
 
-interface TreeDocItem extends DocItem {
-  children: TreeDocItem[];
-}
-
-function buildTree(items: DocItem[]): TreeDocItem[] {
-  const map = new Map<string, TreeDocItem>();
-  const roots: TreeDocItem[] = [];
-
-  // Sort items to maintain some order, e.g., by title or updatedAt
-  const sortedItems = [...items].sort((a, b) => a.title.localeCompare(b.title));
-
-  sortedItems.forEach(item => {
-    map.set(item.docId, { ...item, children: [] });
-  });
-
-  sortedItems.forEach(item => {
-    const node = map.get(item.docId)!;
-    if (item.parentId && map.has(item.parentId)) {
-      map.get(item.parentId)!.children.push(node);
-    } else {
-      roots.push(node);
-    }
-  });
-
-  return roots;
-}
-
-function formatDate(iso: string): string {
+function formatPostDate(iso: string): string {
   const date = new Date(iso);
   const now = new Date();
-  
-  const month = (date.getMonth() + 1).toString().padStart(2, '0');
-  const day = date.getDate().toString().padStart(2, '0');
-  const hours = date.getHours().toString().padStart(2, '0');
-  const minutes = date.getMinutes().toString().padStart(2, '0');
+  const y = date.getFullYear();
+  const m = date.getMonth() + 1;
+  const d = date.getDate();
 
-  if (date.getFullYear() === now.getFullYear()) {
-    return `${month}-${day} ${hours}:${minutes}`;
+  if (y === now.getFullYear()) {
+    return `${m} 月 ${d} 日`;
   }
-  return `${date.getFullYear()}-${month}-${day} ${hours}:${minutes}`;
+  return `${y} 年 ${m} 月 ${d} 日`;
 }
 
-const ChevronIcon = ({ expanded }: { expanded: boolean }) => (
-  <svg 
-    width="12" 
-    height="12" 
-    viewBox="0 0 24 24" 
-    fill="none" 
-    stroke="currentColor" 
-    strokeWidth="2.5" 
-    strokeLinecap="round" 
-    strokeLinejoin="round"
-    style={{ 
-      transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
-      transition: 'transform 0.2s ease',
-      color: 'var(--app-text-muted)',
-      marginRight: '4px'
-    }}
-  >
-    <polyline points="9 18 15 12 9 6" />
-  </svg>
-);
+function formatMonthLabel(iso: string): string {
+  const date = new Date(iso);
+  const now = new Date();
+  const y = date.getFullYear();
+  const m = date.getMonth() + 1;
+  if (y === now.getFullYear()) return `${m} 月`;
+  return `${y} 年 ${m} 月`;
+}
 
-const DocIcon = ({ icon }: { icon?: string }) => (
-  <span className="tree-item-icon">{icon || '📄'}</span>
-);
-
-function TreeItem({ node, depth = 0 }: { node: TreeDocItem, depth?: number }) {
-  const [expanded, setExpanded] = useState(true);
-  const hasChildren = node.children && node.children.length > 0;
-
-  const handleToggle = (e: React.MouseEvent) => {
-    if (hasChildren) {
-      e.preventDefault();
-      e.stopPropagation();
-      setExpanded(!expanded);
-    }
-  };
-
-  return (
-    <div className="tree-node">
-      <a 
-        href={`${DOC_PATH}/${encodeDocId(node.docId)}`} 
-        className="tree-item-row" 
-        style={{ paddingLeft: `${depth * 24}px`, textDecoration: 'none', color: 'inherit' }}
-      >
-        <div className="tree-item-main">
-          <div 
-            className="tree-item-expander" 
-            onClick={handleToggle}
-          >
-            {hasChildren && <ChevronIcon expanded={expanded} />}
-          </div>
-          <div className="tree-item-link">
-            <DocIcon icon={node.icon} />
-            <span className="tree-item-title">{node.title || '无标题'}</span>
-          </div>
-        </div>
-        <div className="tree-item-spacer"></div>
-        <div className="tree-item-date">{formatDate(node.updatedAt)}</div>
-      </a>
-      {expanded && hasChildren && (
-        <div className="tree-children">
-          {node.children.map(child => (
-            <TreeItem key={child.docId} node={child} depth={depth + 1} />
-          ))}
-        </div>
-      )}
-    </div>
+function groupByMonth(docs: DocItem[]): { label: string; items: DocItem[] }[] {
+  const sorted = [...docs].sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
   );
+  const map = new Map<string, DocItem[]>();
+  for (const doc of sorted) {
+    const label = formatMonthLabel(doc.updatedAt);
+    if (!map.has(label)) map.set(label, []);
+    map.get(label)!.push(doc);
+  }
+  return Array.from(map.entries()).map(([label, items]) => ({ label, items }));
 }
 
-export default function PublicPageClient({ 
-  workspace, 
-  owner, 
-  docs 
-}: { 
-  workspace: WorkspaceInfo, 
-  owner: UserInfo | null, 
-  docs: DocItem[] 
+export default function PublicPageClient({
+  workspace,
+  owner,
+  docs,
+}: {
+  workspace: WorkspaceInfo;
+  owner: UserInfo | null;
+  docs: DocItem[];
 }) {
-  const tree = useMemo(() => buildTree(docs), [docs]);
+  const sections = useMemo(() => groupByMonth(docs), [docs]);
+  const authorName = owner?.displayName || owner?.username || null;
+  const avatarSrc = owner?.avatar?.trim() || DEFAULT_AVATAR;
 
   return (
-    <div className="public-container">
-      <header className="kb-header">
-        <div className="kb-header-top">
-          <div className="kb-icon-wrapper">
-            <span className="kb-icon">{workspace.icon || '📚'}</span>
-          </div>
-          <div className="kb-info">
-            <h1 className="kb-title">{workspace.name}</h1>
-            <div className="kb-meta">
-              {owner && (
-                <div className="kb-owner">
-                  <img 
-                    src={owner.avatar || 'https://gw.alipayobjects.com/zos/rmsportal/BiazfanxmamNRoxxVxka.png'} 
-                    alt={owner.displayName || owner.username} 
-                    className="kb-owner-avatar" 
-                  />
-                  <span className="kb-owner-name">{owner.displayName || owner.username}</span>
-                </div>
-              )}
-              {owner && <span className="kb-meta-divider">·</span>}
-              <div className="kb-stats">
-                <span className="kb-stat-item">
-                  <span className="kb-stat-value">{workspace.documentCount}</span>
-                  <span className="kb-stat-label">文档</span>
-                </span>
-              </div>
-            </div>
-          </div>
+    <div className="blog">
+      <header className="blog-hero">
+        <p className="blog-hero__eyebrow">知识库</p>
+        <h1 className="blog-hero__title">{workspace.name}</h1>
+        <div className="blog-hero__meta">
+          {owner ? (
+            <span className="blog-hero__author">
+              <img
+                src={avatarSrc}
+                alt={authorName || "作者"}
+                className="blog-hero__avatar"
+                width={22}
+                height={22}
+                onError={(e) => {
+                  const img = e.currentTarget;
+                  if (img.src !== DEFAULT_AVATAR) img.src = DEFAULT_AVATAR;
+                }}
+              />
+              {authorName ? <span>{authorName}</span> : null}
+            </span>
+          ) : null}
+          {owner ? (
+            <span className="blog-hero__dot" aria-hidden>
+              ·
+            </span>
+          ) : null}
+          {docs.length > 0 ? (
+            <span>{docs.length} 篇文章</span>
+          ) : (
+            <span>暂无文章</span>
+          )}
         </div>
-        
-        {workspace.description && (
-          <div className="kb-description-section">
-            <div className="kb-description-header">
-              <span className="kb-desc-emoji">👋</span>
-              <span className="kb-desc-title">欢迎来到知识库</span>
-            </div>
-            <p className="kb-description-text">
-              {workspace.description}
-            </p>
-          </div>
-        )}
       </header>
 
-      <main className="kb-content">
+      <main className="blog-main">
         {docs.length === 0 ? (
-          <div className="public-empty">暂无已发布的文档</div>
+          <p className="blog-empty">还没有发布任何文章</p>
         ) : (
-          <div className="doc-tree">
-            {tree.map(node => (
-              <TreeItem key={node.docId} node={node} />
-            ))}
-          </div>
+          sections.map((section) => (
+            <section key={section.label} className="blog-section">
+              <h2 className="blog-section__label">{section.label}</h2>
+              <ul className="blog-list">
+                {section.items.map((doc) => (
+                  <li key={doc.docId} className="blog-post">
+                    <Link
+                      href={`${DOC_PATH}/${encodeDocId(doc.docId)}`}
+                      className="blog-post__link"
+                    >
+                      <span className="blog-post__title">
+                        {doc.icon ? (
+                          <span className="blog-post__emoji" aria-hidden>
+                            {doc.icon}
+                          </span>
+                        ) : null}
+                        {doc.title || "无标题"}
+                      </span>
+                      <span className="blog-post__meta">
+                        <time dateTime={doc.updatedAt}>
+                          {formatPostDate(doc.updatedAt)}
+                        </time>
+                        {doc.publishedHead ? (
+                          <span className="blog-post__badge">已发布</span>
+                        ) : null}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))
         )}
       </main>
+
+      <footer className="blog-footer">
+        {(workspace.icon || workspace.description) && (
+          <div className="blog-footer__about">
+            {workspace.icon ? (
+              <span className="blog-footer__icon" aria-hidden>
+                {workspace.icon}
+              </span>
+            ) : null}
+            {workspace.description ? (
+              <p className="blog-footer__desc">{workspace.description}</p>
+            ) : null}
+          </div>
+        )}
+        <p className="blog-footer__credit">Powered by Yuediter</p>
+      </footer>
     </div>
   );
 }

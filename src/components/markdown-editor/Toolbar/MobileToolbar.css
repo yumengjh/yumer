@@ -9,9 +9,9 @@
   z-index: 99;           /* 比 DocumentHeader(100) 低一层 */
   display: flex;
   align-items: center;
-  background: var(--app-bg-page, #ffffff);
-  border-bottom: 1px solid var(--app-border, #e8e8e8);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+  background: #ffffff;
+  border-bottom: 1px solid var(--app-border-lighter, #e8e8e8);
+  box-shadow: none;
   padding: 0 4px;
   height: 44px;
 }

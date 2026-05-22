@@ -1,4 +1,3 @@
-import { encodeDocId } from "@/lib/doc-slug";
 import PublicPageClient from "./PublicPageClient";
 import "./style.css";
 
@@ -68,7 +67,13 @@ export default async function PublicDocsPage() {
   ]);
 
   if (!workspace) {
-    return <div className="public-empty">工作空间不存在或未公开</div>;
+    return (
+      <div className="public-page-wrapper">
+        <div className="blog">
+          <p className="public-empty">工作空间不存在或未公开</p>
+        </div>
+      </div>
+    );
   }
 
   const owner = await getUserInfo(workspace.ownerId);
