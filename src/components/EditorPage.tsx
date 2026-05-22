@@ -10,6 +10,8 @@ import {
   useDocument,
 } from "@/contexts/DocumentContext";
 import { SetupModal } from "@/components/SetupModal";
+import AppLoader from "@/components/AppLoader";
+import { shouldShowSetupModal } from "@/components/editorSetupState";
 import { DocumentHeader } from "@/components/DocumentHeader";
 import { useAutoSave } from "@/hooks/useAutoSave";
 import {
@@ -193,13 +195,13 @@ function createTurndownService(): TurndownService {
       const parseRow = (tr: Element): string[] =>
         Array.from(tr.querySelectorAll("th, td")).map(cellText);
 
-      const isHeader = (tr: Element, idx: number): boolean => {
+      const isHeader = (tr: Element): boolean => {
         if (tr.querySelector("th")) return true;
         const parent = tr.parentElement;
         return !!parent && parent.nodeName === "THEAD";
       };
 
-      const dataRows = rows.map((tr, i) => ({ cells: parseRow(tr), header: isHeader(tr, i) }));
+      const dataRows = rows.map((tr) => ({ cells: parseRow(tr), header: isHeader(tr) }));
 
       const maxCols = Math.max(...dataRows.map((r) => r.cells.length), 1);
       const pad = (arr: string[]): string[] => {
@@ -268,7 +270,7 @@ const DEFAULT_CONTENT: TiptapDoc = {
 
 
 function EditorContent() {
-  const { isAuthenticated: authed } = useAuth();
+  const { isAuthenticated: authed, loading: authLoading } = useAuth();
   const {
     currentDoc,
     currentDocVersion,
@@ -282,7 +284,6 @@ function EditorContent() {
   const [content, setContent] = useState<EditorContent>(DEFAULT_CONTENT);
   const [contentDirty, setContentDirty] = useState(false);
   const [activeTab, setActiveTab] = useState<OutputTab>("markdown");
-  const [setupOpen, setSetupOpen] = useState(false);
   const [loadingDoc, setLoadingDoc] = useState(false);
   const [outputModalOpen, setOutputModalOpen] = useState(false);
   const [showTOC, setShowTOC] = useState(false);
@@ -304,10 +305,6 @@ function EditorContent() {
   useEffect(() => {
     contentRef.current = content;
   }, [content]);
-
-  useEffect(() => {
-    setSetupOpen(!authed || !workspaceId);
-  }, [authed, workspaceId]);
 
   useEffect(() => {
     const docId = currentDoc?.docId;
@@ -423,7 +420,6 @@ function EditorContent() {
   const handleSetupComplete = useCallback(
     (wsId: string) => {
       setWorkspace(wsId);
-      setSetupOpen(false);
     },
     [setWorkspace],
   );
@@ -438,6 +434,21 @@ function EditorContent() {
   }, [activeTab, content]);
   const outputContent = activeTab === "html" ? previewHtml : activeTab === "json" ? jsonContent : markdown;
   const copyLabel = activeTab === "html" ? "复制 HTML" : activeTab === "json" ? "复制 JSON" : "复制 Markdown";
+
+  const setupOpen = shouldShowSetupModal({
+    authLoading,
+    isAuthenticated: authed,
+    workspaceId,
+  });
+
+  if (authLoading) {
+    return (
+      <AppLoader
+        label="正在恢复登录状态…"
+        words={["检查登录", "恢复账号", "读取令牌", "准备工作区", "检查登录"]}
+      />
+    );
+  }
 
   return (
     <>

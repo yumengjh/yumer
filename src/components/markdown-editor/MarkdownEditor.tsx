@@ -43,6 +43,7 @@ import { EditorContextProvider } from "./EditorContext";
 import Toolbar from "./Toolbar";
 import BlockToolbar from "./BlockToolbar";
 import TableOfContents from "./TableOfContents";
+import AppLoader from "@/components/AppLoader";
 import {
   BLOCK_IDENTITY_PATCH_META,
   patchEditorBlockIdentityFromDoc,
@@ -91,18 +92,11 @@ export interface MarkdownEditorProps {
 }
 
 function EditorSkeleton() {
-  return (
-    <div className="skeleton-container" style={{ margin: 0, boxShadow: "none", width: "100%" }}>
-      <div className="skeleton-item skeleton-title" />
-      <div className="skeleton-item skeleton-text" />
-      <div className="skeleton-item skeleton-text-mid" />
-      <div className="skeleton-item skeleton-text" />
-      <div className="skeleton-item skeleton-text-short" />
-      <div className="skeleton-item skeleton-text" style={{ marginTop: 40 }} />
-      <div className="skeleton-item skeleton-text-mid" />
-      <div className="skeleton-item skeleton-text" />
-    </div>
-  );
+  return <AppLoader
+    variant="inline"
+    label="正在加载文档…"
+    words={["读取文档", "同步内容", "加载块数据", "渲染文档", "读取文档"]}
+  />;
 }
 
 const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(function MarkdownEditor({
@@ -354,11 +348,12 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
   if (!editor || !shikiReady) {
     return (
       <div className="tiptap-shell" style={style}>
-        <div className="tiptap-card" style={{ position: "relative", minHeight }}>
-          <div className="editor-init-mask">
-            <div className="init-loader" />
-            <div className="init-text">正在初始化编辑器与高亮引擎...</div>
-          </div>
+        <div className="tiptap-card" style={{ minHeight }}>
+          <AppLoader
+            variant="inline"
+            label="正在初始化编辑器…"
+            words={["初始化编辑器", "加载高亮", "准备工具栏", "渲染编辑区", "初始化编辑器"]}
+          />
         </div>
       </div>
     );
