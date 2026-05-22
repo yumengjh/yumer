@@ -1,20 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TiptapDoc } from "@/services/tiptap-converter";
 import { postSyncBatch } from "@/services/sync/api";
-import {
-  applyCreateAck,
-  deriveSyncEntries,
-  normalizeEditorDoc,
-} from "@/services/sync/engine";
+import { applyCreateAck } from "@/services/sync/engine";
 import {
   clearPendingCommit,
   createInitialSyncState,
-  enqueueChange,
   markBatchInflight,
   markPendingCommit,
   resolveBatchFailure,
   resolveBatchSuccess,
 } from "@/services/sync/reducer";
+import { advanceSyncSnapshot } from "@/services/sync/snapshot";
 import type { SyncReducerState } from "@/services/sync/types";
 
 type SyncSource = "autosync" | "manual-save";
@@ -42,41 +38,49 @@ export function useDocumentSync({
   const stateRef = useRef<SyncReducerState | null>(null);
   const snapshotRef = useRef<TiptapDoc | null>(null);
 
-  useEffect(() => {
-    stateRef.current = syncState;
-  }, [syncState]);
+  const replaceSyncState = useCallback((next: SyncReducerState | null) => {
+    stateRef.current = next;
+    setSyncState(next);
+    return next;
+  }, []);
+
+  const updateSyncState = useCallback(
+    (updater: (current: SyncReducerState | null) => SyncReducerState | null) => {
+      return replaceSyncState(updater(stateRef.current));
+    },
+    [replaceSyncState],
+  );
+
+  const captureContentSnapshot = useCallback(
+    (nextContent: TiptapDoc | null): SyncReducerState | null => {
+      const current = stateRef.current;
+      if (!current || !nextContent) return current;
+
+      const advanced = advanceSyncSnapshot(current, snapshotRef.current, nextContent);
+      snapshotRef.current = advanced.snapshot;
+      if (advanced.state !== current) {
+        replaceSyncState(advanced.state);
+      }
+      return advanced.state;
+    },
+    [replaceSyncState],
+  );
 
   useEffect(() => {
     if (!docId || !rootBlockId || baseVersion == null) {
-      setSyncState(null);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync state must reset when the document binding changes
+      replaceSyncState(null);
       snapshotRef.current = null;
       return;
     }
 
-    setSyncState(createInitialSyncState(docId, rootBlockId, baseVersion));
+    replaceSyncState(createInitialSyncState(docId, rootBlockId, baseVersion));
     snapshotRef.current = null;
-  }, [docId, rootBlockId, baseVersion]);
+  }, [baseVersion, docId, replaceSyncState, rootBlockId]);
 
   useEffect(() => {
-    if (!syncState || !content) return;
-    const normalized = normalizeEditorDoc(content);
-    if (!snapshotRef.current) {
-      snapshotRef.current = normalized;
-      return;
-    }
-    const entries = deriveSyncEntries(snapshotRef.current, normalized);
-    if (entries.length > 0) {
-      setSyncState((current) => {
-        if (!current) return current;
-        let next = current;
-        for (const entry of entries) {
-          next = enqueueChange(next, entry);
-        }
-        return next;
-      });
-    }
-    snapshotRef.current = normalized;
-  }, [content, syncState?.docId]);
+    captureContentSnapshot(content);
+  }, [captureContentSnapshot, content]);
 
   const flush = useCallback(
     async (source: SyncSource = "autosync") => {
@@ -90,8 +94,8 @@ export function useDocumentSync({
         .filter(Boolean);
 
       const clientBatchId = createBatchId();
-      setSyncState((prev) =>
-        prev ? markBatchInflight(prev, clientBatchId, operations.map((op) => op.clientId), source === "manual-save") : prev,
+      replaceSyncState(
+        markBatchInflight(current, clientBatchId, operations.map((op) => op.clientId), source === "manual-save"),
       );
 
       try {
@@ -105,13 +109,13 @@ export function useDocumentSync({
         });
 
         if (response.needsReload) {
-          setSyncState((prev) =>
+          updateSyncState((prev) =>
             prev ? resolveBatchFailure(prev, clientBatchId, "检测到版本冲突，请刷新后重试", true) : prev,
           );
           return;
         }
 
-        setSyncState((prev) =>
+        updateSyncState((prev) =>
           prev ? resolveBatchSuccess(prev, clientBatchId, response.results, response.serverHead) : prev,
         );
 
@@ -119,25 +123,30 @@ export function useDocumentSync({
           .filter((result) => result.success && result.clientId && result.blockId)
           .map((result) => ({ clientId: result.clientId!, blockId: result.blockId! }));
 
-        if (snapshotRef.current && createMappings.length > 0) {
-          const patched = applyCreateAck(snapshotRef.current, createMappings);
+        const currentSnapshot = snapshotRef.current;
+        if (currentSnapshot && createMappings.length > 0) {
+          const patched = applyCreateAck(currentSnapshot, createMappings);
           snapshotRef.current = patched;
-          if (onContentPatched && patched !== content) {
+          if (onContentPatched && patched !== currentSnapshot) {
             onContentPatched(patched);
           }
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : "同步失败";
-        setSyncState((prev) =>
+        updateSyncState((prev) =>
           prev ? resolveBatchFailure(prev, clientBatchId, message, false) : prev,
         );
       }
     },
-    [content, onContentPatched],
+    [onContentPatched, replaceSyncState, updateSyncState],
   );
 
-  const flushAndCommitBarrier = useCallback(async (): Promise<boolean> => {
-    setSyncState((prev) => (prev ? markPendingCommit(prev) : prev));
+  const flushAndCommitBarrier = useCallback(async (latestContent?: TiptapDoc | null): Promise<boolean> => {
+    if (latestContent) {
+      captureContentSnapshot(latestContent);
+    }
+
+    updateSyncState((prev) => (prev ? markPendingCommit(prev) : prev));
     try {
       await flush("manual-save");
       let current = stateRef.current;
@@ -158,9 +167,9 @@ export function useDocumentSync({
       }
       return true;
     } finally {
-      setSyncState((prev) => (prev ? clearPendingCommit(prev) : prev));
+      updateSyncState((prev) => (prev ? clearPendingCommit(prev) : prev));
     }
-  }, [flush]);
+  }, [captureContentSnapshot, flush, updateSyncState]);
 
   const uiSaveStatus = useMemo(() => {
     if (!syncState) return "idle" as const;

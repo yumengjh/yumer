@@ -389,7 +389,13 @@ function EditorContent() {
       if (!syncEngineEnabled || typeof content === "string") {
         await saveLegacyContent(content);
       } else {
-        const ok = await sync.flushAndCommitBarrier();
+        const latestEditorContent = editorRef.current?.getJSON() as TiptapDoc | undefined;
+        if (latestEditorContent?.type === "doc") {
+          setContent(latestEditorContent);
+        }
+        const ok = await sync.flushAndCommitBarrier(
+          latestEditorContent?.type === "doc" ? latestEditorContent : tiptapContent,
+        );
         if (!ok) {
           setSaveStatus("error");
           return;
@@ -415,6 +421,7 @@ function EditorContent() {
     syncEngineEnabled,
     saveLegacyContent,
     loadContent,
+    tiptapContent,
   ]);
 
   const handleSetupComplete = useCallback(

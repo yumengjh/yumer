@@ -30,6 +30,7 @@ export interface SyncEntry {
   payload?: Record<string, unknown>;
   plainText?: string;
   sortKey?: string;
+  revision?: number;
 }
 
 export interface SyncReducerState {
@@ -42,6 +43,7 @@ export interface SyncReducerState {
   dirtyOrder: string[];
   inflightBatchId: string | null;
   inflightEntryIds: string[];
+  inflightEntryRevisions: Record<string, number>;
   pendingCommit: boolean;
   lastError: string | null;
 }

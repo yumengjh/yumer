@@ -22,6 +22,7 @@ export function createInitialSyncState(
     dirtyOrder: [],
     inflightBatchId: null,
     inflightEntryIds: [],
+    inflightEntryRevisions: {},
     pendingCommit: false,
     lastError: null,
   };
@@ -40,7 +41,16 @@ export function enqueueChange(state: SyncReducerState, incoming: SyncEntry): Syn
   }
 
   if (current?.opType === "create" && incoming.opType === "delete") {
-    const { [incoming.clientId]: _, ...rest } = state.entries;
+    if (state.inflightEntryIds.includes(incoming.clientId)) {
+      return upsertEntry(state, {
+        clientId: incoming.clientId,
+        blockId: incoming.blockId ?? current.blockId,
+        opType: "delete",
+      });
+    }
+
+    const rest = { ...state.entries };
+    delete rest[incoming.clientId];
     return {
       ...state,
       localRevision: state.localRevision + 1,
@@ -75,14 +85,18 @@ export function enqueueChange(state: SyncReducerState, incoming: SyncEntry): Syn
 }
 
 function upsertEntry(state: SyncReducerState, entry: SyncEntry): SyncReducerState {
+  const nextRevision = state.localRevision + 1;
   return {
     ...state,
-    localRevision: state.localRevision + 1,
+    localRevision: nextRevision,
     syncState: "dirty",
     lastError: null,
     entries: {
       ...state.entries,
-      [entry.clientId]: entry,
+      [entry.clientId]: {
+        ...entry,
+        revision: nextRevision,
+      },
     },
     dirtyOrder: state.dirtyOrder.includes(entry.clientId)
       ? state.dirtyOrder
@@ -96,13 +110,68 @@ export function markBatchInflight(
   inflightEntryIds: string[],
   pendingCommit = false,
 ): SyncReducerState {
+  const inflightEntryRevisions: Record<string, number> = {};
+  for (const id of inflightEntryIds) {
+    const entry = state.entries[id];
+    if (entry?.revision != null) {
+      inflightEntryRevisions[id] = entry.revision;
+    }
+  }
+
   return {
     ...state,
     inflightBatchId: batchId,
     inflightEntryIds,
+    inflightEntryRevisions,
     syncState: "flushing",
     pendingCommit: state.pendingCommit || pendingCommit,
     lastError: null,
+  };
+}
+
+function getAckedClientId(
+  result: SyncBatchResult,
+  byIndex: SyncEntry | undefined,
+  inflightEntries: SyncEntry[],
+): string | null {
+  if (result.clientId) return result.clientId;
+
+  if (byIndex && (!result.blockId || byIndex.blockId === result.blockId)) {
+    return byIndex.clientId;
+  }
+
+  if (result.blockId) {
+    const matched = inflightEntries.find((entry) => entry.blockId === result.blockId);
+    if (matched) return matched.clientId;
+  }
+
+  return null;
+}
+
+function withServerBlockId(entry: SyncEntry, blockId: string): SyncEntry {
+  const payload = entry.payload
+    ? {
+        ...entry.payload,
+        attrs: {
+          ...((entry.payload.attrs as Record<string, unknown> | undefined) ?? {}),
+          blockId,
+          "data-block-id": blockId,
+        },
+      }
+    : entry.payload;
+
+  if (entry.opType === "delete") {
+    return {
+      ...entry,
+      blockId,
+    };
+  }
+
+  return {
+    ...entry,
+    blockId,
+    opType: "update",
+    payload,
   };
 }
 
@@ -121,7 +190,9 @@ export function resolveBatchSuccess(
 
   if (results.length === 0) {
     for (const entry of inflightEntries) {
-      delete nextEntries[entry.clientId];
+      if (nextEntries[entry.clientId]?.revision === state.inflightEntryRevisions[entry.clientId]) {
+        delete nextEntries[entry.clientId];
+      }
     }
   }
 
@@ -131,23 +202,20 @@ export function resolveBatchSuccess(
     const shouldTreatAsSuccess = result.success || isDeleteNotFound(byIndex, result);
     if (!shouldTreatAsSuccess) continue;
 
-    if (result.clientId) {
-      delete nextEntries[result.clientId];
+    const clientId = getAckedClientId(result, byIndex, inflightEntries);
+    if (!clientId) continue;
+
+    const currentEntry = nextEntries[clientId];
+    if (!currentEntry) continue;
+
+    const inflightRevision = state.inflightEntryRevisions[clientId];
+    if (currentEntry.revision === inflightRevision) {
+      delete nextEntries[clientId];
       continue;
     }
 
-    if (byIndex) {
-      if (!result.blockId || byIndex.blockId === result.blockId) {
-        delete nextEntries[byIndex.clientId];
-        continue;
-      }
-    }
-
-    if (result.blockId) {
-      const matched = inflightEntries.find((entry) => entry.blockId === result.blockId);
-      if (matched) {
-        delete nextEntries[matched.clientId];
-      }
+    if (result.operation === "create" && result.blockId) {
+      nextEntries[clientId] = withServerBlockId(currentEntry, result.blockId);
     }
   }
 
@@ -158,6 +226,7 @@ export function resolveBatchSuccess(
     dirtyOrder: nextDirty,
     inflightBatchId: null,
     inflightEntryIds: [],
+    inflightEntryRevisions: {},
     baseVersion: typeof serverHead === "number" ? serverHead : state.baseVersion,
     syncState: nextDirty.length > 0 ? "dirty" : "idle",
     lastError: null,
@@ -175,6 +244,7 @@ export function resolveBatchFailure(
     ...state,
     inflightBatchId: null,
     inflightEntryIds: [],
+    inflightEntryRevisions: {},
     syncState: conflicted ? "conflicted" : "error",
     lastError: error,
   };

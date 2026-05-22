@@ -137,4 +137,108 @@ describe("sync reducer", () => {
     expect(state.dirtyOrder).toEqual([]);
     expect(state.syncState).toBe("idle");
   });
+
+  it("keeps edits made to an existing block while an older update is inflight", () => {
+    let state = createInitialSyncState("doc_1", "root_1", 3);
+    state = enqueueChange(state, {
+      clientId: "client_fast",
+      blockId: "block_fast",
+      opType: "update",
+      payload: { type: "paragraph", content: [{ type: "text", text: "old queued text" }] },
+    });
+    state = markBatchInflight(state, "batch_fast_1", ["client_fast"], false);
+
+    state = enqueueChange(state, {
+      clientId: "client_fast",
+      blockId: "block_fast",
+      opType: "update",
+      payload: { type: "paragraph", content: [{ type: "text", text: "new typed text" }] },
+    });
+
+    state = resolveBatchSuccess(state, "batch_fast_1", [
+      {
+        operation: "update",
+        success: true,
+        blockId: "block_fast",
+      },
+    ]);
+
+    expect(state.dirtyOrder).toEqual(["client_fast"]);
+    expect(state.syncState).toBe("dirty");
+    expect((state.entries.client_fast.payload as { content?: Array<{ text?: string }> }).content?.[0]?.text).toBe(
+      "new typed text",
+    );
+  });
+
+  it("turns edits made to a newly created block while create is inflight into a follow-up update", () => {
+    let state = createInitialSyncState("doc_1", "root_1", 3);
+    state = enqueueChange(state, {
+      clientId: "client_new",
+      blockId: null,
+      opType: "create",
+      blockType: "paragraph",
+      payload: { type: "paragraph", attrs: { clientId: "client_new" } },
+    });
+    state = markBatchInflight(state, "batch_create_1", ["client_new"], false);
+
+    state = enqueueChange(state, {
+      clientId: "client_new",
+      blockId: null,
+      opType: "update",
+      payload: {
+        type: "paragraph",
+        attrs: { clientId: "client_new" },
+        content: [{ type: "text", text: "typed before create ack" }],
+      },
+    });
+
+    state = resolveBatchSuccess(state, "batch_create_1", [
+      {
+        operation: "create",
+        success: true,
+        clientId: "client_new",
+        blockId: "server_block_new",
+      },
+    ]);
+
+    expect(state.dirtyOrder).toEqual(["client_new"]);
+    expect(state.syncState).toBe("dirty");
+    expect(state.entries.client_new.opType).toBe("update");
+    expect(state.entries.client_new.blockId).toBe("server_block_new");
+    expect((state.entries.client_new.payload as { content?: Array<{ text?: string }> }).content?.[0]?.text).toBe(
+      "typed before create ack",
+    );
+  });
+
+  it("turns a delete made to a newly created block while create is inflight into a follow-up delete", () => {
+    let state = createInitialSyncState("doc_1", "root_1", 3);
+    state = enqueueChange(state, {
+      clientId: "client_deleted_new",
+      blockId: null,
+      opType: "create",
+      blockType: "paragraph",
+      payload: { type: "paragraph", attrs: { clientId: "client_deleted_new" } },
+    });
+    state = markBatchInflight(state, "batch_create_delete_1", ["client_deleted_new"], false);
+
+    state = enqueueChange(state, {
+      clientId: "client_deleted_new",
+      blockId: null,
+      opType: "delete",
+    });
+
+    state = resolveBatchSuccess(state, "batch_create_delete_1", [
+      {
+        operation: "create",
+        success: true,
+        clientId: "client_deleted_new",
+        blockId: "server_block_deleted_new",
+      },
+    ]);
+
+    expect(state.dirtyOrder).toEqual(["client_deleted_new"]);
+    expect(state.syncState).toBe("dirty");
+    expect(state.entries.client_deleted_new.opType).toBe("delete");
+    expect(state.entries.client_deleted_new.blockId).toBe("server_block_deleted_new");
+  });
 });
