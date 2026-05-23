@@ -20,19 +20,23 @@ import {
 
 const WORKSPACE_KEY = "currentWorkspaceId";
 
+export type SaveStatus = "idle" | "loaded" | "dirty" | "flushing" | "draft-synced" | "saved" | "error";
+
 interface DocumentContextValue {
   workspaceId: string | null;
   currentDoc: Document | null;
   documents: Document[];
-  saveStatus: "idle" | "dirty" | "flushing" | "saved" | "error";
+  saveStatus: SaveStatus;
   lastSavedAt: Date | null;
+  hasUnsavedChanges: boolean;
   currentDocVersion: number | null;
   setWorkspace: (id: string) => void;
   clearWorkspace: () => void;
   selectDoc: (docId: string) => Promise<void>;
   loadContent: (docId: string) => Promise<{ content: EditorContent; docVer: number }>;
-  markSavedAt: (at: Date) => void;
-  setSaveStatus: (status: "idle" | "dirty" | "flushing" | "saved" | "error") => void;
+  markSavedAt: (at: Date | null) => void;
+  setSaveStatus: (status: SaveStatus) => void;
+  setHasUnsavedChanges: (value: boolean) => void;
   createDoc: (data: { title: string; icon?: string; cover?: string; visibility?: string; category?: string }) => Promise<Document>;
   updateDoc: (docId: string, data: { title?: string; icon?: string; cover?: string; visibility?: string; tags?: string[]; category?: string; status?: string }) => Promise<void>;
   deleteDoc: (docId: string) => Promise<void>;
@@ -49,16 +53,21 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
   const [currentDoc, setCurrentDoc] = useState<Document | null>(null);
   const [documents, setDocuments] = useState<Document[]>([]);
-  const [saveStatus, setSaveStatus] = useState<
-    "idle" | "dirty" | "flushing" | "saved" | "error"
-  >("idle");
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [currentDocVersion, setCurrentDocVersion] = useState<number | null>(null);
 
   // 用 ref 保持 currentDoc 最新，避免 saveDoc 依赖 currentDoc 导致引用变化
   const currentDocRef = useRef<Document | null>(null);
   // 缓存 blockId 列表
   const blockIdsRef = useRef<string[]>([]);
+
+  const resetSaveState = useCallback((status: SaveStatus = "idle") => {
+    setSaveStatus(status);
+    setLastSavedAt(null);
+    setHasUnsavedChanges(false);
+  }, []);
 
   const setWorkspace = useCallback((id: string) => {
     setWorkspaceId(id);
@@ -67,7 +76,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setCurrentDocVersion(null);
     currentDocRef.current = null;
     setDocuments([]);
-  }, []);
+    resetSaveState();
+  }, [resetSaveState]);
 
   const clearWorkspace = useCallback(() => {
     setWorkspaceId(null);
@@ -76,7 +86,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setCurrentDocVersion(null);
     currentDocRef.current = null;
     setDocuments([]);
-  }, []);
+    resetSaveState();
+  }, [resetSaveState]);
 
   const refreshDocs = useCallback(async () => {
     if (!workspaceId) return;
@@ -102,7 +113,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setCurrentDoc(doc);
     setCurrentDocVersion(null);
     currentDocRef.current = doc;
-  }, []);
+    resetSaveState("loaded");
+  }, [resetSaveState]);
 
   // loadContent：加载指定文档内容（自动检测格式）
   const loadContent = useCallback(async (docId: string): Promise<{ content: EditorContent; docVer: number }> => {
@@ -120,9 +132,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setCurrentDocVersion(doc.head);
       currentDocRef.current = doc;
       setDocuments((prev) => [doc, ...prev]);
+      resetSaveState("loaded");
       return doc;
     },
-    [workspaceId],
+    [resetSaveState, workspaceId],
   );
 
   const updateDoc = useCallback(
@@ -145,10 +158,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         setCurrentDoc(null);
         setCurrentDocVersion(null);
         currentDocRef.current = null;
+        resetSaveState();
       }
       setDocuments((prev) => prev.filter((d) => d.docId !== docId));
     },
-    [],
+    [resetSaveState],
   );
 
   const publishDoc = useCallback(
@@ -176,6 +190,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         documents,
         saveStatus,
         lastSavedAt,
+        hasUnsavedChanges,
         currentDocVersion,
         setWorkspace,
         clearWorkspace,
@@ -183,6 +198,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         loadContent,
         markSavedAt: setLastSavedAt,
         setSaveStatus,
+        setHasUnsavedChanges,
         createDoc,
         updateDoc,
         deleteDoc,

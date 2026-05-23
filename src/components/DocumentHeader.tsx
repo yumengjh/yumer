@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, type ReactNode } from "react";
 import { Button, Spin, message, Tooltip, Dropdown } from "antd";
 import type { MenuProps } from "antd";
 import {
@@ -16,7 +16,7 @@ import {
   MoreOutlined,
   UserOutlined,
 } from "@ant-design/icons";
-import { useDocument } from "../contexts/DocumentContext";
+import { useDocument, type SaveStatus } from "../contexts/DocumentContext";
 import { VersionDiffModal } from "./VersionDiffModal";
 import { DocumentListModal } from "./DocumentListModal";
 import { CreateDocumentModal } from "./CreateDocumentModal";
@@ -27,15 +27,18 @@ import "./DocumentHeader.css";
 
 interface DocumentHeaderProps {
   onSave: () => void;
+  saving?: boolean;
   showTOC: boolean;
   onToggleTOC: (open: boolean) => void;
 }
+
+type VisibleSaveStatus = Exclude<SaveStatus, "idle">;
 
 function SyncStatus({
   status,
   lastSavedAt,
 }: {
-  status: "dirty" | "flushing" | "saved" | "error";
+  status: VisibleSaveStatus;
   lastSavedAt: Date | null;
 }) {
   const timeLabel = lastSavedAt
@@ -45,16 +48,18 @@ function SyncStatus({
         .padStart(2, "0")}`
     : null;
 
-  const map = {
+  const map: Record<VisibleSaveStatus, { icon: ReactNode; text: string; mod: string }> = {
+    loaded: { icon: <CheckCircleOutlined />, text: "已加载最新版本", mod: "loaded" },
     dirty: { icon: <ExclamationCircleOutlined />, text: "未同步", mod: "dirty" },
     flushing: { icon: <Spin size="small" />, text: "同步中", mod: "flushing" },
+    "draft-synced": { icon: <CheckCircleOutlined />, text: "已同步至草稿", mod: "draft-synced" },
     saved: {
       icon: <CheckCircleOutlined />,
-      text: timeLabel ? `${timeLabel} 已保存` : "已保存",
+      text: timeLabel ? `${timeLabel} 已保存为最新版本` : "已保存为最新版本",
       mod: "saved",
     },
     error: { icon: <ExclamationCircleOutlined />, text: "保存失败", mod: "error" },
-  } as const;
+  };
 
   const item = map[status];
 
@@ -71,7 +76,7 @@ function SyncStatus({
   );
 }
 
-export function DocumentHeader({ onSave, showTOC, onToggleTOC }: DocumentHeaderProps) {
+export function DocumentHeader({ onSave, saving = false, showTOC, onToggleTOC }: DocumentHeaderProps) {
   const {
     currentDoc,
     saveStatus,
@@ -163,6 +168,8 @@ export function DocumentHeader({ onSave, showTOC, onToggleTOC }: DocumentHeaderP
       ]
     : undefined;
 
+  const visibleSaveStatus: VisibleSaveStatus | null = saveStatus === "idle" ? null : saveStatus;
+
   return (
     <header className="document-header">
       {/* 左侧：导航 + 工具；同步状态钉在最右，不挤占按钮 */}
@@ -226,9 +233,9 @@ export function DocumentHeader({ onSave, showTOC, onToggleTOC }: DocumentHeaderP
           </Dropdown>
         </div>
 
-        {currentDoc && saveStatus !== "idle" && (
+        {currentDoc && visibleSaveStatus && (
           <div className="header-start__live">
-            <SyncStatus status={saveStatus} lastSavedAt={lastSavedAt} />
+            <SyncStatus status={visibleSaveStatus} lastSavedAt={lastSavedAt} />
           </div>
         )}
       </div>
@@ -241,8 +248,9 @@ export function DocumentHeader({ onSave, showTOC, onToggleTOC }: DocumentHeaderP
               size="small"
               className="header-btn-save"
               icon={<SaveOutlined />}
+              loading={saving}
               onClick={onSave}
-              disabled={saveStatus === "flushing"}
+              disabled={saving || saveStatus === "flushing"}
             >
               保存
             </Button>
@@ -291,8 +299,9 @@ export function DocumentHeader({ onSave, showTOC, onToggleTOC }: DocumentHeaderP
             <Button
               size="small"
               icon={<SaveOutlined />}
+              loading={saving}
               onClick={onSave}
-              disabled={saveStatus === "flushing"}
+              disabled={saving || saveStatus === "flushing"}
               aria-label="保存"
             />
             <Button

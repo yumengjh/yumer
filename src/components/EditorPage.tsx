@@ -279,6 +279,9 @@ function EditorContent() {
     setWorkspace,
     setSaveStatus,
     markSavedAt,
+    hasUnsavedChanges,
+    setHasUnsavedChanges,
+    lastSavedAt,
   } =
     useDocument();
   const [content, setContent] = useState<EditorContent>(DEFAULT_CONTENT);
@@ -287,6 +290,7 @@ function EditorContent() {
   const [loadingDoc, setLoadingDoc] = useState(false);
   const [outputModalOpen, setOutputModalOpen] = useState(false);
   const [showTOC, setShowTOC] = useState(false);
+  const [manualSaving, setManualSaving] = useState(false);
   const syncEngineEnabled = process.env.NEXT_PUBLIC_SYNC_ENGINE_ENABLED === "true";
   const loadedDocIdRef = useRef<string | null>(null);
   const contentRef = useRef<EditorContent>(content);
@@ -311,6 +315,8 @@ function EditorContent() {
     if (!docId) {
       setContent(DEFAULT_CONTENT);
       setContentDirty(false);
+      setHasUnsavedChanges(false);
+      markSavedAt(null);
       setSaveStatus("idle");
       loadedDocIdRef.current = null;
       return;
@@ -324,7 +330,9 @@ function EditorContent() {
       .then((loaded) => {
         setContent(loaded.content || DEFAULT_CONTENT);
         setContentDirty(false);
-        setSaveStatus("saved");
+        setHasUnsavedChanges(false);
+        markSavedAt(null);
+        setSaveStatus("loaded");
       })
       .catch(() => {
         setContent(DEFAULT_CONTENT);
@@ -334,7 +342,7 @@ function EditorContent() {
       .finally(() => {
         setLoadingDoc(false);
       });
-  }, [currentDoc, loadContent]);
+  }, [currentDoc, loadContent, markSavedAt, setHasUnsavedChanges, setSaveStatus]);
 
   const saveLegacyContent = useCallback(async (nextContent: EditorContent) => {
     if (!currentDoc) return;
@@ -343,13 +351,17 @@ function EditorContent() {
       throw new Error("旧版自动保存只支持 HTML 文档；TipTap JSON 文档需要启用 NEXT_PUBLIC_SYNC_ENGINE_ENABLED=true");
     }
     setSaveStatus("flushing");
-    await saveDocumentContentV2(currentDoc.docId, nextContent, currentDoc.rootBlockId);
-    if (contentRef.current === nextContent) {
-      setContentDirty(false);
+    try {
+      await saveDocumentContentV2(currentDoc.docId, nextContent, currentDoc.rootBlockId);
+      if (contentRef.current === nextContent) {
+        setContentDirty(false);
+      }
+      setSaveStatus("draft-synced");
+    } catch (error) {
+      setSaveStatus("error");
+      throw error;
     }
-    setSaveStatus("saved");
-    markSavedAt(new Date());
-  }, [currentDoc, markSavedAt, setSaveStatus]);
+  }, [currentDoc, setSaveStatus]);
 
   useAutoSave(content, saveLegacyContent, {
     delay: 1500,
@@ -365,12 +377,24 @@ function EditorContent() {
   const handleEditorChange = useCallback((nextContent: EditorContent) => {
     setContent(nextContent);
     setContentDirty(true);
-  }, []);
+    if (loadingDoc) return;
+    if (currentDoc) {
+      setHasUnsavedChanges(true);
+      setSaveStatus("dirty");
+    }
+  }, [currentDoc, loadingDoc, setHasUnsavedChanges, setSaveStatus]);
 
   useEffect(() => {
     if (!syncEngineEnabled) return;
-    setSaveStatus(sync.uiSaveStatus);
-  }, [setSaveStatus, sync.uiSaveStatus, syncEngineEnabled]);
+    if (!currentDoc) return;
+
+    if (sync.uiSaveStatus === "dirty" || sync.uiSaveStatus === "flushing" || sync.uiSaveStatus === "error") {
+      setSaveStatus(sync.uiSaveStatus);
+      return;
+    }
+
+    setSaveStatus(hasUnsavedChanges ? "draft-synced" : lastSavedAt ? "saved" : "loaded");
+  }, [currentDoc, hasUnsavedChanges, lastSavedAt, setSaveStatus, sync.uiSaveStatus, syncEngineEnabled]);
 
   useEffect(() => {
     if (!syncEngineEnabled) return;
@@ -384,8 +408,10 @@ function EditorContent() {
   }, [content, loadingDoc, sync, sync.uiSaveStatus, syncEngineEnabled]);
 
   const handleManualSave = useCallback(async () => {
+    if (!currentDoc || manualSaving) return;
+
+    setManualSaving(true);
     try {
-      if (!currentDoc) return;
       if (!syncEngineEnabled || typeof content === "string") {
         await saveLegacyContent(content);
       } else {
@@ -406,23 +432,42 @@ function EditorContent() {
         const loaded = await loadContent(currentDoc.docId);
         setContent(loaded.content || DEFAULT_CONTENT);
       }
+      setContentDirty(false);
+      setHasUnsavedChanges(false);
       markSavedAt(new Date());
       setSaveStatus("saved");
     } catch (e) {
       console.error("手动保存失败:", e);
       setSaveStatus("error");
+      setHasUnsavedChanges(true);
+    } finally {
+      setManualSaving(false);
     }
   }, [
     sync,
     currentDoc,
     content,
+    manualSaving,
     markSavedAt,
+    setHasUnsavedChanges,
     setSaveStatus,
     syncEngineEnabled,
     saveLegacyContent,
     loadContent,
     tiptapContent,
   ]);
+
+  useEffect(() => {
+    if (!workspaceId || !currentDoc || !hasUnsavedChanges) return;
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [currentDoc, hasUnsavedChanges, workspaceId]);
 
   const handleSetupComplete = useCallback(
     (wsId: string) => {
@@ -465,6 +510,7 @@ function EditorContent() {
         <>
           <DocumentHeader
             onSave={handleManualSave}
+            saving={manualSaving}
             showTOC={showTOC}
             onToggleTOC={setShowTOC}
           />
