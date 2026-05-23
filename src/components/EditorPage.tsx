@@ -7,15 +7,14 @@ import TurndownService from "turndown";
 import { MarkdownEditor, MarkdownEditorRef } from "@/components/markdown-editor";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import {
-  DASH_EDIT_PATH,
   DASH_PATH,
   DocumentProvider,
   useDocument,
 } from "@/contexts/DocumentContext";
-import { decodeDocSlug } from "@/lib/doc-slug";
 import { SetupModal } from "@/components/SetupModal";
 import AppLoader from "@/components/AppLoader";
 import { shouldShowSetupModal } from "@/components/editorSetupState";
+import { resolveEditorRouteHydration } from "@/components/editorRouteHydration";
 import { DocumentHeader } from "@/components/DocumentHeader";
 import { useAutoSave } from "@/hooks/useAutoSave";
 import {
@@ -316,6 +315,7 @@ function EditorContent() {
   const syncEngineEnabled = process.env.NEXT_PUBLIC_SYNC_ENGINE_ENABLED === "true";
   const loadedDocIdRef = useRef<string | null>(null);
   const hydratingSlugRef = useRef<string | null>(null);
+  const lastPathnameRef = useRef<string | null>(null);
   const contentRef = useRef<EditorContent>(content);
   const editorRef = useRef<MarkdownEditorRef>(null);
   const tiptapContent = typeof content === "object" && content?.type === "doc"
@@ -366,37 +366,43 @@ function EditorContent() {
   }, [authed, workspaceId]);
 
   useEffect(() => {
-    if (!authed || authLoading || !workspaceId) return;
-    if (!pathname.startsWith(`${DASH_EDIT_PATH}/`)) return;
+    const action = resolveEditorRouteHydration({
+      authLoading,
+      isAuthenticated: authed,
+      workspaceId,
+      pathname,
+      currentDocSlug,
+      hydratingSlug: hydratingSlugRef.current,
+      lastPathname: lastPathnameRef.current,
+    });
+    lastPathnameRef.current = action.nextPathname;
 
-    const slug = pathname.slice(DASH_EDIT_PATH.length + 1);
-    if (!slug) {
-      router.replace(DASH_PATH);
-      return;
-    }
-    if (currentDocSlug === slug) {
+    if (action.type === "noop") return;
+
+    if (action.type === "settled") {
       hydratingSlugRef.current = null;
       return;
     }
-    if (hydratingSlugRef.current === slug) return;
 
-    let docId: string;
-    try {
-      docId = decodeDocSlug(slug);
-    } catch {
+    if (action.type === "redirect") {
+      router.replace(action.href);
+      return;
+    }
+
+    if (action.type === "invalid") {
       message.error("文档地址无效");
       router.replace(DASH_PATH);
       return;
     }
 
-    hydratingSlugRef.current = slug;
-    void selectDoc(docId)
+    hydratingSlugRef.current = action.slug;
+    void selectDoc(action.docId)
       .catch(() => {
         message.error("无法打开该文档");
         router.replace(DASH_PATH);
       })
       .finally(() => {
-        if (hydratingSlugRef.current === slug) {
+        if (hydratingSlugRef.current === action.slug) {
           hydratingSlugRef.current = null;
         }
       });
