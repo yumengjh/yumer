@@ -2,13 +2,18 @@
 
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { App } from "antd";
+import { usePathname, useRouter } from "next/navigation";
 import TurndownService from "turndown";
 import { MarkdownEditor, MarkdownEditorRef } from "@/components/markdown-editor";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import {
+  DASH_EDIT_PATH,
+  DASH_PATH,
   DocumentProvider,
+  getEditorPath,
   useDocument,
 } from "@/contexts/DocumentContext";
+import { decodeDocSlug } from "@/lib/doc-slug";
 import { SetupModal } from "@/components/SetupModal";
 import AppLoader from "@/components/AppLoader";
 import { shouldShowSetupModal } from "@/components/editorSetupState";
@@ -24,8 +29,6 @@ import { shouldEnableLegacyAutoSave } from "@/services/save-policy";
 import { generateHTML } from "@tiptap/core";
 import { serializationExtensions } from "@/services/tiptap-extensions";
 import type { TiptapDoc } from "@/services/tiptap-converter";
-
-// ─── Turndown 配置（保留原有逻辑） ───
 
 function createTurndownService(): TurndownService {
   const td = new TurndownService({
@@ -202,7 +205,6 @@ function createTurndownService(): TurndownService {
       };
 
       const dataRows = rows.map((tr) => ({ cells: parseRow(tr), header: isHeader(tr) }));
-
       const maxCols = Math.max(...dataRows.map((r) => r.cells.length), 1);
       const pad = (arr: string[]): string[] => {
         while (arr.length < maxCols) arr.push("");
@@ -216,7 +218,6 @@ function createTurndownService(): TurndownService {
       const headerCells = pad([...headerRow.cells]);
       const separator = headerCells.map(() => "---");
       const bodyLines = bodyRows.map((r) => pad([...r.cells]));
-
       const toLine = (cells: string[]) => `| ${cells.join(" | ")} |`;
       return `\n${[toLine(headerCells), toLine(separator), ...bodyLines.map(toLine)].join("\n")}\n`;
     },
@@ -242,8 +243,6 @@ function contentToHtml(content: EditorContent): string {
 
 type OutputTab = "html" | "markdown" | "json";
 
-// ─── 编辑器主内容区 ───
-
 const DEFAULT_CONTENT: TiptapDoc = {
   type: "doc",
   content: [
@@ -268,13 +267,17 @@ const DEFAULT_CONTENT: TiptapDoc = {
   ],
 };
 
-
 function EditorContent() {
   const { isAuthenticated: authed, loading: authLoading } = useAuth();
+  const router = useRouter();
+  const pathname = usePathname();
+  const { message } = App.useApp();
   const {
     currentDoc,
+    currentDocSlug,
     currentDocVersion,
     loadContent,
+    selectDoc,
     workspaceId,
     setWorkspace,
     setSaveStatus,
@@ -282,8 +285,8 @@ function EditorContent() {
     hasUnsavedChanges,
     setHasUnsavedChanges,
     lastSavedAt,
-  } =
-    useDocument();
+  } = useDocument();
+
   const [content, setContent] = useState<EditorContent>(DEFAULT_CONTENT);
   const [contentDirty, setContentDirty] = useState(false);
   const [activeTab, setActiveTab] = useState<OutputTab>("markdown");
@@ -293,11 +296,13 @@ function EditorContent() {
   const [manualSaving, setManualSaving] = useState(false);
   const syncEngineEnabled = process.env.NEXT_PUBLIC_SYNC_ENGINE_ENABLED === "true";
   const loadedDocIdRef = useRef<string | null>(null);
+  const hydratingSlugRef = useRef<string | null>(null);
   const contentRef = useRef<EditorContent>(content);
   const editorRef = useRef<MarkdownEditorRef>(null);
   const tiptapContent = typeof content === "object" && content?.type === "doc"
     ? (content as TiptapDoc)
     : null;
+
   const sync = useDocumentSync({
     docId: syncEngineEnabled ? currentDoc?.docId ?? null : null,
     rootBlockId: syncEngineEnabled ? currentDoc?.rootBlockId ?? null : null,
@@ -309,6 +314,43 @@ function EditorContent() {
   useEffect(() => {
     contentRef.current = content;
   }, [content]);
+
+  useEffect(() => {
+    if (!authed || authLoading || !workspaceId) return;
+    if (!pathname.startsWith(`${DASH_EDIT_PATH}/`)) return;
+
+    const slug = pathname.slice(DASH_EDIT_PATH.length + 1);
+    if (!slug) {
+      router.replace(DASH_PATH);
+      return;
+    }
+    if (currentDocSlug === slug) {
+      hydratingSlugRef.current = null;
+      return;
+    }
+    if (hydratingSlugRef.current === slug) return;
+
+    let docId: string;
+    try {
+      docId = decodeDocSlug(slug);
+    } catch {
+      message.error("文档地址无效");
+      router.replace(DASH_PATH);
+      return;
+    }
+
+    hydratingSlugRef.current = slug;
+    void selectDoc(docId)
+      .catch(() => {
+        message.error("无法打开该文档");
+        router.replace(DASH_PATH);
+      })
+      .finally(() => {
+        if (hydratingSlugRef.current === slug) {
+          hydratingSlugRef.current = null;
+        }
+      });
+  }, [authLoading, authed, currentDocSlug, message, pathname, router, selectDoc, workspaceId]);
 
   useEffect(() => {
     const docId = currentDoc?.docId;
@@ -472,8 +514,11 @@ function EditorContent() {
   const handleSetupComplete = useCallback(
     (wsId: string) => {
       setWorkspace(wsId);
+      if (pathname === "/") {
+        router.replace(DASH_PATH);
+      }
     },
-    [setWorkspace],
+    [pathname, router, setWorkspace],
   );
 
   const previewHtml = useMemo(() => contentToHtml(content), [content]);

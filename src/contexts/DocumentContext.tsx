@@ -4,8 +4,10 @@ import {
   useState,
   useCallback,
   useRef,
+  useMemo,
   type ReactNode,
 } from "react";
+import type { Route } from "next";
 import {
   createDocument as apiCreateDoc,
   listDocuments as apiListDocs,
@@ -17,14 +19,22 @@ import {
   type Document,
   type EditorContent,
 } from "../services/document";
+import { encodeDocId } from "../lib/doc-slug";
 
+export const DASH_PATH = "/dash";
+export const DASH_EDIT_PATH = `${DASH_PATH}/edit`;
 const WORKSPACE_KEY = "currentWorkspaceId";
 
 export type SaveStatus = "idle" | "loaded" | "dirty" | "flushing" | "draft-synced" | "saved" | "error";
 
+export function getEditorPath(docId?: string | null): Route {
+  return (docId ? `${DASH_EDIT_PATH}/${encodeDocId(docId)}` : DASH_PATH) as Route;
+}
+
 interface DocumentContextValue {
   workspaceId: string | null;
   currentDoc: Document | null;
+  currentDocSlug: string | null;
   documents: Document[];
   saveStatus: SaveStatus;
   lastSavedAt: Date | null;
@@ -47,6 +57,24 @@ interface DocumentContextValue {
 
 const DocumentContext = createContext<DocumentContextValue | null>(null);
 
+function belongsToWorkspace(doc: Document, workspaceId: string | null) {
+  return !workspaceId || doc.workspaceId === workspaceId;
+}
+
+function resetWindowPath(docId?: string | null) {
+  if (typeof window === "undefined") return;
+  const path = getEditorPath(docId);
+  if (window.location.pathname === path) return;
+  window.history.replaceState(null, "", path);
+}
+
+function pushWindowPath(docId?: string | null) {
+  if (typeof window === "undefined") return;
+  const path = getEditorPath(docId);
+  if (window.location.pathname === path) return;
+  window.history.pushState(null, "", path);
+}
+
 export function DocumentProvider({ children }: { children: ReactNode }) {
   const [workspaceId, setWorkspaceId] = useState<string | null>(
     () => localStorage.getItem(WORKSPACE_KEY),
@@ -58,9 +86,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [currentDocVersion, setCurrentDocVersion] = useState<number | null>(null);
 
-  // 用 ref 保持 currentDoc 最新，避免 saveDoc 依赖 currentDoc 导致引用变化
   const currentDocRef = useRef<Document | null>(null);
-  // 缓存 blockId 列表
   const blockIdsRef = useRef<string[]>([]);
 
   const resetSaveState = useCallback((status: SaveStatus = "idle") => {
@@ -68,6 +94,18 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setLastSavedAt(null);
     setHasUnsavedChanges(false);
   }, []);
+
+  const currentDocSlug = useMemo(
+    () => (currentDoc ? encodeDocId(currentDoc.docId) : null),
+    [currentDoc],
+  );
+
+  const setCurrentDocument = useCallback((doc: Document, status: SaveStatus = "loaded") => {
+    setCurrentDoc(doc);
+    setCurrentDocVersion(null);
+    currentDocRef.current = doc;
+    resetSaveState(status);
+  }, [resetSaveState]);
 
   const setWorkspace = useCallback((id: string) => {
     setWorkspaceId(id);
@@ -107,16 +145,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
   }, [workspaceId, clearWorkspace]);
 
-  // selectDoc：Header 调用，只设置 currentDoc，不加载内容
   const selectDoc = useCallback(async (docId: string) => {
     const doc = await getDocument(docId);
-    setCurrentDoc(doc);
-    setCurrentDocVersion(null);
-    currentDocRef.current = doc;
-    resetSaveState("loaded");
-  }, [resetSaveState]);
+    if (!belongsToWorkspace(doc, workspaceId)) {
+      throw new Error("文档不属于当前工作空间");
+    }
+    setCurrentDocument(doc);
+    pushWindowPath(doc.docId);
+  }, [setCurrentDocument, workspaceId]);
 
-  // loadContent：加载指定文档内容（自动检测格式）
   const loadContent = useCallback(async (docId: string): Promise<{ content: EditorContent; docVer: number }> => {
     const { content, blockIds, docVer } = await loadDocumentContentV2(docId);
     blockIdsRef.current = blockIds;
@@ -133,6 +170,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       currentDocRef.current = doc;
       setDocuments((prev) => [doc, ...prev]);
       resetSaveState("loaded");
+      pushWindowPath(doc.docId);
       return doc;
     },
     [resetSaveState, workspaceId],
@@ -147,6 +185,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setDocuments((prev) =>
         prev.map((d) => (d.docId === docId ? updated : d)),
       );
+      resetWindowPath(updated.docId);
     },
     [],
   );
@@ -159,6 +198,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         setCurrentDocVersion(null);
         currentDocRef.current = null;
         resetSaveState();
+        resetWindowPath();
       }
       setDocuments((prev) => prev.filter((d) => d.docId !== docId));
     },
@@ -174,6 +214,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setDocuments((prev) =>
         prev.map((d) => (d.docId === docId ? updated : d)),
       );
+      resetWindowPath(updated.docId);
     },
     [],
   );
@@ -187,6 +228,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       value={{
         workspaceId,
         currentDoc,
+        currentDocSlug,
         documents,
         saveStatus,
         lastSavedAt,
