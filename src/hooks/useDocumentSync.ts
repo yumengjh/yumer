@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TiptapDoc } from "@/services/tiptap-converter";
 import { postSyncBatch } from "@/services/sync/api";
+import { selectSyncBatchOperations } from "@/services/sync/batching";
 import { applyCreateAck } from "@/services/sync/engine";
 import {
   clearPendingCommit,
@@ -37,6 +38,7 @@ export function useDocumentSync({
   const [syncState, setSyncState] = useState<SyncReducerState | null>(null);
   const stateRef = useRef<SyncReducerState | null>(null);
   const snapshotRef = useRef<TiptapDoc | null>(null);
+  const flushRunningRef = useRef(false);
 
   const replaceSyncState = useCallback((next: SyncReducerState | null) => {
     stateRef.current = next;
@@ -84,58 +86,75 @@ export function useDocumentSync({
 
   const flush = useCallback(
     async (source: SyncSource = "autosync") => {
-      const current = stateRef.current;
-      if (!current) return;
-      if (current.inflightBatchId) return;
-      if (current.dirtyOrder.length === 0) return;
+      if (flushRunningRef.current) return;
 
-      const operations = current.dirtyOrder
-        .map((id) => current.entries[id])
-        .filter(Boolean);
+      const initial = stateRef.current;
+      if (!initial) return;
+      if (initial.inflightBatchId) return;
+      if (initial.dirtyOrder.length === 0) return;
 
-      const clientBatchId = createBatchId();
-      replaceSyncState(
-        markBatchInflight(current, clientBatchId, operations.map((op) => op.clientId), source === "manual-save"),
-      );
-
+      flushRunningRef.current = true;
       try {
-        const response = await postSyncBatch({
-          docId: current.docId,
-          rootBlockId: current.rootBlockId,
-          baseVersion: current.baseVersion,
-          clientBatchId,
-          source,
-          operations,
-        });
+        while (true) {
+          const current = stateRef.current;
+          if (!current) return;
+          if (current.inflightBatchId) return;
+          if (current.dirtyOrder.length === 0) return;
 
-        if (response.needsReload) {
-          updateSyncState((prev) =>
-            prev ? resolveBatchFailure(prev, clientBatchId, "检测到版本冲突，请刷新后重试", true) : prev,
+          const operations = selectSyncBatchOperations(current.dirtyOrder, current.entries);
+
+          if (operations.length === 0) {
+            return;
+          }
+
+          const clientBatchId = createBatchId();
+          replaceSyncState(
+            markBatchInflight(current, clientBatchId, operations.map((op) => op.clientId), source === "manual-save"),
           );
-          return;
-        }
 
-        updateSyncState((prev) =>
-          prev ? resolveBatchSuccess(prev, clientBatchId, response.results, response.serverHead) : prev,
-        );
+          try {
+            const response = await postSyncBatch({
+              docId: current.docId,
+              rootBlockId: current.rootBlockId,
+              baseVersion: current.baseVersion,
+              clientBatchId,
+              source,
+              operations,
+            });
 
-        const createMappings = response.results
-          .filter((result) => result.success && result.clientId && result.blockId)
-          .map((result) => ({ clientId: result.clientId!, blockId: result.blockId! }));
+            if (response.needsReload) {
+              updateSyncState((prev) =>
+                prev ? resolveBatchFailure(prev, clientBatchId, "检测到版本冲突，请刷新后重试", true) : prev,
+              );
+              return;
+            }
 
-        const currentSnapshot = snapshotRef.current;
-        if (currentSnapshot && createMappings.length > 0) {
-          const patched = applyCreateAck(currentSnapshot, createMappings);
-          snapshotRef.current = patched;
-          if (onContentPatched && patched !== currentSnapshot) {
-            onContentPatched(patched);
+            updateSyncState((prev) =>
+              prev ? resolveBatchSuccess(prev, clientBatchId, response.results, response.serverHead) : prev,
+            );
+
+            const createMappings = response.results
+              .filter((result) => result.success && result.clientId && result.blockId)
+              .map((result) => ({ clientId: result.clientId!, blockId: result.blockId! }));
+
+            const currentSnapshot = snapshotRef.current;
+            if (currentSnapshot && createMappings.length > 0) {
+              const patched = applyCreateAck(currentSnapshot, createMappings);
+              snapshotRef.current = patched;
+              if (onContentPatched && patched !== currentSnapshot) {
+                onContentPatched(patched);
+              }
+            }
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "同步失败";
+            updateSyncState((prev) =>
+              prev ? resolveBatchFailure(prev, clientBatchId, message, false) : prev,
+            );
+            return;
           }
         }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "同步失败";
-        updateSyncState((prev) =>
-          prev ? resolveBatchFailure(prev, clientBatchId, message, false) : prev,
-        );
+      } finally {
+        flushRunningRef.current = false;
       }
     },
     [onContentPatched, replaceSyncState, updateSyncState],
@@ -149,23 +168,12 @@ export function useDocumentSync({
     updateSyncState((prev) => (prev ? markPendingCommit(prev) : prev));
     try {
       await flush("manual-save");
-      let current = stateRef.current;
+      const current = stateRef.current;
       if (!current) return false;
       if (current.syncState === "conflicted" || current.syncState === "error") {
         return false;
       }
-      if (current.dirtyOrder.length > 0) {
-        await flush("manual-save");
-        current = stateRef.current;
-        if (!current) return false;
-        if (current.syncState === "conflicted" || current.syncState === "error") {
-          return false;
-        }
-        if (current.dirtyOrder.length > 0) {
-          return false;
-        }
-      }
-      return true;
+      return current.dirtyOrder.length === 0;
     } finally {
       updateSyncState((prev) => (prev ? clearPendingCommit(prev) : prev));
     }
