@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import DOMPurify from "isomorphic-dompurify";
+import sanitizeHtml from "sanitize-html";
 import { decodeDocSlug } from "@/lib/doc-slug";
 import { highlightCodeBlocks } from "@/lib/highlight";
 import { renderBlockTreeToHtml } from "@/services/generate-block-html";
@@ -92,9 +92,31 @@ async function getDocContent(slug: string) {
 
   const rawHtml = renderBlockTreeToHtml(data.tree);
   const highlighted = await highlightCodeBlocks(rawHtml);
-  const html = DOMPurify.sanitize(highlighted, {
-    ADD_TAGS: ["code", "pre", "span"],
-    ADD_ATTR: ["class", "data-language", "data-block-id", "style"],
+  const html = sanitizeHtml(highlighted, {
+    allowedTags: sanitizeHtml.defaults.allowedTags.concat([
+      "img",
+      "span",
+      "pre",
+      "code",
+      "table",
+      "thead",
+      "tbody",
+      "tr",
+      "th",
+      "td",
+    ]),
+    allowedAttributes: {
+      ...sanitizeHtml.defaults.allowedAttributes,
+      "*": ["class", "style", "data-*", "blockId", "clientId"],
+      a: ["href", "name", "target", "rel", "class"],
+      img: ["src", "alt", "title", "width", "height", "class"],
+      code: ["class", "data-language"],
+      pre: ["class", "data-language"],
+      span: ["class", "style", "data-*"],
+      th: ["colspan", "rowspan", "style", "class"],
+      td: ["colspan", "rowspan", "style", "class"],
+    },
+    allowedSchemes: ["http", "https", "mailto", "tel"],
   });
   return { 
     title: data.title, 
