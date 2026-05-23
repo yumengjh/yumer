@@ -29,7 +29,7 @@ import {
   DeleteOutlined,
   CheckOutlined,
 } from "@ant-design/icons";
-import { useMarkdownEditor } from "../EditorContext";
+import { useMarkdownEditorContext } from "../EditorContext";
 import {
   titleLevelItems,
   fontSizeItems,
@@ -112,7 +112,7 @@ function OutdentIcon() {
 
 export default function DesktopToolbar() {
   const { message } = App.useApp();
-  const editor = useMarkdownEditor();
+  const { editor, defaultFontSize } = useMarkdownEditorContext();
   const [linkPopupOpen, setLinkPopupOpen] = useState(false);
   const [linkTextValue, setLinkTextValue] = useState("");
   const [linkUrlValue, setLinkUrlValue] = useState("");
@@ -121,7 +121,7 @@ export default function DesktopToolbar() {
   const [selectedBgColor, setSelectedBgColor] = useState("#FFFF00");
   const [lastTableSize, setLastTableSize] = useState({ rows: 3, cols: 3 });
   const tiptap = editor as Editor | null;
-  const toolbarState = getToolbarState(tiptap);
+  const toolbarState = getToolbarState(tiptap, { defaultFontSize });
   const editorReady = Boolean(tiptap);
   const [, forceUpdate] = useState(0);
   const savedSelectionRef = useRef<Selection | null>(null);

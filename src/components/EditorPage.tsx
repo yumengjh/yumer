@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef, type CSSProperties } from "react";
 import { App } from "antd";
 import { usePathname, useRouter } from "next/navigation";
 import TurndownService from "turndown";
@@ -10,7 +10,6 @@ import {
   DASH_EDIT_PATH,
   DASH_PATH,
   DocumentProvider,
-  getEditorPath,
   useDocument,
 } from "@/contexts/DocumentContext";
 import { decodeDocSlug } from "@/lib/doc-slug";
@@ -26,6 +25,21 @@ import {
 } from "@/services/document";
 import { useDocumentSync } from "@/hooks/useDocumentSync";
 import { shouldEnableLegacyAutoSave } from "@/services/save-policy";
+import {
+  DEFAULT_USER_SETTINGS,
+  DEFAULT_WORKSPACE_SETTINGS,
+  buildSettingsState,
+  getUserSettings,
+  getWorkspaceSettings,
+  readSettingsPriority,
+  writeSettingsPriority,
+  updateUserSettings,
+  updateWorkspaceSettings,
+  type SettingsScope,
+  type SettingsState,
+  type UserSettings,
+  type WorkspaceSettings,
+} from "@/services/settings";
 import { generateHTML } from "@tiptap/core";
 import { serializationExtensions } from "@/services/tiptap-extensions";
 import type { TiptapDoc } from "@/services/tiptap-converter";
@@ -294,6 +308,11 @@ function EditorContent() {
   const [outputModalOpen, setOutputModalOpen] = useState(false);
   const [showTOC, setShowTOC] = useState(false);
   const [manualSaving, setManualSaving] = useState(false);
+  const [settingsState, setSettingsState] = useState<SettingsState>(() =>
+    buildSettingsState({ priority: "workspace-first" }),
+  );
+  const [settingsScope, setSettingsScope] = useState<SettingsScope>("user");
+  const [settingsSaving, setSettingsSaving] = useState(false);
   const syncEngineEnabled = process.env.NEXT_PUBLIC_SYNC_ENGINE_ENABLED === "true";
   const loadedDocIdRef = useRef<string | null>(null);
   const hydratingSlugRef = useRef<string | null>(null);
@@ -314,6 +333,37 @@ function EditorContent() {
   useEffect(() => {
     contentRef.current = content;
   }, [content]);
+
+  useEffect(() => {
+    if (!workspaceId || !authed) return;
+
+    let active = true;
+    const priority = readSettingsPriority();
+    void Promise.all([
+      getUserSettings().catch(() => DEFAULT_USER_SETTINGS),
+      getWorkspaceSettings(workspaceId).catch(() => DEFAULT_WORKSPACE_SETTINGS),
+    ])
+      .then(([userSettings, workspaceSettings]) => {
+        if (active) {
+          setSettingsState(
+            buildSettingsState({
+              userSettings,
+              workspaceSettings,
+              priority,
+            }),
+          );
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setSettingsState(buildSettingsState({ priority }));
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [authed, workspaceId]);
 
   useEffect(() => {
     if (!authed || authLoading || !workspaceId) return;
@@ -537,6 +587,10 @@ function EditorContent() {
     isAuthenticated: authed,
     workspaceId,
   });
+  const activeSettingsState =
+    authed && workspaceId
+      ? settingsState
+      : buildSettingsState({ priority: readSettingsPriority() });
 
   if (authLoading) {
     return (
@@ -558,6 +612,58 @@ function EditorContent() {
             saving={manualSaving}
             showTOC={showTOC}
             onToggleTOC={setShowTOC}
+            settingsScope={settingsScope}
+            settingsPriority={activeSettingsState.priority}
+            settingsByScope={{
+              user: activeSettingsState.userSettings,
+              workspace: activeSettingsState.workspaceSettings,
+            }}
+            effectiveSettings={activeSettingsState.effectiveSettings}
+            settingsSaving={settingsSaving}
+            onSettingsScopeChange={setSettingsScope}
+            onSettingsPriorityChange={(priority) => {
+              writeSettingsPriority(priority);
+              setSettingsState((current) =>
+                buildSettingsState({
+                  userSettings: current.userSettings,
+                  workspaceSettings: current.workspaceSettings,
+                  priority,
+                }),
+              );
+            }}
+            onSaveSettings={async (scope, nextSettings) => {
+              setSettingsSaving(true);
+              try {
+                let nextState = settingsState;
+                if (scope === "user") {
+                  const savedSettings = await updateUserSettings(nextSettings as UserSettings);
+                  nextState = buildSettingsState({
+                    userSettings: savedSettings,
+                    workspaceSettings: settingsState.workspaceSettings,
+                    priority: settingsState.priority,
+                  });
+                } else {
+                  if (!workspaceId) return;
+                  const savedSettings = await updateWorkspaceSettings(
+                    workspaceId,
+                    nextSettings as WorkspaceSettings,
+                  );
+                  nextState = buildSettingsState({
+                    userSettings: settingsState.userSettings,
+                    workspaceSettings: savedSettings,
+                    priority: settingsState.priority,
+                  });
+                }
+                setSettingsState(nextState);
+                message.success(scope === "user" ? "个人设置已保存" : "空间设置已保存");
+              } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : "保存设置失败";
+                message.error(errorMessage);
+                throw error;
+              } finally {
+                setSettingsSaving(false);
+              }
+            }}
           />
           <div className="output-card">
             <MarkdownEditor
@@ -568,6 +674,14 @@ function EditorContent() {
               showTOC={showTOC}
               onTOCToggle={setShowTOC}
               loading={loadingDoc}
+              defaultFontSize={activeSettingsState.effectiveSettings.editor.fontSize}
+              contentWidth={activeSettingsState.effectiveSettings.editor.contentWidth}
+              style={
+                {
+                  "--app-editor-font-size": `${activeSettingsState.effectiveSettings.editor.fontSize}px`,
+                  "--app-editor-content-width": `${activeSettingsState.effectiveSettings.editor.contentWidth}px`,
+                } as CSSProperties
+              }
             />
           </div>
 

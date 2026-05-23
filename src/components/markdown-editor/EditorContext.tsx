@@ -3,12 +3,20 @@ import type { Editor } from "@tiptap/react";
 
 interface EditorContextValue {
   editor: Editor | null;
+  defaultFontSize: string;
 }
 
-const EditorContext = createContext<EditorContextValue>({ editor: null });
+const EditorContext = createContext<EditorContextValue>({
+  editor: null,
+  defaultFontSize: "15px",
+});
 
 export const EditorContextProvider = EditorContext.Provider;
 
 export const useMarkdownEditor = (): Editor | null => {
   return useContext(EditorContext).editor;
+};
+
+export const useMarkdownEditorContext = (): EditorContextValue => {
+  return useContext(EditorContext);
 };

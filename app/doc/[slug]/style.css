@@ -7,7 +7,7 @@
 
 .doc-page-body {
   display: grid;
-  grid-template-columns: 1fr minmax(auto, 800px) 1fr;
+  grid-template-columns: 1fr minmax(auto, var(--doc-content-width, 800px)) 1fr;
   width: 100%;
   padding: 40px 0;
 }
@@ -36,6 +36,8 @@
   border: none !important;
   box-shadow: none !important;
   padding: 0 !important;
+  font-size: var(--doc-font-size, 16px);
+  line-height: 1.8;
 }
 
 .doc-content img {

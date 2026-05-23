@@ -99,6 +99,7 @@ async function getDocContent(slug: string) {
   return { 
     title: data.title, 
     html, 
+    workspaceId: docData.workspaceId,
     icon: docData.icon || undefined,
     category: docData.category || undefined,
     tags: tagsWithInfo,
@@ -145,6 +146,7 @@ export default async function DocPage({ params }: PageProps) {
     <DocPageLayout
       title={doc.title}
       icon={doc.icon}
+      workspaceId={doc.workspaceId}
       sidebar={<PublicDocTOC />}
     >
       <h1 className="doc-main-title">{doc.title || "无标题"}</h1>

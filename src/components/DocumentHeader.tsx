@@ -15,6 +15,7 @@ import {
   TagsOutlined,
   MoreOutlined,
   UserOutlined,
+  SettingOutlined,
 } from "@ant-design/icons";
 import { useDocument, type SaveStatus } from "../contexts/DocumentContext";
 import { VersionDiffModal } from "./VersionDiffModal";
@@ -22,7 +23,15 @@ import { DocumentListModal } from "./DocumentListModal";
 import { CreateDocumentModal } from "./CreateDocumentModal";
 import { DocumentInfoModal } from "./DocumentInfoModal";
 import { TagManagementModal } from "./TagManagementModal";
+import { WorkspaceSettingsModal } from "./WorkspaceSettingsModal";
 import { useAuth } from "../contexts/AuthContext";
+import type {
+  AppSettings,
+  SettingsPriority,
+  SettingsScope,
+  UserSettings,
+  WorkspaceSettings,
+} from "@/services/settings";
 import "./DocumentHeader.css";
 
 interface DocumentHeaderProps {
@@ -30,6 +39,20 @@ interface DocumentHeaderProps {
   saving?: boolean;
   showTOC: boolean;
   onToggleTOC: (open: boolean) => void;
+  settingsScope: SettingsScope;
+  settingsPriority: SettingsPriority;
+  settingsByScope: {
+    user: UserSettings;
+    workspace: WorkspaceSettings;
+  };
+  effectiveSettings: AppSettings;
+  settingsSaving?: boolean;
+  onSettingsScopeChange: (scope: SettingsScope) => void;
+  onSettingsPriorityChange: (priority: SettingsPriority) => void;
+  onSaveSettings: (
+    scope: SettingsScope,
+    settings: UserSettings | WorkspaceSettings,
+  ) => Promise<void>;
 }
 
 type VisibleSaveStatus = Exclude<SaveStatus, "idle">;
@@ -76,7 +99,20 @@ function SyncStatus({
   );
 }
 
-export function DocumentHeader({ onSave, saving = false, showTOC, onToggleTOC }: DocumentHeaderProps) {
+export function DocumentHeader({
+  onSave,
+  saving = false,
+  showTOC,
+  onToggleTOC,
+  settingsScope,
+  settingsPriority,
+  settingsByScope,
+  effectiveSettings,
+  settingsSaving = false,
+  onSettingsScopeChange,
+  onSettingsPriorityChange,
+  onSaveSettings,
+}: DocumentHeaderProps) {
   const {
     currentDoc,
     saveStatus,
@@ -93,6 +129,7 @@ export function DocumentHeader({ onSave, saving = false, showTOC, onToggleTOC }:
   const [createOpen, setCreateOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [tagManageOpen, setTagManageOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     refreshDocs().catch(() => {});
@@ -233,6 +270,17 @@ export function DocumentHeader({ onSave, saving = false, showTOC, onToggleTOC }:
           </Dropdown>
         </div>
 
+        <Tooltip title="页面设置">
+          <button
+            type="button"
+            className="header-icon-btn"
+            onClick={() => setSettingsOpen(true)}
+            aria-label="页面设置"
+          >
+            <SettingOutlined />
+          </button>
+        </Tooltip>
+
         {currentDoc && visibleSaveStatus && (
           <div className="header-start__live">
             <SyncStatus status={visibleSaveStatus} lastSavedAt={lastSavedAt} />
@@ -348,6 +396,21 @@ export function DocumentHeader({ onSave, saving = false, showTOC, onToggleTOC }:
         currentDocId={currentDoc?.docId}
       />
       <CreateDocumentModal open={createOpen} onClose={() => setCreateOpen(false)} />
+      <WorkspaceSettingsModal
+        open={settingsOpen}
+        saving={settingsSaving}
+        scope={settingsScope}
+        priority={settingsPriority}
+        settingsByScope={settingsByScope}
+        effectiveSettings={effectiveSettings}
+        onClose={() => setSettingsOpen(false)}
+        onScopeChange={onSettingsScopeChange}
+        onPriorityChange={onSettingsPriorityChange}
+        onSubmit={async (nextSettings) => {
+          await onSaveSettings(settingsScope, nextSettings);
+          setSettingsOpen(false);
+        }}
+      />
       {currentDoc && (
         <DocumentInfoModal
           open={infoOpen}

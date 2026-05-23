@@ -31,6 +31,10 @@ export interface ToolbarState {
   codeLanguage: string;
 }
 
+interface ToolbarStateOptions {
+  defaultFontSize?: string;
+}
+
 const EMPTY_STATE: ToolbarState = {
   marks: {
     bold: false,
@@ -170,9 +174,9 @@ function getFirstMarkAttr(
   return value;
 }
 
-function normalizeFontSize(value: unknown): string {
+function normalizeFontSize(value: unknown, fallback: string): string {
   if (typeof value !== "string" && typeof value !== "number") {
-    return EMPTY_STATE.fontSize;
+    return fallback;
   }
   const text = `${value}`;
   return text.endsWith("px") ? text : `${text}px`;
@@ -185,8 +189,18 @@ function normalizeTextAlign(value: unknown): TextAlignValue {
   return "left";
 }
 
-export function getToolbarState(editor: Editor | null): ToolbarState {
-  if (!editor) return EMPTY_STATE;
+export function getToolbarState(
+  editor: Editor | null,
+  options?: ToolbarStateOptions,
+): ToolbarState {
+  const defaultFontSize = options?.defaultFontSize ?? EMPTY_STATE.fontSize;
+
+  if (!editor) {
+    return {
+      ...EMPTY_STATE,
+      fontSize: defaultFontSize,
+    };
+  }
 
   const { state } = editor;
   const currentTextBlock = getAncestorNode(state, ["paragraph", "heading"]);
@@ -218,7 +232,10 @@ export function getToolbarState(editor: Editor | null): ToolbarState {
     },
     headingLevel,
     textAlign: normalizeTextAlign(currentTextBlock?.attrs.textAlign),
-    fontSize: normalizeFontSize(getFirstMarkAttr(editor, "textStyle", "fontSize")),
+    fontSize: normalizeFontSize(
+      getFirstMarkAttr(editor, "textStyle", "fontSize"),
+      defaultFontSize,
+    ),
     lineHeight:
       typeof currentTextBlock?.attrs.lineHeight === "string"
         ? currentTextBlock.attrs.lineHeight

@@ -74,7 +74,7 @@
   padding: 48px 24px 120px;
   background: #ffffff;
   width: 100%;
-  max-width: 750px;
+  max-width: var(--app-editor-content-width, 750px);
   min-height: calc(100vh - 96px);
   box-shadow: none;
   border: none;

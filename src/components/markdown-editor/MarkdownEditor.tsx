@@ -89,6 +89,10 @@ export interface MarkdownEditorProps {
   autofocus?: boolean | "start" | "end";
   /** 内容加载状态 */
   loading?: boolean;
+  /** 默认字号，用于正文字号和工具栏默认态 */
+  defaultFontSize?: number;
+  /** 编辑宽度 */
+  contentWidth?: number;
 }
 
 function EditorSkeleton() {
@@ -113,6 +117,8 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
   minHeight = "460px",
   autofocus = false,
   loading = false,
+  defaultFontSize = 15,
+  contentWidth = 750,
 }, ref) {
   const [systemThemeMode, setSystemThemeMode] = useState<CodeThemeMode>("light");
   const themeMode = themeProp ?? systemThemeMode;
@@ -362,9 +368,17 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
   return (
     <div className={`tiptap-shell ${className || ""}`} style={style}>
       <div className="tiptap-card" data-code-theme={themeMode}>
-        <EditorContextProvider value={{ editor }}>
+        <EditorContextProvider value={{ editor, defaultFontSize: `${defaultFontSize}px` }}>
           {showToolbar && <Toolbar />}
-          <div ref={wrapperRef} className="tiptap-editor-wrapper" style={{ minHeight, position: "relative" }}>
+          <div
+            ref={wrapperRef}
+            className="tiptap-editor-wrapper"
+            style={{
+              minHeight,
+              position: "relative",
+              maxWidth: `${contentWidth}px`,
+            }}
+          >
             {loading ? (
               <EditorSkeleton />
             ) : (

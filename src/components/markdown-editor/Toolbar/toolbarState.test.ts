@@ -133,4 +133,22 @@ describe("toolbarState", () => {
 
     editor.destroy();
   });
+
+  it("uses a configurable default font size when selection has no explicit size", () => {
+    const editor = createEditor({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "plain" }],
+        },
+      ],
+    });
+
+    editor.commands.setTextSelection(3);
+
+    expect(getToolbarState(editor, { defaultFontSize: "18px" }).fontSize).toBe("18px");
+
+    editor.destroy();
+  });
 });
