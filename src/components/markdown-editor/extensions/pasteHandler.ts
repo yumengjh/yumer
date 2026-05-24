@@ -4,6 +4,24 @@ import { DOMParser as ProseMirrorDOMParser, Slice } from "prosemirror-model";
 import type { EditorView } from "prosemirror-view";
 import { marked } from "marked";
 
+type CodeBlockSelectionLike = {
+  state?: {
+    selection?: {
+      $from?: {
+        parent?: {
+          type?: {
+            name?: string;
+          };
+        };
+      };
+    };
+  };
+};
+
+export const isCodeBlockSelection = (view: CodeBlockSelectionLike): boolean => {
+  return view.state?.selection?.$from?.parent?.type?.name === "codeBlock";
+};
+
 const cleanPastedHTML = (html: string): string => {
   const tempDiv = document.createElement("div");
   tempDiv.innerHTML = html;
@@ -65,6 +83,13 @@ export const createPasteHandlerExtension = () => {
               const text = event.clipboardData?.getData("text/plain");
 
               if (!html && !text) return false;
+
+              if (text && isCodeBlockSelection(view)) {
+                event.preventDefault();
+                const { from, to } = view.state.selection;
+                view.dispatch(view.state.tr.insertText(text, from, to));
+                return true;
+              }
 
               if (html && html.trim()) {
                 const hasHtmlTags = /<\/?[a-z][\s\S]*>/i.test(html);

@@ -295,30 +295,224 @@
    CodeBlockView — React Node View 简洁代码块
    ===================================================== */
 
-/* 外层 wrapper（pre） */
-.tiptap-editor pre.code-block-view {
-  display: flex;
-  padding: 12px 0;
+.tiptap-editor .code-block-view {
+  position: relative;
   margin: 16px 0;
-  overflow: hidden;
-  border-radius: 4px;
+  overflow: visible;
+  border-radius: 6px;
   border: 1px solid var(--app-border-lighter);
-  background: #f6f8fa;
+  background: #fff;
 }
 
 /* Node view 已有内容，隐藏旧版语言标签 */
-.tiptap-editor pre.code-block-view.tiptap-codeblock-node::before {
+.tiptap-editor .code-block-view.tiptap-codeblock-node::before {
   display: none;
 }
 
-.tiptap-editor pre.code-block-view.is-selected {
+.tiptap-editor .code-block-view.is-selected {
   border-color: var(--app-primary-border);
+}
+
+.tiptap-card[data-code-theme="dark"] .tiptap-editor .code-block-view,
+.tiptap-editor .code-block-view[data-code-theme="github-dark"] {
+  border-color: var(--app-code-dark-border);
+  background: #0d1117;
+  color: var(--app-code-dark-text);
+}
+
+.code-block-status-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 36px;
+  padding: 0 10px 0 8px;
+  border-bottom: 1px solid var(--app-border-lighter);
+  background: #f7f7f7;
+  color: var(--app-text-secondary);
+  overflow: visible;
+}
+
+.code-block-status-collapse-tab,
+.code-block-status-restore-tab {
+  position: absolute;
+  left: 50%;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 54px;
+  height: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 0 0 6px 6px;
+  background: #d4d8dd;
+  color: #7b818a;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  transform: translateX(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.code-block-status-collapse-tab {
+  bottom: -8px;
+}
+
+.code-block-status-restore-tab {
+  top: -1px;
+  width: 58px;
+  height: 15px;
+  border-radius: 0 0 8px 8px;
+  background: #cfd4da;
+  font-size: 11px;
+}
+
+.code-block-view.is-status-collapsed .code-block-status-restore-tab {
+  top: -1px;
+}
+
+.code-block-view.is-status-collapsed .code-block-body {
+  padding-top: 10px;
+}
+
+.code-block-view.is-code-focused .code-block-status-collapse-tab,
+.code-block-view.is-code-focused .code-block-status-restore-tab {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.tiptap-card[data-code-theme="dark"] .code-block-status-bar,
+.code-block-view[data-code-theme="github-dark"] .code-block-status-bar {
+  border-bottom-color: var(--app-code-dark-border);
+  background: rgba(22, 27, 34, 0.92);
+  color: var(--app-code-dark-label);
+}
+
+.code-block-toolbar-left,
+.code-block-toolbar-right {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+}
+
+.code-block-toolbar-left {
+  flex: 1 1 auto;
+}
+
+.code-block-toolbar-right {
+  flex: 0 0 auto;
+}
+
+.code-block-icon-button.ant-btn {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  padding: 0;
+  color: #5f6368;
+}
+
+.code-block-icon-button.ant-btn:hover {
+  color: #202124;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.code-block-title-input.ant-input {
+  min-width: 170px;
+  max-width: 260px;
+  padding: 0 4px;
+  color: #4f545c;
+  font-size: 14px;
+  background: transparent;
+}
+
+.code-block-title-input.ant-input::placeholder {
+  color: #b6bbc3;
+}
+
+.code-block-language-select.ant-select,
+.code-block-theme-select.ant-select {
+  color: #30343b;
+}
+
+.code-block-language-select.ant-select {
+  width: 128px;
+}
+
+.code-block-theme-select.ant-select {
+  width: 160px;
+}
+
+.code-block-toolbar-separator {
+  width: 1px;
+  height: 18px;
+  background: #d8dce2;
+}
+
+.code-block-more-panel {
+  width: 220px;
+  padding: 10px;
+  border: 1px solid var(--app-border-lighter);
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+}
+
+.code-block-menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+  color: var(--app-text-secondary);
+  font-size: 13px;
+}
+
+.code-block-menu-row .ant-select {
+  width: 118px;
+}
+
+.code-block-menu-divider {
+  height: 1px;
+  margin: 8px 0;
+  background: var(--app-border-lighter);
+}
+
+.code-block-more-panel .ant-btn + .ant-btn {
+  margin-top: 6px;
+}
+
+.code-block-body {
+  display: flex;
+  padding: 0;
+  background: #fff;
+  border-radius: 0 0 6px 6px;
+}
+
+.code-block-view.is-code-collapsed .code-block-body {
+  display: none;
+}
+
+.code-block-placeholder .code-block-status-bar {
+  justify-content: space-between;
+  color: var(--app-text-secondary);
+}
+
+.code-block-placeholder:not([data-code-block-rendered="true"]) {
+  min-height: 80px;
+}
+
+.code-block-public-title {
+  font-weight: 600;
 }
 
 /* 行号列 */
 .code-block-line-numbers {
   flex-shrink: 0;
-  padding: 0;
+  padding: 12px 0;
   min-width: 40px;
   text-align: right;
   user-select: none;
@@ -350,7 +544,12 @@
   overflow-x: auto;
 }
 
-.code-block-content > code {
+.code-block-view.is-wrapped .code-block-content {
+  overflow-x: hidden;
+}
+
+.code-block-content > code,
+.code-block-code {
   display: block;
   background: transparent !important;
   color: inherit;
@@ -362,15 +561,32 @@
     Courier,
     monospace !important;
   white-space: pre;
-  tab-size: 2;
+  tab-size: var(--code-tab-size, 2);
   line-height: 1.6;
-  font-size: 13px;
-  padding: 0;
+  font-size: var(--code-font-size, 13px);
+  padding: 12px 0;
   margin: 0;
 }
 
+.code-block-view.is-wrapped .code-block-content > code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.code-block-view.is-wrapped .code-block-code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* 深色主题下代码文字颜色 */
-.tiptap-card[data-code-theme="dark"] .code-block-content > code {
+.tiptap-card[data-code-theme="dark"] .code-block-content > code,
+.tiptap-card[data-code-theme="dark"] .code-block-code {
+  color: var(--app-code-dark-text);
+}
+
+.code-block-view[data-code-theme="github-dark"] .code-block-line-number,
+.code-block-view[data-code-theme="github-dark"] .code-block-content > code,
+.code-block-view[data-code-theme="github-dark"] .code-block-code {
   color: var(--app-code-dark-text);
 }
 

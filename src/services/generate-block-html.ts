@@ -3,6 +3,11 @@
  * 使用 Tiptap 官方静态渲染器，避免运行时依赖 jsdom
  */
 import { renderToHTMLString } from "@tiptap/static-renderer/pm/html-string";
+import {
+  escapeCodeHtml,
+  extractCodeText,
+  normalizeCodeBlockAttrs,
+} from "@/components/markdown-editor/code/codeBlockOptions";
 import { serializationExtensions } from "./tiptap-extensions";
 import { type TiptapDoc, type TiptapNode } from "./tiptap-converter";
 
@@ -13,6 +18,24 @@ interface Block {
   html?: string | null;
   sortKey?: string;
   children?: Block[];
+}
+
+function renderCodeBlockPlaceholder(block: Block): string {
+  const node = block.payload as unknown as TiptapNode;
+  const attrs = normalizeCodeBlockAttrs(node.attrs);
+  const code = extractCodeText(node);
+  const attrJson = escapeCodeHtml(JSON.stringify(attrs));
+
+  return [
+    `<div class="code-block-view code-block-placeholder"`,
+    ` data-code-block-placeholder="true"`,
+    ` data-block-id="${escapeCodeHtml(block.blockId)}"`,
+    ` data-language="${escapeCodeHtml(attrs.language)}"`,
+    ` data-title="${escapeCodeHtml(attrs.title)}"`,
+    ` data-code-block-code="${escapeCodeHtml(code)}"`,
+    ` data-code-block-attrs="${attrJson}">`,
+    `</div>`,
+  ].join("");
 }
 
 /**
@@ -40,6 +63,8 @@ export function renderBlockTreeToHtml(tree: Block): string {
 
   return contentBlocks
     .map((b) => {
+      if (b.type === "codeBlock") return renderCodeBlockPlaceholder(b);
+
       const blockHtml = typeof b.html === "string" ? b.html : "";
       if (blockHtml.trim()) return blockHtml;
 

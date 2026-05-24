@@ -36,6 +36,16 @@ describe("doc page SSR rendering contract", () => {
     expect(metadataSource).toContain("getDocMetadata");
   });
 
+  it("server page delegates code highlighting to the browser", () => {
+    const pageSource = fs.readFileSync(
+      path.resolve(process.cwd(), "app/doc/[slug]/page.tsx"),
+      "utf8",
+    );
+
+    expect(pageSource).not.toContain("highlightCodeBlocks");
+    expect(pageSource).toContain("ClientCodeBlockRenderer");
+  });
+
   it("renders common block payloads into html fragments", () => {
     const tree = {
       blockId: "root_1",
@@ -153,6 +163,73 @@ describe("doc page SSR rendering contract", () => {
     expect(html).toContain("Rendered by backend");
     expect(html).not.toContain("Should not render this JSON");
     expect(html).toContain("<h2>Rendered from JSON fallback</h2>");
+    expect(html).toContain('data-code-block-placeholder="true"');
+    expect(html).toContain('data-language="typescript"');
     expect(html).toContain("const answer = 42;");
+  });
+
+  it("emits placeholders for code blocks even when backend html is present", () => {
+    const tree = {
+      blockId: "root_1",
+      type: "root",
+      payload: { type: "root", children: [] },
+      children: [
+        {
+          blockId: "code1",
+          type: "codeBlock",
+          sortKey: "001000",
+          html: "<pre><code>server highlighted</code></pre>",
+          payload: {
+            type: "codeBlock",
+            attrs: { language: "javascript", title: "Demo" },
+            content: [{ type: "text", text: "console.log(1);" }],
+          },
+          children: [],
+        },
+      ],
+    };
+
+    const html = renderBlockTreeToHtml(tree);
+
+    expect(html).toContain('data-code-block-placeholder="true"');
+    expect(html).toContain('data-title="Demo"');
+    expect(html).toContain("console.log(1);");
+    expect(html).not.toContain("server highlighted");
+  });
+
+  it("keeps public code block placeholders visually empty before client highlighting", () => {
+    const tree = {
+      blockId: "root_1",
+      type: "root",
+      payload: { type: "root", children: [] },
+      children: [
+        {
+          blockId: "code1",
+          type: "codeBlock",
+          sortKey: "001000",
+          payload: {
+            type: "codeBlock",
+            attrs: { language: "javascript" },
+            content: [{ type: "text", text: "console.log(1);" }],
+          },
+          children: [],
+        },
+      ],
+    };
+
+    const html = renderBlockTreeToHtml(tree);
+
+    expect(html).toContain('data-code-block-code="console.log(1);"');
+    expect(html).not.toContain("<pre><code>console.log(1);</code></pre>");
+  });
+
+  it("does not render public code block title or language when the status bar is collapsed", () => {
+    const rendererSource = fs.readFileSync(
+      path.resolve(process.cwd(), "src/components/ClientCodeBlockRenderer.tsx"),
+      "utf8",
+    );
+
+    expect(rendererSource).toContain("if (attrs.statusBarCollapsed) {\n    return \"\";");
+    expect(rendererSource).not.toContain("class=\"code-block-status-restore\"");
   });
 });

@@ -2,8 +2,8 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import sanitizeHtml from "sanitize-html";
 import { decodeDocSlug } from "@/lib/doc-slug";
-import { highlightCodeBlocks } from "@/lib/highlight";
 import { renderBlockTreeToHtml } from "@/services/generate-block-html";
+import ClientCodeBlockRenderer from "@/components/ClientCodeBlockRenderer";
 import { DocPageLayout } from "@/components/DocPageLayout";
 import { PublicDocTOC } from "@/components/PublicDocTOC";
 import { ClockCircleOutlined, EyeOutlined } from "@ant-design/icons";
@@ -138,8 +138,7 @@ async function getDocContent(slug: string) {
   }
 
   const rawHtml = renderBlockTreeToHtml(data.tree);
-  const highlighted = await highlightCodeBlocks(rawHtml);
-  const html = sanitizeHtml(highlighted, {
+  const html = sanitizeHtml(rawHtml, {
     allowedTags: sanitizeHtml.defaults.allowedTags.concat([
       "img",
       "span",
@@ -157,9 +156,11 @@ async function getDocContent(slug: string) {
       "*": ["class", "style", "data-*", "blockId", "clientId"],
       a: ["href", "name", "target", "rel", "class"],
       img: ["src", "alt", "title", "width", "height", "class"],
+      div: ["class", "style", "data-*", "blockId", "clientId"],
       code: ["class", "data-language"],
       pre: ["class", "data-language"],
       span: ["class", "style", "data-*"],
+      button: ["type", "class", "data-*"],
       th: ["colspan", "rowspan", "style", "class"],
       td: ["colspan", "rowspan", "style", "class"],
     },
@@ -245,6 +246,7 @@ export default async function DocPage({ params }: PageProps) {
             data-yuediter-render-version={doc.renderHeaders.renderVersion || undefined}
             dangerouslySetInnerHTML={{ __html: doc.html }}
           />
+          <ClientCodeBlockRenderer />
 
           <footer className="doc-footer">
             {doc.tags && doc.tags.length > 0 && (

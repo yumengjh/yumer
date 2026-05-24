@@ -53,6 +53,11 @@ export const getCodeThemeByMode = (mode: CodeThemeMode): string => {
   return mode === "dark" ? SHIKI_DARK_THEME : SHIKI_LIGHT_THEME;
 };
 
+export const getCodeThemeByName = (theme: string): string | null => {
+  if (theme === SHIKI_LIGHT_THEME || theme === SHIKI_DARK_THEME) return theme;
+  return null;
+};
+
 export const resolveCodeLanguageForShiki = (
   highlighter: ShikiHighlighter,
   lang?: string,

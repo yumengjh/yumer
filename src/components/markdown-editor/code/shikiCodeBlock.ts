@@ -6,11 +6,13 @@ import { Decoration, DecorationSet } from "prosemirror-view";
 import type { TokenStyles } from "shiki";
 import {
   DEFAULT_CODE_LANGUAGE,
+  getCodeThemeByName,
   getCodeThemeByMode,
   resolveCodeLanguageForShiki,
   type CodeThemeMode,
   type ShikiHighlighter,
 } from "./codeHighlight";
+import { normalizeCodeBlockAttrs } from "./codeBlockOptions";
 import CodeBlockView from "./CodeBlockView";
 
 export const SHIKI_CODE_BLOCK_PLUGIN_KEY = new PluginKey<DecorationSet>(
@@ -53,15 +55,14 @@ const buildDecorations = (
   fallbackLanguage: string,
 ): DecorationSet => {
   const decorations: Decoration[] = [];
-  const theme = getCodeThemeByMode(getThemeMode());
 
   doc.descendants((node, pos) => {
     if (node.type.name !== "codeBlock") return true;
 
-    const nodeLanguage =
-      typeof node.attrs.language === "string" && node.attrs.language.trim()
-        ? node.attrs.language.trim()
-        : fallbackLanguage;
+    const attrs = normalizeCodeBlockAttrs(node.attrs);
+    const explicitTheme = getCodeThemeByName(attrs.codeTheme);
+    const theme = explicitTheme || getCodeThemeByMode(getThemeMode());
+    const nodeLanguage = attrs.language || fallbackLanguage;
     const lang = resolveCodeLanguageForShiki(highlighter, nodeLanguage);
     const code = node.textContent || "";
 
@@ -118,6 +119,21 @@ export const createShikiCodeBlockExtension = ({
   defaultLanguage = DEFAULT_CODE_LANGUAGE,
 }: CreateShikiCodeBlockExtensionOptions) => {
   return CodeBlock.extend({
+    addAttributes() {
+      return {
+        ...this.parent?.(),
+        codeTheme: { default: "auto" },
+        fontSize: { default: "inherit" },
+        indentMode: { default: "space" },
+        indentSize: { default: 2 },
+        wordWrap: { default: false },
+        lineNumbers: { default: true },
+        autoIndent: { default: true },
+        title: { default: "" },
+        statusBarCollapsed: { default: false },
+        codeCollapsed: { default: false },
+      };
+    },
     addNodeView() {
       return ReactNodeViewRenderer(CodeBlockView);
     },
