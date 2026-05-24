@@ -16,6 +16,7 @@ interface Block {
   blockId: string;
   type: string;
   payload: Record<string, unknown>;
+  html?: string | null;
   sortKey?: string;
   children?: Block[];
 }
@@ -43,6 +44,48 @@ interface DocumentMetaResponse {
   updater?: DocumentUserSummary | null;
 }
 
+interface TagSummary {
+  tagId: string;
+  name: string;
+  color?: string | null;
+}
+
+interface RenderHeaderInfo {
+  contentMode: string | null;
+  renderMode: string | null;
+  renderCache: string | null;
+  renderBlocks: string | null;
+  renderVersion: string | null;
+}
+
+function readRenderHeaderInfo(headers: Headers): RenderHeaderInfo {
+  return {
+    contentMode: headers.get("x-yuediter-content-mode"),
+    renderMode: headers.get("x-yuediter-render-mode"),
+    renderCache: headers.get("x-yuediter-render-cache"),
+    renderBlocks: headers.get("x-yuediter-render-blocks"),
+    renderVersion: headers.get("x-yuediter-render-version"),
+  };
+}
+
+async function getDocMetadata(slug: string): Promise<{ title: string } | null> {
+  let docId: string;
+  try {
+    docId = decodeDocSlug(slug);
+  } catch {
+    return null;
+  }
+
+  const docRes = await fetch(`${API_BASE}/documents/${docId}`, { cache: "no-store" });
+  if (!docRes.ok) return null;
+
+  const docJson = await docRes.json();
+  if (!docJson.success) return null;
+
+  const docData: DocumentMetaResponse & { title?: string } = docJson.data;
+  return { title: docData.title || "无标题" };
+}
+
 async function getDocContent(slug: string) {
   let docId: string;
   try {
@@ -52,11 +95,12 @@ async function getDocContent(slug: string) {
   }
 
   const [contentRes, docRes] = await Promise.all([
-    fetch(`${API_BASE}/documents/${docId}/content`, { cache: "no-store" }),
+    fetch(`${API_BASE}/documents/${docId}/content?mode=all`, { cache: "no-store" }),
     fetch(`${API_BASE}/documents/${docId}`, { cache: "no-store" }),
   ]);
 
   if (!contentRes.ok || !docRes.ok) return null;
+  const renderHeaders = readRenderHeaderInfo(contentRes.headers);
   
   const [contentJson, docJson] = await Promise.all([
     contentRes.json(),
@@ -69,23 +113,26 @@ async function getDocContent(slug: string) {
   const docData: DocumentMetaResponse = docJson.data;
   
   // Fetch tags to resolve tag metadata
-  let tagsWithInfo: any[] = [];
+  let tagsWithInfo: TagSummary[] = [];
   if (docData.tags && docData.tags.length > 0 && docData.workspaceId) {
     try {
       const tagsRes = await fetch(`${API_BASE}/tags?workspaceId=${docData.workspaceId}&pageSize=100`, { cache: "no-store" });
       if (tagsRes.ok) {
         const tagsJson = await tagsRes.json();
         if (tagsJson.success) {
-          const tagInfoMap = new Map(
-            tagsJson.data.items.map((tag: any) => [tag.tagId, { name: tag.name, color: tag.color }])
+          const tagInfoMap = new Map<string, Omit<TagSummary, "tagId">>(
+            (tagsJson.data.items as TagSummary[]).map((tag) => [
+              tag.tagId,
+              { name: tag.name, color: tag.color },
+            ])
           );
           tagsWithInfo = docData.tags.map((tagId: string) => {
             const tagInfo = tagInfoMap.get(tagId);
             return tagInfo ? { tagId, ...tagInfo } : null;
-          }).filter(Boolean);
+          }).filter((tag): tag is TagSummary => Boolean(tag));
         }
       }
-    } catch (e) {
+    } catch {
       // Ignore tag fetch error
     }
   }
@@ -128,7 +175,8 @@ async function getDocContent(slug: string) {
     updatedAt: docData.updatedAt,
     authorName: docData.creator?.displayName || "\u672A\u77E5\u4F5C\u8005",
     authorAvatar: docData.creator?.avatar || null,
-    viewCount: docData.viewCount || 0
+    viewCount: docData.viewCount || 0,
+    renderHeaders,
   };
 }
 
@@ -140,7 +188,7 @@ export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
   const { slug } = await params;
-  const doc = await getDocContent(slug);
+  const doc = await getDocMetadata(slug);
   return { title: doc?.title || "文档不存在" };
 }
 
@@ -190,13 +238,18 @@ export default async function DocPage({ params }: PageProps) {
 
           <div
             className="doc-content tiptap-editor"
+            data-yuediter-content-mode={doc.renderHeaders.contentMode || undefined}
+            data-yuediter-render-mode={doc.renderHeaders.renderMode || undefined}
+            data-yuediter-render-cache={doc.renderHeaders.renderCache || undefined}
+            data-yuediter-render-blocks={doc.renderHeaders.renderBlocks || undefined}
+            data-yuediter-render-version={doc.renderHeaders.renderVersion || undefined}
             dangerouslySetInnerHTML={{ __html: doc.html }}
           />
 
           <footer className="doc-footer">
             {doc.tags && doc.tags.length > 0 && (
               <div className="doc-tags-list">
-                {doc.tags.map((t: any) => (
+                {doc.tags.map((t: TagSummary) => (
                   <span key={t.tagId} className="doc-tag-badge">
                     <span className="doc-tag-dot" style={{ backgroundColor: t.color || '#ccc' }}></span>
                     {t.name}

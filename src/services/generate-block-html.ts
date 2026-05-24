@@ -4,16 +4,13 @@
  */
 import { renderToHTMLString } from "@tiptap/static-renderer/pm/html-string";
 import { serializationExtensions } from "./tiptap-extensions";
-import {
-  detectPayloadFormat,
-  type TiptapDoc,
-  type TiptapNode,
-} from "./tiptap-converter";
+import { type TiptapDoc, type TiptapNode } from "./tiptap-converter";
 
 interface Block {
   blockId: string;
   type: string;
   payload: Record<string, unknown>;
+  html?: string | null;
   sortKey?: string;
   children?: Block[];
 }
@@ -41,19 +38,15 @@ export function renderBlockTreeToHtml(tree: Block): string {
 
   if (contentBlocks.length === 0) return "";
 
-  const isLegacy = contentBlocks.every(
-    (b) => detectPayloadFormat(b.payload) === "html",
-  );
-
-  if (isLegacy) {
-    return contentBlocks
-      .map((b) => (b.payload?.html as string) || "")
-      .filter(Boolean)
-      .join("");
-  }
-
   return contentBlocks
     .map((b) => {
+      const blockHtml = typeof b.html === "string" ? b.html : "";
+      if (blockHtml.trim()) return blockHtml;
+
+      const legacyHtml =
+        typeof b.payload?.html === "string" ? b.payload.html : "";
+      if (legacyHtml.trim()) return legacyHtml;
+
       try {
         const node = b.payload as unknown as TiptapNode;
         const doc: TiptapDoc = { type: "doc", content: [node] };
