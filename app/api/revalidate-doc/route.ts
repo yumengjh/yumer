@@ -1,5 +1,6 @@
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { NextResponse } from "next/server";
+import { getPublicDocCacheTag } from "@/services/public-doc-snapshot";
 
 type RevalidateDocBody = {
   slug?: string;
@@ -25,10 +26,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, error: "Missing slug" }, { status: 400 });
   }
 
+  revalidateTag(getPublicDocCacheTag(slug), "max");
   revalidatePath(`/doc/${slug}`);
 
   return NextResponse.json({
     success: true,
-    revalidated: [`/doc/${slug}`],
+    revalidated: [getPublicDocCacheTag(slug), `/doc/${slug}`],
   });
 }

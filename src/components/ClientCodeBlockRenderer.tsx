@@ -116,14 +116,14 @@ export default function ClientCodeBlockRenderer() {
     }
 
     const runWhenIdle = () => {
-      if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
         window.requestIdleCallback(() => {
           void renderAll();
         });
         return;
       }
 
-      window.setTimeout(() => {
+      globalThis.setTimeout(() => {
         void renderAll();
       }, 0);
     };

@@ -40,7 +40,7 @@ export function DocPageLayout({ title, icon, children, sidebar, workspaceId }: D
     let active = true;
 
     const runWhenIdle = () => {
-      if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
         window.requestIdleCallback(() => {
           void getClientVisibleSettings(workspaceId)
             .then((nextState) => {
@@ -58,7 +58,7 @@ export function DocPageLayout({ title, icon, children, sidebar, workspaceId }: D
         return;
       }
 
-      window.setTimeout(() => {
+      globalThis.setTimeout(() => {
         void getClientVisibleSettings(workspaceId)
           .then((nextState) => {
             if (active) {

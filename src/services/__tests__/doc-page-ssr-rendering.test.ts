@@ -72,32 +72,33 @@ describe("doc page SSR rendering contract", () => {
   });
 
   it("uses cached public fetches by default and no-store for latest requests", () => {
-    const pageSource = fs.readFileSync(
-      path.resolve(process.cwd(), "app/doc/[slug]/page.tsx"),
+    const snapshotSource = fs.readFileSync(
+      path.resolve(process.cwd(), "src/services/public-doc-snapshot.ts"),
       "utf8",
     );
 
-    expect(pageSource).toContain("const PUBLIC_DOC_REVALIDATE_SECONDS = 3600");
-    expect(pageSource).toContain(
-      "function publicFetchOptions(latest: boolean): RequestInit",
+    expect(snapshotSource).toContain(
+      "const PUBLIC_DOC_REVALIDATE_SECONDS = 3600",
     );
-    expect(pageSource).toContain('latest ? { cache: "no-store" }');
-    expect(pageSource).toContain(
-      "next: { revalidate: PUBLIC_DOC_REVALIDATE_SECONDS }",
-    );
-    expect(pageSource).toContain("function isLatestRequest(");
-    expect(pageSource).toContain("getDocMetadata(slug, latest)");
-    expect(pageSource).toContain("getDocContent(slug, latest)");
+    expect(snapshotSource).toContain("unstable_cache");
+    expect(snapshotSource).toContain("cache(async (slug: string, latest: boolean)");
+    expect(snapshotSource).toContain('latest ? readPublicDocSnapshot(slug, true)');
+    expect(snapshotSource).toContain("getCachedPublicDocSnapshot(slug)");
+    expect(snapshotSource).toContain('cache: "no-store"');
+    expect(snapshotSource).toContain("revalidate: PUBLIC_DOC_REVALIDATE_SECONDS");
+    expect(snapshotSource).toContain("tags: [getPublicDocCacheTag(slug)]");
   });
 
-  it("does not hardcode no-store on every public document backend fetch", () => {
+  it("uses one unified public doc snapshot for metadata and page rendering", () => {
     const pageSource = fs.readFileSync(
       path.resolve(process.cwd(), "app/doc/[slug]/page.tsx"),
       "utf8",
     );
 
-    const noStoreMatches = pageSource.match(/cache: "no-store"/g) ?? [];
-    expect(noStoreMatches).toHaveLength(1);
+    expect(pageSource).toContain('from "@/services/public-doc-snapshot"');
+    const snapshotCalls =
+      pageSource.match(/getPublicDocSnapshot\(slug, latest\)/g) ?? [];
+    expect(snapshotCalls).toHaveLength(2);
   });
 
 
@@ -109,6 +110,8 @@ describe("doc page SSR rendering contract", () => {
 
     expect(routeSource).toContain('process.env.REVALIDATE_SECRET');
     expect(routeSource).toContain('request.headers.get("x-revalidate-secret")');
+    expect(routeSource).toContain("revalidateTag");
+    expect(routeSource).toContain("getPublicDocCacheTag(slug)");
     expect(routeSource).toContain('revalidatePath(`/doc/${slug}`)');
   });
 
