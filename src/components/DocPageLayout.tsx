@@ -38,20 +38,56 @@ export function DocPageLayout({ title, icon, children, sidebar, workspaceId }: D
 
   useEffect(() => {
     let active = true;
-    void getClientVisibleSettings(workspaceId)
-      .then((nextState) => {
-        if (active) {
-          setSettingsState(nextState);
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setSettingsState(buildSettingsState({ priority: "workspace-first" }));
-        }
-      });
+
+    const runWhenIdle = () => {
+      if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+        window.requestIdleCallback(() => {
+          void getClientVisibleSettings(workspaceId)
+            .then((nextState) => {
+              if (active) {
+                setSettingsState(nextState);
+              }
+            })
+            .catch((error) => {
+              console.log("[public-doc] settings request failed", error);
+              if (active) {
+                setSettingsState(buildSettingsState({ priority: "workspace-first" }));
+              }
+            });
+        });
+        return;
+      }
+
+      window.setTimeout(() => {
+        void getClientVisibleSettings(workspaceId)
+          .then((nextState) => {
+            if (active) {
+              setSettingsState(nextState);
+            }
+          })
+          .catch((error) => {
+            console.log("[public-doc] settings request failed", error);
+            if (active) {
+              setSettingsState(buildSettingsState({ priority: "workspace-first" }));
+            }
+          });
+      }, 0);
+    };
+
+    const start = () => {
+      if (!active) return;
+      runWhenIdle();
+    };
+
+    if (document.readyState === "complete") {
+      start();
+    } else {
+      window.addEventListener("load", start, { once: true });
+    }
 
     return () => {
       active = false;
+      window.removeEventListener("load", start);
     };
   }, [workspaceId]);
 

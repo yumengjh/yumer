@@ -502,7 +502,7 @@
 }
 
 .code-block-placeholder:not([data-code-block-rendered="true"]) {
-  min-height: 80px;
+  min-height: 48px;
 }
 
 .code-block-public-title {

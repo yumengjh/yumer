@@ -4,7 +4,7 @@ import sanitizeHtml from "sanitize-html";
 import { decodeDocSlug } from "@/lib/doc-slug";
 import { renderBlockTreeToHtml } from "@/services/generate-block-html";
 import { fetchPublicDocContent } from "@/services/public-doc-content-fetch";
-import ClientCodeBlockRenderer from "@/components/ClientCodeBlockRenderer";
+import DeferredCodeBlockRenderer from "@/components/DeferredCodeBlockRenderer";
 import { DocPageLayout } from "@/components/DocPageLayout";
 import { PublicDocTOC } from "@/components/PublicDocTOC";
 import { ClockCircleOutlined, EyeOutlined } from "@ant-design/icons";
@@ -277,7 +277,7 @@ export default async function DocPage({ params, searchParams }: PageProps) {
             data-yuediter-render-version={doc.renderHeaders.renderVersion || undefined}
             dangerouslySetInnerHTML={{ __html: doc.html }}
           />
-          <ClientCodeBlockRenderer />
+          <DeferredCodeBlockRenderer />
 
           <footer className="doc-footer">
             {doc.tags && doc.tags.length > 0 && (

@@ -41,9 +41,15 @@ describe("doc page SSR rendering contract", () => {
       path.resolve(process.cwd(), "app/doc/[slug]/page.tsx"),
       "utf8",
     );
+    const deferredRendererSource = fs.readFileSync(
+      path.resolve(process.cwd(), "src/components/DeferredCodeBlockRenderer.tsx"),
+      "utf8",
+    );
 
     expect(pageSource).not.toContain("highlightCodeBlocks");
-    expect(pageSource).toContain("ClientCodeBlockRenderer");
+    expect(pageSource).toContain("DeferredCodeBlockRenderer");
+    expect(deferredRendererSource).toContain("ClientCodeBlockRenderer");
+    expect(deferredRendererSource).toContain('ssr: false');
   });
 
   it("routes latest public document requests before the generic blog slug rewrite", () => {
@@ -281,6 +287,7 @@ describe("doc page SSR rendering contract", () => {
 
     expect(html).toContain('data-code-block-code="console.log(1);"');
     expect(html).not.toContain("<pre><code>console.log(1);</code></pre>");
+    expect(html).not.toContain(">console.log(1);<");
   });
 
   it("does not render public code block title or language when the status bar is collapsed", () => {
@@ -291,5 +298,35 @@ describe("doc page SSR rendering contract", () => {
 
     expect(rendererSource).toContain("if (attrs.statusBarCollapsed) {\n    return \"\";");
     expect(rendererSource).not.toContain("class=\"code-block-status-restore\"");
+  });
+
+  it("defers public document layout settings fetch until after the window load event", () => {
+    const layoutSource = fs.readFileSync(
+      path.resolve(process.cwd(), "src/components/DocPageLayout.tsx"),
+      "utf8",
+    );
+
+    expect(layoutSource).toContain("window.addEventListener(\"load\", start, { once: true })");
+    expect(layoutSource).toContain("getClientVisibleSettings(workspaceId)");
+  });
+
+  it("provides custom public-facing 404 and error pages", () => {
+    const notFoundSource = fs.readFileSync(
+      path.resolve(process.cwd(), "app/not-found.tsx"),
+      "utf8",
+    );
+    const docNotFoundSource = fs.readFileSync(
+      path.resolve(process.cwd(), "app/doc/[slug]/not-found.tsx"),
+      "utf8",
+    );
+    const errorSource = fs.readFileSync(
+      path.resolve(process.cwd(), "app/error.tsx"),
+      "utf8",
+    );
+
+    expect(notFoundSource).toContain("文档不存在");
+    expect(docNotFoundSource).toContain("文档不存在");
+    expect(errorSource).toContain("console.log");
+    expect(errorSource).toContain("error.message");
   });
 });

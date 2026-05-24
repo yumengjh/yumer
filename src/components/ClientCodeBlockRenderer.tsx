@@ -73,7 +73,6 @@ export default function ClientCodeBlockRenderer() {
           element.getAttribute("data-code-block-code") ||
           element.querySelector("code")?.textContent ||
           "";
-        element.dataset.codeBlockRendered = "true";
         element.dataset.language = attrs.language;
         element.dataset.codeTheme = attrs.codeTheme;
         element.classList.toggle("is-wrapped", attrs.wordWrap);
@@ -89,11 +88,13 @@ export default function ClientCodeBlockRenderer() {
 
         if (attrs.codeCollapsed) {
           element.innerHTML = statusHtml;
+          element.dataset.codeBlockRendered = "true";
           continue;
         }
 
         if (!highlighter) {
           element.innerHTML = statusHtml + renderFallback(code, attrs);
+          element.dataset.codeBlockRendered = "true";
           continue;
         }
 
@@ -106,15 +107,41 @@ export default function ClientCodeBlockRenderer() {
           temp.innerHTML = highlighted;
           const codeHtml = temp.querySelector("code")?.innerHTML || escapeCodeHtml(code);
           element.innerHTML = statusHtml + renderFallback(code, attrs, codeHtml);
-        } catch {
+        } catch (error) {
+          console.log("[public-doc] code block render failed", error);
           element.innerHTML = statusHtml + renderFallback(code, attrs);
         }
+        element.dataset.codeBlockRendered = "true";
       }
     }
 
-    void renderAll();
+    const runWhenIdle = () => {
+      if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+        window.requestIdleCallback(() => {
+          void renderAll();
+        });
+        return;
+      }
+
+      window.setTimeout(() => {
+        void renderAll();
+      }, 0);
+    };
+
+    const start = () => {
+      if (cancelled) return;
+      runWhenIdle();
+    };
+
+    if (document.readyState === "complete") {
+      start();
+    } else {
+      window.addEventListener("load", start, { once: true });
+    }
+
     return () => {
       cancelled = true;
+      window.removeEventListener("load", start);
     };
   }, []);
 
