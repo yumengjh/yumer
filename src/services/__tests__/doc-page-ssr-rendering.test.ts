@@ -19,7 +19,7 @@ describe("doc page SSR rendering contract", () => {
       "utf8",
     );
 
-    expect(pageSource).toContain("/content?mode=all");
+    expect(pageSource).toContain("/content?mode=html");
   });
 
   it("metadata generation should not warm the html render cache", () => {
@@ -44,6 +44,66 @@ describe("doc page SSR rendering contract", () => {
 
     expect(pageSource).not.toContain("highlightCodeBlocks");
     expect(pageSource).toContain("ClientCodeBlockRenderer");
+  });
+
+  it("routes latest public document requests before the generic blog slug rewrite", () => {
+    const configSource = fs.readFileSync(
+      path.resolve(process.cwd(), "next.config.ts"),
+      "utf8",
+    );
+
+    const latestRewriteIndex = configSource.indexOf(
+      "source: `${DOC_PATH}/:slug/latest`",
+    );
+    const genericRewriteIndex = configSource.indexOf(
+      "source: `${DOC_PATH}/:slug`",
+    );
+
+    expect(latestRewriteIndex).toBeGreaterThanOrEqual(0);
+    expect(genericRewriteIndex).toBeGreaterThanOrEqual(0);
+    expect(latestRewriteIndex).toBeLessThan(genericRewriteIndex);
+    expect(configSource).toContain("destination: `/doc/:slug?latest=1`");
+  });
+
+  it("uses cached public fetches by default and no-store for latest requests", () => {
+    const pageSource = fs.readFileSync(
+      path.resolve(process.cwd(), "app/doc/[slug]/page.tsx"),
+      "utf8",
+    );
+
+    expect(pageSource).toContain("const PUBLIC_DOC_REVALIDATE_SECONDS = 3600");
+    expect(pageSource).toContain(
+      "function publicFetchOptions(latest: boolean): RequestInit",
+    );
+    expect(pageSource).toContain('latest ? { cache: "no-store" }');
+    expect(pageSource).toContain(
+      "next: { revalidate: PUBLIC_DOC_REVALIDATE_SECONDS }",
+    );
+    expect(pageSource).toContain("function isLatestRequest(");
+    expect(pageSource).toContain("getDocMetadata(slug, latest)");
+    expect(pageSource).toContain("getDocContent(slug, latest)");
+  });
+
+  it("does not hardcode no-store on every public document backend fetch", () => {
+    const pageSource = fs.readFileSync(
+      path.resolve(process.cwd(), "app/doc/[slug]/page.tsx"),
+      "utf8",
+    );
+
+    const noStoreMatches = pageSource.match(/cache: "no-store"/g) ?? [];
+    expect(noStoreMatches).toHaveLength(1);
+  });
+
+
+  it("exposes a protected revalidate endpoint for published public docs", () => {
+    const routeSource = fs.readFileSync(
+      path.resolve(process.cwd(), "app/api/revalidate-doc/route.ts"),
+      "utf8",
+    );
+
+    expect(routeSource).toContain('process.env.REVALIDATE_SECRET');
+    expect(routeSource).toContain('request.headers.get("x-revalidate-secret")');
+    expect(routeSource).toContain('revalidatePath(`/doc/${slug}`)');
   });
 
   it("renders common block payloads into html fragments", () => {
@@ -227,7 +287,7 @@ describe("doc page SSR rendering contract", () => {
     const rendererSource = fs.readFileSync(
       path.resolve(process.cwd(), "src/components/ClientCodeBlockRenderer.tsx"),
       "utf8",
-    );
+    ).replace(/\r\n/g, "\n");
 
     expect(rendererSource).toContain("if (attrs.statusBarCollapsed) {\n    return \"\";");
     expect(rendererSource).not.toContain("class=\"code-block-status-restore\"");

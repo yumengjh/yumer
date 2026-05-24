@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import sanitizeHtml from "sanitize-html";
 import { decodeDocSlug } from "@/lib/doc-slug";
 import { renderBlockTreeToHtml } from "@/services/generate-block-html";
+import { fetchPublicDocContent } from "@/services/public-doc-content-fetch";
 import ClientCodeBlockRenderer from "@/components/ClientCodeBlockRenderer";
 import { DocPageLayout } from "@/components/DocPageLayout";
 import { PublicDocTOC } from "@/components/PublicDocTOC";
@@ -11,6 +12,20 @@ import "@/components/markdown-editor/styles/editor.css";
 import "./style.css";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://api-zzz.yumgjs.com/api/v1";
+const PUBLIC_DOC_REVALIDATE_SECONDS = 3600;
+
+type PublicDocSearchParams = {
+  latest?: string | string[];
+};
+
+function isLatestRequest(searchParams?: PublicDocSearchParams): boolean {
+  const value = searchParams?.latest;
+  return Array.isArray(value) ? value.includes("1") : value === "1";
+}
+
+function publicFetchOptions(latest: boolean): RequestInit {
+  return latest ? { cache: "no-store" } : { next: { revalidate: PUBLIC_DOC_REVALIDATE_SECONDS } };
+}
 
 interface Block {
   blockId: string;
@@ -68,7 +83,10 @@ function readRenderHeaderInfo(headers: Headers): RenderHeaderInfo {
   };
 }
 
-async function getDocMetadata(slug: string): Promise<{ title: string } | null> {
+async function getDocMetadata(
+  slug: string,
+  latest: boolean,
+): Promise<{ title: string } | null> {
   let docId: string;
   try {
     docId = decodeDocSlug(slug);
@@ -76,7 +94,10 @@ async function getDocMetadata(slug: string): Promise<{ title: string } | null> {
     return null;
   }
 
-  const docRes = await fetch(`${API_BASE}/documents/${docId}`, { cache: "no-store" });
+  const docRes = await fetch(
+    `${API_BASE}/documents/${docId}`,
+    publicFetchOptions(latest),
+  );
   if (!docRes.ok) return null;
 
   const docJson = await docRes.json();
@@ -86,7 +107,7 @@ async function getDocMetadata(slug: string): Promise<{ title: string } | null> {
   return { title: docData.title || "无标题" };
 }
 
-async function getDocContent(slug: string) {
+async function getDocContent(slug: string, latest: boolean) {
   let docId: string;
   try {
     docId = decodeDocSlug(slug);
@@ -94,9 +115,12 @@ async function getDocContent(slug: string) {
     return null;
   }
 
+  const fetchOptions = publicFetchOptions(latest);
+  const contentUrl = `${API_BASE}/documents/${docId}/content?mode=html`;
+  const fallbackContentUrl = `${API_BASE}/documents/${docId}/content`;
   const [contentRes, docRes] = await Promise.all([
-    fetch(`${API_BASE}/documents/${docId}/content?mode=all`, { cache: "no-store" }),
-    fetch(`${API_BASE}/documents/${docId}`, { cache: "no-store" }),
+    fetchPublicDocContent(contentUrl, fallbackContentUrl, fetchOptions),
+    fetch(`${API_BASE}/documents/${docId}`, fetchOptions),
   ]);
 
   if (!contentRes.ok || !docRes.ok) return null;
@@ -116,7 +140,10 @@ async function getDocContent(slug: string) {
   let tagsWithInfo: TagSummary[] = [];
   if (docData.tags && docData.tags.length > 0 && docData.workspaceId) {
     try {
-      const tagsRes = await fetch(`${API_BASE}/tags?workspaceId=${docData.workspaceId}&pageSize=100`, { cache: "no-store" });
+      const tagsRes = await fetch(
+        `${API_BASE}/tags?workspaceId=${docData.workspaceId}&pageSize=100`,
+        publicFetchOptions(latest),
+      );
       if (tagsRes.ok) {
         const tagsJson = await tagsRes.json();
         if (tagsJson.success) {
@@ -183,19 +210,23 @@ async function getDocContent(slug: string) {
 
 type PageProps = {
   params: Promise<{ slug: string }>;
+  searchParams?: Promise<PublicDocSearchParams>;
 };
 
 export async function generateMetadata({
   params,
+  searchParams,
 }: PageProps): Promise<Metadata> {
   const { slug } = await params;
-  const doc = await getDocMetadata(slug);
+  const latest = isLatestRequest(await searchParams);
+  const doc = await getDocMetadata(slug, latest);
   return { title: doc?.title || "文档不存在" };
 }
 
-export default async function DocPage({ params }: PageProps) {
+export default async function DocPage({ params, searchParams }: PageProps) {
   const { slug } = await params;
-  const doc = await getDocContent(slug);
+  const latest = isLatestRequest(await searchParams);
+  const doc = await getDocContent(slug, latest);
 
   if (!doc) {
     notFound();

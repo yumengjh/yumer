@@ -15,6 +15,10 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [
       {
+        source: `${DOC_PATH}/:slug/latest`,
+        destination: `/doc/:slug?latest=1`,
+      },
+      {
         source: `${DOC_PATH}/:slug`,
         destination: `/doc/:slug`,
       },
