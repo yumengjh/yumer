@@ -40,6 +40,21 @@ export interface Document {
   updatedAt: string;
 }
 
+export interface PublicDocRevalidationResult {
+  attempted: boolean;
+  success: boolean;
+  skippedReason?: "not_public" | "missing_config" | "invalid_slug";
+  slug?: string;
+  status?: number;
+  responseBody?: string;
+  error?: string;
+}
+
+export interface PublishDocumentResult {
+  document: Document;
+  revalidation: PublicDocRevalidationResult;
+}
+
 export interface Block {
   blockId: string;
   docId: string;
@@ -172,8 +187,8 @@ export async function commitVersion(
 
 export async function publishDocument(
   docId: string,
-): Promise<Document> {
-  return apiPost<Document>(`/documents/${docId}/publish`);
+): Promise<PublishDocumentResult> {
+  return apiPost<PublishDocumentResult>(`/documents/${docId}/publish`);
 }
 
 // ─── 块操作 ───

@@ -225,6 +225,18 @@
   border-color: var(--app-border-strong) !important;
 }
 
+.header-btn-revalidate {
+  width: 32px;
+  padding-inline: 0;
+  color: var(--app-text-secondary);
+  border-color: var(--app-border-lighter);
+}
+
+.header-btn-revalidate:hover {
+  color: var(--app-text) !important;
+  border-color: var(--app-border-strong) !important;
+}
+
 /* 响应式 */
 .header-end--mobile {
   display: none;

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, type ReactNode } from "react";
-import { Button, Spin, message, Tooltip, Dropdown } from "antd";
+import { Button, Spin, message, Tooltip, Dropdown, Modal, Input } from "antd";
 import type { MenuProps } from "antd";
 import {
   SaveOutlined,
@@ -16,6 +16,7 @@ import {
   MoreOutlined,
   UserOutlined,
   SettingOutlined,
+  ReloadOutlined,
 } from "@ant-design/icons";
 import { useDocument, type SaveStatus } from "../contexts/DocumentContext";
 import { VersionDiffModal } from "./VersionDiffModal";
@@ -32,7 +33,14 @@ import type {
   UserSettings,
   WorkspaceSettings,
 } from "@/services/settings";
+import {
+  revalidatePublicDocument,
+  type ManualPublicDocRevalidationResult,
+} from "@/services/public-doc-revalidation";
+import type { PublicDocRevalidationResult } from "@/services/document";
 import "./DocumentHeader.css";
+
+const PUBLIC_DOC_REVALIDATE_SECRET_KEY = "publicDocRevalidateSecret";
 
 interface DocumentHeaderProps {
   onSave: () => void;
@@ -99,6 +107,53 @@ function SyncStatus({
   );
 }
 
+function stringifyRevalidationBody(body: unknown): string {
+  if (body === null || body === undefined) return "";
+  if (typeof body === "string") return body;
+
+  try {
+    return JSON.stringify(body);
+  } catch {
+    return String(body);
+  }
+}
+
+function describePublishRevalidation(result: PublicDocRevalidationResult): string {
+  if (result.success) {
+    return "发布成功，公开页缓存已刷新";
+  }
+
+  if (!result.attempted) {
+    const reasonMap: Record<NonNullable<PublicDocRevalidationResult["skippedReason"]>, string> = {
+      not_public: "文档不是公开状态，未刷新公开页缓存",
+      missing_config: "后端未配置刷新回调，公开页缓存未刷新",
+      invalid_slug: "文档公开链接编码失败，公开页缓存未刷新",
+    };
+    return `发布成功，${result.skippedReason ? reasonMap[result.skippedReason] : "公开页缓存未刷新"}`;
+  }
+
+  const detail = result.status
+    ? `状态码 ${result.status}`
+    : result.error || "未知错误";
+  return result.responseBody
+    ? `发布成功，但公开页缓存刷新失败：${detail}，${result.responseBody}`
+    : `发布成功，但公开页缓存刷新失败：${detail}`;
+}
+
+function showManualRevalidationMessage(result: ManualPublicDocRevalidationResult) {
+  const bodyText = stringifyRevalidationBody(result.body);
+  if (result.ok) {
+    message.success(bodyText ? `公开页缓存已刷新：${bodyText}` : "公开页缓存已刷新");
+    return;
+  }
+
+  message.error(
+    bodyText
+      ? `公开页缓存刷新失败：状态码 ${result.status}，${bodyText}`
+      : `公开页缓存刷新失败：状态码 ${result.status}`,
+  );
+}
+
 export function DocumentHeader({
   onSave,
   saving = false,
@@ -117,6 +172,7 @@ export function DocumentHeader({
     currentDoc,
     saveStatus,
     lastSavedAt,
+    currentDocSlug,
     selectDoc,
     publishDoc,
     refreshDocs,
@@ -124,6 +180,7 @@ export function DocumentHeader({
   const { user, logout } = useAuth();
 
   const [publishing, setPublishing] = useState(false);
+  const [revalidating, setRevalidating] = useState(false);
   const [diffOpen, setDiffOpen] = useState(false);
   const [listOpen, setListOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -150,14 +207,89 @@ export function DocumentHeader({
     if (!currentDoc) return;
     setPublishing(true);
     try {
-      await publishDoc(currentDoc.docId);
-      message.success("发布成功");
+      const result = await publishDoc(currentDoc.docId);
+      const content = describePublishRevalidation(result.revalidation);
+      if (result.revalidation.success) {
+        message.success(content);
+      } else if (result.revalidation.attempted) {
+        message.warning(content);
+      } else {
+        message.info(content);
+      }
     } catch {
       message.error("发布失败");
     } finally {
       setPublishing(false);
     }
   }, [currentDoc, publishDoc]);
+
+  const requestRevalidateSecret = useCallback((): Promise<string | null> => {
+    if (typeof window === "undefined") return Promise.resolve(null);
+
+    const stored = sessionStorage.getItem(PUBLIC_DOC_REVALIDATE_SECRET_KEY);
+    if (stored) return Promise.resolve(stored);
+
+    let nextSecret = "";
+    return new Promise((resolve) => {
+      Modal.confirm({
+        title: "刷新公开页缓存",
+        content: (
+          <Input.Password
+            autoFocus
+            placeholder="请输入刷新密钥"
+            onChange={(event) => {
+              nextSecret = event.target.value;
+            }}
+            onPressEnter={() => {
+              const trimmed = nextSecret.trim();
+              if (trimmed) {
+                sessionStorage.setItem(PUBLIC_DOC_REVALIDATE_SECRET_KEY, trimmed);
+                Modal.destroyAll();
+                resolve(trimmed);
+              }
+            }}
+          />
+        ),
+        okText: "刷新",
+        cancelText: "取消",
+        onOk: () => {
+          const trimmed = nextSecret.trim();
+          if (!trimmed) {
+            message.warning("请输入刷新密钥");
+            return Promise.reject();
+          }
+          sessionStorage.setItem(PUBLIC_DOC_REVALIDATE_SECRET_KEY, trimmed);
+          resolve(trimmed);
+          return undefined;
+        },
+        onCancel: () => resolve(null),
+      });
+    });
+  }, []);
+
+  const handleManualRevalidate = useCallback(async () => {
+    if (!currentDoc || !currentDocSlug) return;
+    if (currentDoc.visibility !== "public") {
+      message.info("仅公开文档需要刷新公开页缓存");
+      return;
+    }
+
+    const secret = await requestRevalidateSecret();
+    if (!secret) return;
+
+    setRevalidating(true);
+    try {
+      const result = await revalidatePublicDocument(currentDocSlug, secret);
+      showManualRevalidationMessage(result);
+      if (!result.ok && result.status === 401 && typeof window !== "undefined") {
+        sessionStorage.removeItem(PUBLIC_DOC_REVALIDATE_SECRET_KEY);
+      }
+    } catch (error) {
+      message.error(`公开页缓存刷新失败：${error instanceof Error ? error.message : "网络错误"}`);
+    } finally {
+      setRevalidating(false);
+    }
+  }, [currentDoc, currentDocSlug, requestRevalidateSecret]);
 
   const accountMenuItems: MenuProps["items"] = [
     {
@@ -188,6 +320,13 @@ export function DocumentHeader({
           icon: <InfoCircleOutlined />,
           label: "文档信息",
           onClick: () => setInfoOpen(true),
+        },
+        {
+          key: "revalidate",
+          icon: <ReloadOutlined />,
+          label: "刷新公开页缓存",
+          disabled: currentDoc.visibility !== "public" || revalidating,
+          onClick: handleManualRevalidate,
         },
         { type: "divider" },
         {
@@ -311,6 +450,23 @@ export function DocumentHeader({
             >
               发布
             </Button>
+            <Tooltip
+              title={
+                currentDoc.visibility === "public"
+                  ? "刷新公开页缓存"
+                  : "仅公开文档需要刷新公开页缓存"
+              }
+            >
+              <Button
+                size="small"
+                className="header-btn-revalidate"
+                icon={<ReloadOutlined />}
+                loading={revalidating}
+                onClick={handleManualRevalidate}
+                disabled={currentDoc.visibility !== "public" || revalidating}
+                aria-label="刷新公开页缓存"
+              />
+            </Tooltip>
             {currentDoc.publishedHead ? (
               <span className="header-published" title={`已发布版本 ${currentDoc.publishedHead}`}>
                 <span className="header-published__dot" />

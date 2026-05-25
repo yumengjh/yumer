@@ -18,6 +18,7 @@ import {
   publishDocument as apiPublishDoc,
   type Document,
   type EditorContent,
+  type PublishDocumentResult,
 } from "../services/document";
 import { encodeDocId } from "../lib/doc-slug";
 
@@ -50,7 +51,7 @@ interface DocumentContextValue {
   createDoc: (data: { title: string; icon?: string; cover?: string; visibility?: string; category?: string }) => Promise<Document>;
   updateDoc: (docId: string, data: { title?: string; icon?: string; cover?: string; visibility?: string; tags?: string[]; category?: string; status?: string }) => Promise<void>;
   deleteDoc: (docId: string) => Promise<void>;
-  publishDoc: (docId: string) => Promise<void>;
+  publishDoc: (docId: string) => Promise<PublishDocumentResult>;
   refreshDocs: () => Promise<void>;
   getBlockId: (domIndex: number) => string | undefined;
 }
@@ -206,8 +207,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
 
   const publishDoc = useCallback(
-    async (docId: string) => {
-      const updated = await apiPublishDoc(docId);
+    async (docId: string): Promise<PublishDocumentResult> => {
+      const result = await apiPublishDoc(docId);
+      const updated = result.document;
       setCurrentDoc(updated);
       setCurrentDocVersion(updated.head);
       currentDocRef.current = updated;
@@ -215,6 +217,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         prev.map((d) => (d.docId === docId ? updated : d)),
       );
       resetWindowPath(updated.docId);
+      return result;
     },
     [],
   );
