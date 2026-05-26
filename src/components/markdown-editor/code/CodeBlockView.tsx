@@ -267,7 +267,7 @@ export default function CodeBlockView({
               aria-label="代码语言"
               value={attrs.language}
               className="code-block-language-select"
-              classNames={{ popup: "code-block-language-dropdown" }}
+              classNames={{ popup: { root: "code-block-language-dropdown" } }}
               options={languageSelectOptions}
               optionFilterProp="label"
               popupMatchSelectWidth

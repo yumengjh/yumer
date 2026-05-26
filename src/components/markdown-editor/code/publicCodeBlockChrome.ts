@@ -71,7 +71,7 @@ export function renderPublicCodeBlockStatusBar(attrs: CodeBlockAttrs): string {
 
 const COPY_RESET_MS = 2000;
 
-export function bindPublicCodeBlockChrome(root: ParentNode = document): () => void {
+export function bindPublicCodeBlockChrome(root: Document = document): () => void {
   const onClick = (event: MouseEvent) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
