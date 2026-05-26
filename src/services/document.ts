@@ -279,6 +279,29 @@ export function flattenBlockTree(root: Block): Block[] {
   return result;
 }
 
+export function flattenBlockTreeInDocumentOrder(root: Block): Block[] {
+  const result: Block[] = [];
+
+  function sortChildren(children: Block[]): Block[] {
+    return [...children].sort((a, b) => {
+      const left = Number.parseInt(a.sortKey || "0", 10) || 0;
+      const right = Number.parseInt(b.sortKey || "0", 10) || 0;
+      if (left !== right) return left - right;
+      return a.blockId.localeCompare(b.blockId);
+    });
+  }
+
+  function walk(block: Block) {
+    result.push(block);
+    for (const child of sortChildren(block.children ?? [])) {
+      walk(child);
+    }
+  }
+
+  walk(root);
+  return result;
+}
+
 export interface LoadContentResult {
   html: string;
   blockIdMap: Map<number, string>;
@@ -291,7 +314,7 @@ export async function loadDocumentContent(docId: string): Promise<LoadContentRes
   const resp = await getDocumentContent(docId);
   if (!resp.tree) return { html: "", blockIdMap: new Map() };
 
-  const flatBlocks = flattenBlockTree(resp.tree);
+  const flatBlocks = flattenBlockTreeInDocumentOrder(resp.tree);
   // 过滤掉 root 块，只保留内容块
   const contentBlocks = flatBlocks.filter((b) => b.type !== "root");
 
@@ -376,7 +399,7 @@ export async function loadDocumentContentV2(
   const resp = await getDocumentContent(docId);
   if (!resp.tree) return { content: "", blockIds: [], docVer: resp.docVer };
 
-  const flatBlocks = flattenBlockTree(resp.tree);
+  const flatBlocks = flattenBlockTreeInDocumentOrder(resp.tree);
   const contentBlocks = flatBlocks.filter((b) => b.type !== "root");
 
   if (contentBlocks.length === 0) return { content: "", blockIds: [], docVer: resp.docVer };

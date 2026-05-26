@@ -77,6 +77,28 @@ describe("sync reducer", () => {
     expect(state.pendingCommit).toBe(true);
   });
 
+  it("keeps both payload and ordering when an existing block is edited and moved", () => {
+    let state = createInitialSyncState("doc_1", "root_1", 5);
+    state = enqueueChange(state, {
+      clientId: "c_a",
+      blockId: "b_a",
+      opType: "update",
+      payload: { type: "paragraph", content: [{ type: "text", text: "changed" }] },
+    });
+    state = enqueueChange(state, {
+      clientId: "c_a",
+      blockId: "b_a",
+      opType: "move",
+      sortKey: "003000",
+    });
+
+    expect(state.entries.c_a.payload).toEqual({
+      type: "paragraph",
+      content: [{ type: "text", text: "changed" }],
+    });
+    expect(state.entries.c_a.sortKey).toBe("003000");
+  });
+
   it("clears inflight update entry even when ack omits clientId", () => {
     let state = createInitialSyncState("doc_1", "root_1", 3);
     state = enqueueChange(state, {

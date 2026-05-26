@@ -11,6 +11,7 @@ export const SYNC_BATCH_LIMITS: SyncBatchLimits = {
     create: 100,
     update: 100,
     delete: 100,
+    move: 100,
   },
 };
 
@@ -25,6 +26,7 @@ function validateSyncBatchLimits(limits: SyncBatchLimits): void {
   assertPositiveInteger(limits.byOperation.create, "limits.byOperation.create");
   assertPositiveInteger(limits.byOperation.update, "limits.byOperation.update");
   assertPositiveInteger(limits.byOperation.delete, "limits.byOperation.delete");
+  assertPositiveInteger(limits.byOperation.move, "limits.byOperation.move");
 }
 
 export function selectSyncBatchOperations(
@@ -32,22 +34,30 @@ export function selectSyncBatchOperations(
   entries: Record<string, SyncEntry>,
   limits: SyncBatchLimits = SYNC_BATCH_LIMITS,
 ): SyncEntry[] {
-  validateSyncBatchLimits(limits);
+  const normalizedLimits: SyncBatchLimits = {
+    ...limits,
+    byOperation: {
+      ...SYNC_BATCH_LIMITS.byOperation,
+      ...limits.byOperation,
+    },
+  };
+  validateSyncBatchLimits(normalizedLimits);
 
   const selected: SyncEntry[] = [];
   const selectedByOperation: Record<SyncOpType, number> = {
     create: 0,
     update: 0,
     delete: 0,
+    move: 0,
   };
 
   for (const id of dirtyOrder) {
-    if (selected.length >= limits.total) break;
+    if (selected.length >= normalizedLimits.total) break;
 
     const entry = entries[id];
     if (!entry) continue;
 
-    if (selectedByOperation[entry.opType] >= limits.byOperation[entry.opType]) {
+    if (selectedByOperation[entry.opType] >= normalizedLimits.byOperation[entry.opType]) {
       continue;
     }
 

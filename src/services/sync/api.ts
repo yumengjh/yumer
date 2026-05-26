@@ -47,7 +47,14 @@ type BatchDeleteBody = {
   blockId: string;
 };
 
-type BatchOperationBody = BatchCreateBody | BatchUpdateBody | BatchDeleteBody;
+type BatchMoveBody = {
+  type: "move";
+  blockId: string;
+  parentId: string;
+  sortKey: string;
+};
+
+type BatchOperationBody = BatchCreateBody | BatchUpdateBody | BatchDeleteBody | BatchMoveBody;
 
 export async function postSyncBatch(input: {
   docId: string;
@@ -84,6 +91,25 @@ export async function postSyncBatch(input: {
           payload: entry.payload,
           plainText: entry.plainText,
         },
+      });
+      if (entry.sortKey) {
+        bodyOperations.push({
+          type: "move",
+          blockId: entry.blockId,
+          parentId: entry.parentId ?? input.rootBlockId,
+          sortKey: entry.sortKey,
+        });
+      }
+      continue;
+    }
+
+    if (entry.opType === "move") {
+      if (!entry.blockId || !entry.sortKey) continue;
+      bodyOperations.push({
+        type: "move",
+        blockId: entry.blockId,
+        parentId: entry.parentId ?? input.rootBlockId,
+        sortKey: entry.sortKey,
       });
       continue;
     }

@@ -20,7 +20,7 @@ export interface IdentityDoc {
 
 export type SyncState = "idle" | "dirty" | "flushing" | "error" | "conflicted";
 
-export type SyncOpType = "create" | "update" | "delete";
+export type SyncOpType = "create" | "update" | "delete" | "move";
 
 export interface SyncEntry {
   clientId: string;
@@ -29,6 +29,7 @@ export interface SyncEntry {
   blockType?: string;
   payload?: Record<string, unknown>;
   plainText?: string;
+  parentId?: string;
   sortKey?: string;
   revision?: number;
 }
