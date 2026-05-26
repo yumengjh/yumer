@@ -44,7 +44,9 @@ const PUBLIC_DOC_REVALIDATE_SECRET_KEY = "publicDocRevalidateSecret";
 
 interface DocumentHeaderProps {
   onSave: () => void;
+  onDiscardDraft: () => void;
   saving?: boolean;
+  discardingDraft?: boolean;
   showTOC: boolean;
   onToggleTOC: (open: boolean) => void;
   settingsScope: SettingsScope;
@@ -156,7 +158,9 @@ function showManualRevalidationMessage(result: ManualPublicDocRevalidationResult
 
 export function DocumentHeader({
   onSave,
+  onDiscardDraft,
   saving = false,
+  discardingDraft = false,
   showTOC,
   onToggleTOC,
   settingsScope,
@@ -172,6 +176,7 @@ export function DocumentHeader({
     currentDoc,
     saveStatus,
     lastSavedAt,
+    currentContentSource,
     currentDocSlug,
     selectDoc,
     publishDoc,
@@ -441,6 +446,16 @@ export function DocumentHeader({
             >
               保存
             </Button>
+            {currentContentSource === "draft" ? (
+              <Button
+                size="small"
+                className="header-btn-discard"
+                loading={discardingDraft}
+                onClick={onDiscardDraft}
+              >
+                取消草稿
+              </Button>
+            ) : null}
             <Button
               type="primary"
               size="small"
@@ -508,6 +523,16 @@ export function DocumentHeader({
               disabled={saving || saveStatus === "flushing"}
               aria-label="保存"
             />
+            {currentContentSource === "draft" ? (
+              <Button
+                size="small"
+                loading={discardingDraft}
+                onClick={onDiscardDraft}
+                aria-label="取消草稿"
+              >
+                取消草稿
+              </Button>
+            ) : null}
             <Button
               type="primary"
               size="small"

@@ -300,3 +300,7 @@
     display: none;
   }
 }
+
+.header-btn-discard {
+  min-width: 88px;
+}

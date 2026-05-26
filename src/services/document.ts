@@ -81,6 +81,34 @@ export interface DocumentContentResponse {
   };
 }
 
+export interface EditDraftMeta {
+  exists: boolean;
+  draftId?: string | null;
+  baseDocVer?: number | null;
+  updatedAt?: string | null;
+  updatedBy?: string | null;
+}
+
+export interface EditContentResponse {
+  docId: string;
+  source: "draft" | "head";
+  head: number;
+  publishedHead: number;
+  draft: EditDraftMeta;
+  lock: {
+    locked: boolean;
+    lockOwnerUserId: string | null;
+    lockExpiresAt: string | null;
+  };
+  tree: Block;
+  pagination?: {
+    totalBlocks: number;
+    returnedBlocks: number;
+    hasMore: boolean;
+    nextStartBlockId?: string;
+  };
+}
+
 export interface PaginatedResponse<T> {
   items: T[];
   total: number;
@@ -159,8 +187,16 @@ export async function getDocumentContent(
   return apiGet<DocumentContentResponse>(`/documents/${docId}/content`);
 }
 
+export async function getEditContent(docId: string): Promise<EditContentResponse> {
+  return apiGet<EditContentResponse>(`/documents/${docId}/edit-content`);
+}
+
 export async function deleteDocument(docId: string): Promise<void> {
   return apiDelete(`/documents/${docId}`);
+}
+
+export async function discardDraft(docId: string): Promise<void> {
+  await apiDelete(`/documents/${docId}/draft`);
 }
 
 export async function updateDocument(
@@ -395,14 +431,36 @@ export type EditorContent = string | TiptapDoc;
  */
 export async function loadDocumentContentV2(
   docId: string,
-): Promise<{ content: EditorContent; blockIds: string[]; docVer: number }> {
-  const resp = await getDocumentContent(docId);
-  if (!resp.tree) return { content: "", blockIds: [], docVer: resp.docVer };
+): Promise<{
+  content: EditorContent;
+  blockIds: string[];
+  docVer: number;
+  source: "draft" | "head";
+  draft: EditDraftMeta;
+}> {
+  const resp = await getEditContent(docId);
+  if (!resp.tree) {
+    return {
+      content: "",
+      blockIds: [],
+      docVer: resp.head,
+      source: resp.source,
+      draft: resp.draft,
+    };
+  }
 
   const flatBlocks = flattenBlockTreeInDocumentOrder(resp.tree);
   const contentBlocks = flatBlocks.filter((b) => b.type !== "root");
 
-  if (contentBlocks.length === 0) return { content: "", blockIds: [], docVer: resp.docVer };
+  if (contentBlocks.length === 0) {
+    return {
+      content: "",
+      blockIds: [],
+      docVer: resp.head,
+      source: resp.source,
+      draft: resp.draft,
+    };
+  }
 
   const blockIds = contentBlocks.map((b) => b.blockId);
 
@@ -411,12 +469,18 @@ export async function loadDocumentContentV2(
     const blockIdMap = new Map<number, string>();
     contentBlocks.forEach((b, i) => blockIdMap.set(i, b.blockId));
     const html = blocksToHtml(contentBlocks, blockIdMap);
-    return { content: html, blockIds, docVer: resp.docVer };
+    return { content: html, blockIds, docVer: resp.head, source: resp.source, draft: resp.draft };
   }
 
   // 新格式：重组为 Tiptap JSON
   const tiptapDoc = blocksToTiptapJson(contentBlocks);
-  return { content: tiptapDoc, blockIds, docVer: resp.docVer };
+  return {
+    content: tiptapDoc,
+    blockIds,
+    docVer: resp.head,
+    source: resp.source,
+    draft: resp.draft,
+  };
 }
 
 /**

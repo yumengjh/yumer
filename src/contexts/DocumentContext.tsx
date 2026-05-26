@@ -16,6 +16,7 @@ import {
   updateDocument as apiUpdateDoc,
   deleteDocument as apiDeleteDoc,
   publishDocument as apiPublishDoc,
+  type EditDraftMeta,
   type Document,
   type EditorContent,
   type PublishDocumentResult,
@@ -41,6 +42,8 @@ interface DocumentContextValue {
   lastSavedAt: Date | null;
   hasUnsavedChanges: boolean;
   currentDocVersion: number | null;
+  currentContentSource: "draft" | "head" | null;
+  currentDraftMeta: EditDraftMeta | null;
   setWorkspace: (id: string) => void;
   clearWorkspace: () => void;
   selectDoc: (docId: string) => Promise<void>;
@@ -86,6 +89,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [currentDocVersion, setCurrentDocVersion] = useState<number | null>(null);
+  const [currentContentSource, setCurrentContentSource] = useState<"draft" | "head" | null>(null);
+  const [currentDraftMeta, setCurrentDraftMeta] = useState<EditDraftMeta | null>(null);
 
   const currentDocRef = useRef<Document | null>(null);
   const blockIdsRef = useRef<string[]>([]);
@@ -104,6 +109,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const setCurrentDocument = useCallback((doc: Document, status: SaveStatus = "loaded") => {
     setCurrentDoc(doc);
     setCurrentDocVersion(null);
+    setCurrentContentSource(null);
+    setCurrentDraftMeta(null);
     currentDocRef.current = doc;
     resetSaveState(status);
   }, [resetSaveState]);
@@ -113,6 +120,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(WORKSPACE_KEY, id);
     setCurrentDoc(null);
     setCurrentDocVersion(null);
+    setCurrentContentSource(null);
+    setCurrentDraftMeta(null);
     currentDocRef.current = null;
     setDocuments([]);
     resetSaveState();
@@ -123,6 +132,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(WORKSPACE_KEY);
     setCurrentDoc(null);
     setCurrentDocVersion(null);
+    setCurrentContentSource(null);
+    setCurrentDraftMeta(null);
     currentDocRef.current = null;
     setDocuments([]);
     resetSaveState();
@@ -156,9 +167,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, [setCurrentDocument, workspaceId]);
 
   const loadContent = useCallback(async (docId: string): Promise<{ content: EditorContent; docVer: number }> => {
-    const { content, blockIds, docVer } = await loadDocumentContentV2(docId);
+    const { content, blockIds, docVer, source, draft } = await loadDocumentContentV2(docId);
     blockIdsRef.current = blockIds;
     setCurrentDocVersion(docVer);
+    setCurrentContentSource(source);
+    setCurrentDraftMeta(draft);
     return { content, docVer };
   }, []);
 
@@ -171,6 +184,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       currentDocRef.current = doc;
       setDocuments((prev) => [doc, ...prev]);
       resetSaveState("loaded");
+      setCurrentContentSource("head");
+      setCurrentDraftMeta(null);
       pushWindowPath(doc.docId);
       return doc;
     },
@@ -182,6 +197,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const updated = await apiUpdateDoc(docId, data);
       setCurrentDoc(updated);
       setCurrentDocVersion(updated.head);
+      setCurrentContentSource("head");
       currentDocRef.current = updated;
       setDocuments((prev) =>
         prev.map((d) => (d.docId === docId ? updated : d)),
@@ -197,6 +213,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (currentDocRef.current?.docId === docId) {
         setCurrentDoc(null);
         setCurrentDocVersion(null);
+        setCurrentContentSource(null);
+        setCurrentDraftMeta(null);
         currentDocRef.current = null;
         resetSaveState();
         resetWindowPath();
@@ -212,6 +230,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const updated = result.document;
       setCurrentDoc(updated);
       setCurrentDocVersion(updated.head);
+      setCurrentContentSource("head");
+      setCurrentDraftMeta(null);
       currentDocRef.current = updated;
       setDocuments((prev) =>
         prev.map((d) => (d.docId === docId ? updated : d)),
@@ -237,6 +257,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         lastSavedAt,
         hasUnsavedChanges,
         currentDocVersion,
+        currentContentSource,
+        currentDraftMeta,
         setWorkspace,
         clearWorkspace,
         selectDoc,

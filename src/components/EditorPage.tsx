@@ -19,6 +19,7 @@ import { DocumentHeader } from "@/components/DocumentHeader";
 import { useAutoSave } from "@/hooks/useAutoSave";
 import {
   commitVersion,
+  discardDraft as discardDraftRequest,
   saveDocumentContentV2,
   type EditorContent,
 } from "@/services/document";
@@ -290,6 +291,7 @@ function EditorContent() {
     currentDoc,
     currentDocSlug,
     currentDocVersion,
+    currentContentSource,
     loadContent,
     selectDoc,
     workspaceId,
@@ -308,6 +310,7 @@ function EditorContent() {
   const [outputModalOpen, setOutputModalOpen] = useState(false);
   const [showTOC, setShowTOC] = useState(false);
   const [manualSaving, setManualSaving] = useState(false);
+  const [discardingDraft, setDiscardingDraft] = useState(false);
   const [settingsState, setSettingsState] = useState<SettingsState>(() =>
     buildSettingsState({ priority: "workspace-first" }),
   );
@@ -586,6 +589,36 @@ function EditorContent() {
     message,
   ]);
 
+  const handleDiscardDraft = useCallback(async () => {
+    if (!currentDoc || currentContentSource !== "draft" || discardingDraft) return;
+
+    setDiscardingDraft(true);
+    try {
+      await discardDraftRequest(currentDoc.docId);
+      const loaded = await loadContent(currentDoc.docId);
+      setContent(loaded.content || DEFAULT_CONTENT);
+      setContentDirty(false);
+      setHasUnsavedChanges(false);
+      markSavedAt(null);
+      setSaveStatus("loaded");
+      message.success("已取消草稿");
+    } catch (error) {
+      console.error("取消草稿失败:", error);
+      message.error("取消草稿失败");
+    } finally {
+      setDiscardingDraft(false);
+    }
+  }, [
+    currentContentSource,
+    currentDoc,
+    discardingDraft,
+    loadContent,
+    markSavedAt,
+    message,
+    setHasUnsavedChanges,
+    setSaveStatus,
+  ]);
+
   useEffect(() => {
     if (!workspaceId || !currentDoc || !hasUnsavedChanges) return;
 
@@ -646,7 +679,9 @@ function EditorContent() {
         <>
           <DocumentHeader
             onSave={handleManualSave}
+            onDiscardDraft={handleDiscardDraft}
             saving={manualSaving}
+            discardingDraft={discardingDraft}
             showTOC={showTOC}
             onToggleTOC={setShowTOC}
             settingsScope={settingsScope}
