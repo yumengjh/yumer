@@ -1,6 +1,7 @@
 import type { TiptapDoc, TiptapNode } from "@/services/tiptap-converter";
 import { extractPlainText } from "@/services/tiptap-converter";
 import { ensureDocumentIdentity, readIdentityFromAttrs } from "./identity";
+import { createSortKeyBetween } from "./order";
 import type { SyncEntry } from "./types";
 
 const TIPTAP_TO_BLOCK_TYPE: Record<string, string> = {
@@ -30,8 +31,15 @@ export function normalizeEditorDoc(doc: TiptapDoc): TiptapDoc {
   };
 }
 
-function createSortKey(index: number): string {
+function fallbackSortKey(index: number): string {
   return String((index + 1) * 1000).padStart(6, "0");
+}
+
+function getSortKey(node: TiptapNode, fallbackIndex: number): string {
+  const attrValue = node.attrs?.sortKey;
+  return typeof attrValue === "string" && attrValue.trim() !== ""
+    ? attrValue
+    : fallbackSortKey(fallbackIndex);
 }
 
 function normalizePayload(value: unknown): unknown {
@@ -85,18 +93,31 @@ function indexTopLevel(doc: TiptapDoc): Record<string, IndexedNode> {
       blockId: identity.blockId ?? null,
       node,
       index: i,
-      sortKey: createSortKey(i),
+      sortKey: getSortKey(node, i),
     };
   }
   return indexed;
+}
+
+function sortKeyForPosition(nextNodes: IndexedNode[], index: number): string {
+  const previousExisting = [...nextNodes.slice(0, index)]
+    .reverse()
+    .find((item) => item.blockId);
+  const nextExisting = nextNodes.slice(index + 1).find((item) => item.blockId);
+
+  return createSortKeyBetween(
+    previousExisting?.sortKey ?? null,
+    nextExisting?.sortKey ?? null,
+  );
 }
 
 export function deriveSyncEntries(prevDoc: TiptapDoc | null, nextDoc: TiptapDoc): SyncEntry[] {
   const nextIndexed = indexTopLevel(nextDoc);
   const prevIndexed = prevDoc ? indexTopLevel(prevDoc) : {};
   const entries: SyncEntry[] = [];
+  const orderedNextNodes = Object.values(nextIndexed).sort((a, b) => a.index - b.index);
 
-  for (const nextNode of Object.values(nextIndexed).sort((a, b) => a.index - b.index)) {
+  for (const nextNode of orderedNextNodes) {
     const prevNode = prevIndexed[nextNode.clientId];
     if (!prevNode) {
       entries.push({
@@ -105,9 +126,19 @@ export function deriveSyncEntries(prevDoc: TiptapDoc | null, nextDoc: TiptapDoc)
         opType: "create",
         blockType: toBlockType(nextNode.node.type),
         payload: nextNode.node as unknown as Record<string, unknown>,
-        sortKey: nextNode.sortKey,
+        sortKey: sortKeyForPosition(orderedNextNodes, nextNode.index),
       });
       continue;
+    }
+
+    const nextSortKey = sortKeyForPosition(orderedNextNodes, nextNode.index);
+    if (prevNode.index !== nextNode.index && nextSortKey !== prevNode.sortKey) {
+      entries.push({
+        clientId: nextNode.clientId,
+        blockId: prevNode.blockId,
+        opType: "move",
+        sortKey: nextSortKey,
+      });
     }
 
     const changedPayload = payloadFingerprint(prevNode.node) !== payloadFingerprint(nextNode.node);

@@ -23,6 +23,7 @@ import {
   type EditorContent,
 } from "@/services/document";
 import { useDocumentSync } from "@/hooks/useDocumentSync";
+import { hashEditorDoc, shouldApplyRemoteContent } from "@/services/sync/hash";
 import { shouldEnableLegacyAutoSave } from "@/services/save-policy";
 import {
   DEFAULT_USER_SETTINGS,
@@ -526,9 +527,38 @@ function EditorContent() {
         }
       }
       await commitVersion(currentDoc.docId, "手动保存");
-      if (syncEngineEnabled) {
+      if (syncEngineEnabled && typeof content !== "string") {
+        const editorContentAtReload = editorRef.current?.getJSON() as TiptapDoc | undefined;
+        const hashAtReloadStart = editorContentAtReload?.type === "doc"
+          ? hashEditorDoc(editorContentAtReload)
+          : null;
         const loaded = await loadContent(currentDoc.docId);
-        setContent(loaded.content || DEFAULT_CONTENT);
+        const loadedContent = loaded.content || DEFAULT_CONTENT;
+        const currentEditorContent = editorRef.current?.getJSON() as TiptapDoc | undefined;
+        const currentHash = currentEditorContent?.type === "doc" && hashAtReloadStart
+          ? hashEditorDoc(currentEditorContent)
+          : hashAtReloadStart;
+        const responseHash = typeof loadedContent === "object" && loadedContent.type === "doc" && hashAtReloadStart
+          ? hashEditorDoc(loadedContent)
+          : hashAtReloadStart;
+
+        if (
+          hashAtReloadStart &&
+          currentHash &&
+          responseHash &&
+          shouldApplyRemoteContent({
+            hashAtDispatch: hashAtReloadStart,
+            currentEditorHash: currentHash,
+            responseHash,
+          })
+        ) {
+          setContent(loadedContent);
+        } else if (hashAtReloadStart) {
+          setSaveStatus("error");
+          setHasUnsavedChanges(true);
+          message.warning("保存响应已过期，当前编辑内容未被覆盖。请检查同步状态后重试。");
+          return;
+        }
       }
       setContentDirty(false);
       setHasUnsavedChanges(false);
@@ -553,6 +583,7 @@ function EditorContent() {
     saveLegacyContent,
     loadContent,
     tiptapContent,
+    message,
   ]);
 
   useEffect(() => {

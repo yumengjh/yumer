@@ -72,6 +72,15 @@ export function enqueueChange(state: SyncReducerState, incoming: SyncEntry): Syn
     return state;
   }
 
+  if (current && incoming.opType === "move") {
+    return upsertEntry(state, {
+      ...current,
+      opType: current.opType === "create" ? "create" : current.opType,
+      parentId: incoming.parentId ?? current.parentId,
+      sortKey: incoming.sortKey ?? current.sortKey,
+    });
+  }
+
   if (current) {
     return upsertEntry(state, {
       ...current,

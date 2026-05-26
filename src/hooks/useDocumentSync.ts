@@ -28,6 +28,11 @@ function createBatchId(): string {
   return `batch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function logSyncEvent(event: string, details: Record<string, unknown>) {
+  if (process.env.NODE_ENV === "production") return;
+  console.debug(`[sync] ${event}`, details);
+}
+
 export function useDocumentSync({
   docId,
   rootBlockId,
@@ -108,6 +113,16 @@ export function useDocumentSync({
           }
 
           const clientBatchId = createBatchId();
+          logSyncEvent("flush:dispatch", {
+            docId: current.docId,
+            clientBatchId,
+            baseVersion: current.baseVersion,
+            operationCount: operations.length,
+            createCount: operations.filter((op) => op.opType === "create").length,
+            updateCount: operations.filter((op) => op.opType === "update").length,
+            deleteCount: operations.filter((op) => op.opType === "delete").length,
+            moveCount: operations.filter((op) => op.opType === "move").length,
+          });
           replaceSyncState(
             markBatchInflight(current, clientBatchId, operations.map((op) => op.clientId), source === "manual-save"),
           );
@@ -120,6 +135,13 @@ export function useDocumentSync({
               clientBatchId,
               source,
               operations,
+            });
+            logSyncEvent("flush:response", {
+              docId: current.docId,
+              acceptedBatchId: response.acceptedBatchId,
+              serverHead: response.serverHead,
+              needsReload: response.needsReload,
+              resultCount: response.results.length,
             });
 
             if (response.needsReload) {
