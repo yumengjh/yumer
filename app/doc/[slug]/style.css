@@ -10,6 +10,7 @@
   grid-template-columns: 1fr minmax(auto, var(--doc-content-width, 800px)) 1fr;
   width: 100%;
   padding: 40px 0;
+  flex: 1;
 }
 
 .doc-main-content {
@@ -17,6 +18,8 @@
   width: 100%;
   padding: 0 24px;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .doc-main-title {
@@ -45,38 +48,41 @@
 }
 
 .doc-footer {
-  margin-top: 60px;
+  margin-top: auto;
   padding-top: 24px;
   border-top: 1px solid #f0f0f0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
 .doc-footer-meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 20px; /* Increased gap to replace dots */
+  gap: 8px 24px;
   color: #8f959e;
   font-size: 14px;
 }
 
-.doc-footer-meta-item {
-  display: flex;
-  align-items: center;
+.doc-meta-entry {
+  display: inline-flex;
+  align-items: baseline;
   gap: 6px;
 }
 
-.doc-author-avatar {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background-color: #e8e8e8;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #8f959e;
-  font-size: 12px;
+.doc-meta-entry--views {
+  margin-left: auto;
+}
+
+.doc-meta-label {
+  color: #bbbfc4;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.doc-meta-value {
+  color: #646a73;
 }
 
 .doc-tags-list {
@@ -148,19 +154,22 @@
   .doc-mobile-meta {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
-    gap: 16px;
+    align-items: baseline;
+    gap: 12px 20px;
     margin-bottom: 24px;
-    color: #8f959e;
-    font-size: 15px; /* Larger text on mobile */
+    font-size: 14px;
   }
-  
+
   .doc-footer .doc-footer-meta {
     flex-direction: column;
     align-items: flex-start;
-    gap: 8px;
+    gap: 10px;
   }
-  
+
+  .doc-footer .doc-meta-entry--views {
+    margin-left: 0;
+  }
+
   .doc-footer .desktop-only {
     display: none !important;
   }

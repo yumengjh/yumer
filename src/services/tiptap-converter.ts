@@ -47,6 +47,7 @@ const TIPTAP_TO_BLOCK_TYPE: Record<string, string> = {
   table: "table",
   horizontalRule: "hr",
   highlightBlock: "highlightBlock",
+  imageBlock: "imageBlock",
 };
 
 const BLOCK_TO_TIPTAP_TYPE: Record<string, string> = Object.fromEntries(

@@ -184,6 +184,28 @@ describe("doc page SSR rendering contract", () => {
     expect(html).toContain("Highlighted");
   });
 
+  it("rewrites cached image html to backend urls", () => {
+    const tree = {
+      blockId: "root_1",
+      type: "root",
+      payload: { type: "root", children: [] },
+      children: [
+        {
+          blockId: "img1",
+          type: "imageBlock",
+          sortKey: "001000",
+          html: '<figure data-image-block><img src="/api/v1/images/asset_1/file" alt="photo"></figure>',
+          payload: {},
+          children: [],
+        },
+      ],
+    };
+
+    const html = renderBlockTreeToHtml(tree);
+
+    expect(html).toContain('src="https://api-zzz.yumgjs.com/api/v1/images/asset_1/file"');
+  });
+
   it("prefers backend block html and falls back to local json rendering per block", () => {
     const tree = {
       blockId: "root_1",

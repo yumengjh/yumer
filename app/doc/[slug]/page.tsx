@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { ClockCircleOutlined, EyeOutlined } from "@ant-design/icons";
 import DeferredCodeBlockRenderer from "@/components/DeferredCodeBlockRenderer";
 import { DocPageLayout } from "@/components/DocPageLayout";
 import { PublicDocTOC } from "@/components/PublicDocTOC";
@@ -61,24 +60,24 @@ export default async function DocPage({ params, searchParams }: PageProps) {
       <h1 className="doc-main-title">{doc.title || "\u65E0\u6807\u9898"}</h1>
 
       <div className="doc-mobile-meta">
-        <div className="doc-footer-meta-item">
-          <div className="doc-author-avatar">
-            {doc.authorAvatar ? (
-              <img
-                src={doc.authorAvatar}
-                alt="avatar"
-                style={{ width: "100%", height: "100%", borderRadius: "50%" }}
-              />
-            ) : (
-              doc.authorName.charAt(0).toUpperCase()
-            )}
-          </div>
-          <span>{doc.authorName}</span>
-        </div>
-        {doc.category && <span>{doc.category}</span>}
-        <span className="doc-footer-meta-item">
-          <ClockCircleOutlined /> {formatDate(doc.updatedAt)}
+        <span className="doc-meta-entry">
+          <span className="doc-meta-label">作者</span>
+          <span className="doc-meta-value">{doc.authorName}</span>
         </span>
+        {doc.category && (
+          <span className="doc-meta-entry">
+            <span className="doc-meta-label">分类</span>
+            <span className="doc-meta-value">{doc.category}</span>
+          </span>
+        )}
+        {doc.updatedAt && (
+          <span className="doc-meta-entry">
+            <span className="doc-meta-label">更新</span>
+            <time className="doc-meta-value" dateTime={doc.updatedAt}>
+              {formatDate(doc.updatedAt)}
+            </time>
+          </span>
+        )}
       </div>
 
       <div
@@ -93,6 +92,31 @@ export default async function DocPage({ params, searchParams }: PageProps) {
       <DeferredCodeBlockRenderer />
 
       <footer className="doc-footer">
+        <div className="doc-footer-meta">
+          <span className="doc-meta-entry desktop-only">
+            <span className="doc-meta-label">作者</span>
+            <span className="doc-meta-value">{doc.authorName}</span>
+          </span>
+          {doc.category && (
+            <span className="doc-meta-entry desktop-only">
+              <span className="doc-meta-label">分类</span>
+              <span className="doc-meta-value">{doc.category}</span>
+            </span>
+          )}
+          {doc.updatedAt && (
+            <span className="doc-meta-entry desktop-only">
+              <span className="doc-meta-label">更新</span>
+              <time className="doc-meta-value" dateTime={doc.updatedAt}>
+                {formatDate(doc.updatedAt)}
+              </time>
+            </span>
+          )}
+          <span className="doc-meta-entry doc-meta-entry--views">
+            <span className="doc-meta-label">浏览</span>
+            <span className="doc-meta-value">{doc.viewCount}</span>
+          </span>
+        </div>
+
         {doc.tags.length > 0 && (
           <div className="doc-tags-list">
             {doc.tags.map((tag: TagSummary) => (
@@ -106,30 +130,6 @@ export default async function DocPage({ params, searchParams }: PageProps) {
             ))}
           </div>
         )}
-
-        <div className="doc-footer-meta">
-          <div className="doc-footer-meta-item desktop-only">
-            <div className="doc-author-avatar">
-              {doc.authorAvatar ? (
-                <img
-                  src={doc.authorAvatar}
-                  alt="avatar"
-                  style={{ width: "100%", height: "100%", borderRadius: "50%" }}
-                />
-              ) : (
-                doc.authorName.charAt(0).toUpperCase()
-              )}
-            </div>
-            <span>{doc.authorName}</span>
-          </div>
-          {doc.category && <span className="desktop-only">{doc.category}</span>}
-          <span className="doc-footer-meta-item desktop-only">
-            <ClockCircleOutlined /> {formatDate(doc.updatedAt)}
-          </span>
-          <span className="doc-footer-meta-item" style={{ marginLeft: "auto" }}>
-            <EyeOutlined /> {doc.viewCount} {"\u6D4F\u89C8"}
-          </span>
-        </div>
       </footer>
     </DocPageLayout>
   );

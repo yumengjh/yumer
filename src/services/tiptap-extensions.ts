@@ -28,6 +28,7 @@ import { OrderedListStyle } from "../components/markdown-editor/extensions/order
 import { LineHeight } from "../components/markdown-editor/extensions/lineHeight";
 import { Indent } from "../components/markdown-editor/extensions/indent";
 import { BlockIdAttribute } from "../components/markdown-editor/extensions/blockIdAttribute";
+import { ImageBlock } from "../components/markdown-editor/extensions/imageBlock";
 
 export const serializationExtensions = [
   StarterKit.configure({
@@ -63,6 +64,7 @@ export const serializationExtensions = [
   OrderedListStyle,
   LineHeight.configure({ types: ["paragraph", "heading"], defaultLineHeight: null }),
   HighlightBlock,
+  ImageBlock,
   Indent.configure({ types: ["paragraph", "heading"], maxLevel: 8 }),
   BlockIdAttribute,
 ];

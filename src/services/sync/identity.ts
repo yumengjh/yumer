@@ -15,6 +15,7 @@ export const BLOCK_IDENTITY_NODE_TYPES = [
   "tableCell",
   "tableHeader",
   "highlightBlock",
+  "imageBlock",
 ] as const;
 
 const IDENTITY_BLOCK_NODE_TYPES = new Set<string>(BLOCK_IDENTITY_NODE_TYPES);

@@ -8,7 +8,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
+  padding: 8px 12px 8px 16px;
   font-size: 14px;
   font-weight: 500;
   color: #1f2329;
@@ -23,61 +23,114 @@
 .public-toc-panel .toc-content {
   flex: 1;
   overflow-y: auto;
-  padding: 4px 12px 12px;
-  display: flex;
-  flex-direction: column;
+  padding: 0 12px 12px 8px;
+}
+
+.public-toc-panel .toc-items {
+  position: relative;
+  padding-left: 14px;
+}
+
+.public-toc-panel .toc-rail {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+  pointer-events: none;
+}
+
+.public-toc-panel .toc-rail-track {
+  position: absolute;
+  left: 4px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 1px;
+  background-color: #e8e8e8;
+}
+
+.public-toc-panel .toc-rail-indicator {
+  position: absolute;
+  left: 3px;
+  width: 3px;
+  border-radius: 1.5px;
+  background-color: #1a1a1a;
+  transition: top 0.2s ease, height 0.15s ease;
 }
 
 .public-toc-panel .toc-item {
   display: flex;
-  align-items: center;
-  padding: 4px 8px;
-  border-radius: 4px;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 5px 8px 5px 4px;
   cursor: pointer;
-  color: #4a4a4a;
+  color: #8c8c8c;
   font-size: 13px;
-  line-height: 1.5;
-  transition: all 0.15s ease;
+  line-height: 1.55;
+  transition: color 0.15s ease;
   user-select: none;
 }
 
 .public-toc-panel .toc-item:hover {
-  background-color: rgba(0, 0, 0, 0.04);
+  color: #595959;
 }
 
-.public-toc-panel .toc-item-indent {
-  flex-shrink: 0;
+.public-toc-panel .toc-item-active {
+  color: #1a1a1a;
+  font-weight: 500;
 }
 
-.public-toc-panel .toc-item-icon {
-  width: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  margin-right: 2px;
+.public-toc-panel .toc-item.level-1 {
+  padding-left: 4px;
+}
+
+.public-toc-panel .toc-item.level-2 {
+  padding-left: 12px;
+}
+
+.public-toc-panel .toc-item.level-3 {
+  padding-left: 20px;
+}
+
+.public-toc-panel .toc-item.level-4 {
+  padding-left: 28px;
+}
+
+.public-toc-panel .toc-item.level-5 {
+  padding-left: 36px;
+}
+
+.public-toc-panel .toc-item.level-6 {
+  padding-left: 44px;
 }
 
 .public-toc-panel .toc-toggle {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  flex-shrink: 0;
+  width: 14px;
+  height: 20px;
+  margin-top: 1px;
   border-radius: 3px;
-  font-size: 10px;
-  color: #8f959e;
-  transition: background-color 0.15s;
+  font-size: 9px;
+  color: #bfbfbf;
+  transition: color 0.15s ease, background-color 0.15s ease;
 }
 
 .public-toc-panel .toc-toggle:hover {
-  background-color: rgba(0, 0, 0, 0.08);
-  color: #1f2329;
+  background-color: rgba(0, 0, 0, 0.05);
+  color: #595959;
 }
 
 .public-toc-panel .toc-item-text {
   flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
 }

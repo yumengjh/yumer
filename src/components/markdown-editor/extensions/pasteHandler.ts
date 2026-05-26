@@ -3,6 +3,7 @@ import { Plugin } from "prosemirror-state";
 import { DOMParser as ProseMirrorDOMParser, Slice } from "prosemirror-model";
 import type { EditorView } from "prosemirror-view";
 import { marked } from "marked";
+import type { ImageBlockAttrs } from "./imageBlock";
 
 type CodeBlockSelectionLike = {
   state?: {
@@ -21,6 +22,20 @@ type CodeBlockSelectionLike = {
 export const isCodeBlockSelection = (view: CodeBlockSelectionLike): boolean => {
   return view.state?.selection?.$from?.parent?.type?.name === "codeBlock";
 };
+
+export type PasteImageUpload = (file: File) => Promise<Partial<ImageBlockAttrs>>;
+
+interface PasteHandlerOptions {
+  uploadImage?: PasteImageUpload;
+}
+
+export function getClipboardImageFiles(dataTransfer: DataTransfer | null | undefined): File[] {
+  if (!dataTransfer?.items) return [];
+  return Array.from(dataTransfer.items)
+    .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => Boolean(file));
+}
 
 const cleanPastedHTML = (html: string): string => {
   const tempDiv = document.createElement("div");
@@ -71,7 +86,7 @@ const cleanPastedHTML = (html: string): string => {
   return cleanedHtml;
 };
 
-export const createPasteHandlerExtension = () => {
+export const createPasteHandlerExtension = (options: PasteHandlerOptions = {}) => {
   return Extension.create({
     name: "pasteHandler",
     addProseMirrorPlugins() {
@@ -79,6 +94,23 @@ export const createPasteHandlerExtension = () => {
         new Plugin({
           props: {
             handlePaste: (view: EditorView, event: ClipboardEvent) => {
+              const imageFiles = getClipboardImageFiles(event.clipboardData);
+              if (imageFiles.length > 0 && options.uploadImage) {
+                event.preventDefault();
+                const editorInstance = this.editor;
+                void Promise.all(imageFiles.map((file) => options.uploadImage!(file)))
+                  .then((images) => {
+                    images.forEach((attrs) => {
+                      editorInstance.commands.insertImageBlock(attrs);
+                    });
+                  })
+                  .catch((error) => {
+                    const message = error instanceof Error ? error.message : "图片粘贴上传失败";
+                    console.warn(message);
+                  });
+                return true;
+              }
+
               const html = event.clipboardData?.getData("text/html");
               const text = event.clipboardData?.getData("text/plain");
 

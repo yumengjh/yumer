@@ -115,22 +115,32 @@ async function readPublicDocSnapshot(
   const fetchOptions = resolvePublicFetchOptions(slug, latest);
   const contentUrl = `${API_BASE}/documents/${docId}/content?mode=html`;
   const fallbackContentUrl = `${API_BASE}/documents/${docId}/content`;
-  const [contentRes, docRes] = await Promise.all([
-    fetchPublicDocContent(contentUrl, fallbackContentUrl, fetchOptions),
-    fetch(`${API_BASE}/documents/${docId}`, fetchOptions),
-  ]);
+
+  let contentRes: Response;
+  let docRes: Response;
+  try {
+    [contentRes, docRes] = await Promise.all([
+      fetchPublicDocContent(contentUrl, fallbackContentUrl, fetchOptions),
+      fetch(`${API_BASE}/documents/${docId}`, fetchOptions),
+    ]);
+  } catch {
+    return null;
+  }
 
   if (!contentRes.ok || !docRes.ok) {
     return null;
   }
 
   const renderHeaders = readRenderHeaderInfo(contentRes.headers);
-  const [contentJson, docJson] = await Promise.all([
-    contentRes.json(),
-    docRes.json(),
-  ]);
+  let contentJson: { success?: boolean; data?: ContentResponse };
+  let docJson: { success?: boolean; data?: DocumentMetaResponse };
+  try {
+    [contentJson, docJson] = await Promise.all([contentRes.json(), docRes.json()]);
+  } catch {
+    return null;
+  }
 
-  if (!contentJson.success || !docJson.success) {
+  if (!contentJson.success || !docJson.success || !contentJson.data || !docJson.data) {
     return null;
   }
 

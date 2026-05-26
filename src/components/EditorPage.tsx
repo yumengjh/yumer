@@ -682,6 +682,7 @@ function EditorContent() {
               loading={loadingDoc}
               defaultFontSize={activeSettingsState.effectiveSettings.editor.fontSize}
               contentWidth={activeSettingsState.effectiveSettings.editor.contentWidth}
+              workspaceId={workspaceId}
               style={
                 {
                   "--app-editor-font-size": `${activeSettingsState.effectiveSettings.editor.fontSize}px`,

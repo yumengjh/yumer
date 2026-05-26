@@ -10,6 +10,7 @@ import {
 } from "@/components/markdown-editor/code/codeBlockOptions";
 import { serializationExtensions } from "./tiptap-extensions";
 import { type TiptapDoc, type TiptapNode } from "./tiptap-converter";
+import { resolveApiUrl } from "./api-client";
 
 interface Block {
   blockId: string;
@@ -18,6 +19,13 @@ interface Block {
   html?: string | null;
   sortKey?: string;
   children?: Block[];
+}
+
+function rewriteImageSrc(html: string): string {
+  return html.replace(/(<img\b[^>]*\bsrc=["'])([^"']+)(["'][^>]*>)/gi, (_match, prefix: string, src: string, suffix: string) => {
+    if (/^(https?:|data:|blob:)/i.test(src)) return `${prefix}${src}${suffix}`;
+    return `${prefix}${resolveApiUrl(src)}${suffix}`;
+  });
 }
 
 function renderCodeBlockPlaceholder(block: Block): string {
@@ -66,19 +74,19 @@ export function renderBlockTreeToHtml(tree: Block): string {
       if (b.type === "codeBlock") return renderCodeBlockPlaceholder(b);
 
       const blockHtml = typeof b.html === "string" ? b.html : "";
-      if (blockHtml.trim()) return blockHtml;
+      if (blockHtml.trim()) return rewriteImageSrc(blockHtml);
 
       const legacyHtml =
         typeof b.payload?.html === "string" ? b.payload.html : "";
-      if (legacyHtml.trim()) return legacyHtml;
+      if (legacyHtml.trim()) return rewriteImageSrc(legacyHtml);
 
       try {
         const node = b.payload as unknown as TiptapNode;
         const doc: TiptapDoc = { type: "doc", content: [node] };
-        return renderToHTMLString({
+        return rewriteImageSrc(renderToHTMLString({
           extensions: serializationExtensions,
           content: doc,
-        });
+        }));
       } catch (e) {
         console.warn(
           "[generate-block-html] block 渲染失败，已跳过:",

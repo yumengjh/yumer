@@ -876,6 +876,69 @@
   border-radius: 4px;
 }
 
+.tiptap-editor figure[data-image-block] {
+  max-width: 100%;
+  margin: 16px 0;
+  line-height: 0;
+}
+
+.tiptap-editor figure[data-image-block] > a {
+  display: inline-block;
+  max-width: 100%;
+}
+
+.tiptap-editor figure[data-image-block][data-align="left"] {
+  text-align: left;
+}
+
+.tiptap-editor figure[data-image-block][data-align="center"] {
+  text-align: center;
+}
+
+.tiptap-editor figure[data-image-block][data-align="right"] {
+  text-align: right;
+}
+
+.tiptap-editor figure[data-image-block] .image-layout-box {
+  position: relative;
+  display: inline-block;
+  box-sizing: border-box;
+  max-width: 100%;
+  line-height: 0;
+  vertical-align: top;
+}
+
+.tiptap-editor figure[data-image-block] .image-crop-window {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: block;
+  box-sizing: border-box;
+  overflow: hidden;
+  border-radius: 4px;
+  transform-origin: center center;
+}
+
+.tiptap-editor figure[data-image-block] .image-crop-window--shadow {
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.22);
+}
+
+.tiptap-editor figure[data-image-block] .image-crop-window--border {
+  border: 1px solid rgba(15, 23, 42, 0.18);
+}
+
+.tiptap-editor figure[data-image-block] .image-crop-window--rounded {
+  border-radius: 10px;
+}
+
+.tiptap-editor figure[data-image-block] .image-crop-window img {
+  position: absolute;
+  display: block;
+  max-width: none;
+  margin: 0;
+  object-fit: cover;
+}
+
 /* ---------- 响应式内边距 ---------- */
 @media (max-width: 1280px) {
   .tiptap-shell {

@@ -1,0 +1,244 @@
+.image-block-view {
+  position: relative;
+  display: flex;
+  width: 100%;
+  margin: 16px 0;
+}
+
+.image-block-view--left {
+  justify-content: flex-start;
+}
+
+.image-block-view--center {
+  justify-content: center;
+}
+
+.image-block-view--right {
+  justify-content: flex-end;
+}
+
+.image-block-toolbar {
+  position: absolute;
+  top: -42px;
+  left: 50%;
+  z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 6px;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
+  transform: translateX(-50%);
+}
+
+.image-block-toolbar .ant-btn {
+  min-width: 26px;
+}
+
+.image-block-frame {
+  position: relative;
+  max-width: 100%;
+  margin: 0;
+  border: 1px solid transparent;
+  line-height: 0;
+  overflow: visible;
+}
+
+.image-layout-box {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  line-height: 0;
+  vertical-align: top;
+}
+
+.image-crop-window {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 2;
+  display: block;
+  box-sizing: border-box;
+  overflow: hidden;
+  border-radius: 4px;
+  transform-origin: center center;
+}
+
+.image-crop-window--shadow {
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.22);
+}
+
+.image-crop-window--border {
+  border: 1px solid rgba(15, 23, 42, 0.18);
+}
+
+.image-crop-window--rounded {
+  border-radius: 10px;
+}
+
+.image-block-view .image-crop-window img {
+  position: absolute;
+  z-index: 1;
+  display: block;
+  max-width: none;
+  margin: 0;
+  object-fit: cover;
+}
+
+.image-link-hotspot {
+  position: absolute;
+  top: 0;
+  left: 15%;
+  z-index: 7;
+  width: 70%;
+  height: 100%;
+  cursor: pointer;
+}
+
+.image-block-view.is-selected .image-block-frame {
+  border-color: transparent;
+}
+
+.image-selection-outline {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  box-sizing: border-box;
+  border: 1px solid #1677ff;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.image-resize-handle {
+  position: absolute;
+  z-index: 9;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 2px solid #1677ff;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.9);
+}
+
+.image-resize-handle--nw {
+  top: -6px;
+  left: -6px;
+  cursor: nwse-resize;
+}
+
+.image-resize-handle--ne {
+  top: -6px;
+  right: -6px;
+  cursor: nesw-resize;
+}
+
+.image-resize-handle--sw {
+  bottom: -6px;
+  left: -6px;
+  cursor: nesw-resize;
+}
+
+.image-resize-handle--se {
+  right: -6px;
+  bottom: -6px;
+  cursor: nwse-resize;
+}
+
+.image-crop-selection {
+  position: absolute;
+  z-index: 4;
+  box-sizing: border-box;
+  border: 1px solid #1677ff;
+  background: rgba(15, 23, 42, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.72);
+  pointer-events: auto;
+  user-select: none;
+}
+
+.image-crop-handle {
+  position: absolute;
+  z-index: 5;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.image-crop-handle::before {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-color: #fff;
+  border-style: solid;
+  filter: drop-shadow(0 0 1px #1677ff) drop-shadow(0 0 1px #1677ff);
+  content: "";
+}
+
+.image-crop-handle--nw {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+
+.image-crop-handle--nw::before {
+  top: 4px;
+  left: 4px;
+  border-width: 3px 0 0 3px;
+}
+
+.image-crop-handle--ne {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+
+.image-crop-handle--ne::before {
+  top: 4px;
+  right: 4px;
+  border-width: 3px 3px 0 0;
+}
+
+.image-crop-handle--sw {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
+
+.image-crop-handle--sw::before {
+  bottom: 4px;
+  left: 4px;
+  border-width: 0 0 3px 3px;
+}
+
+.image-crop-handle--se {
+  right: 0;
+  bottom: 0;
+  cursor: nwse-resize;
+}
+
+.image-crop-handle--se::before {
+  right: 4px;
+  bottom: 4px;
+  border-width: 0 3px 3px 0;
+}
+
+.image-block-empty {
+  display: grid;
+  place-items: center;
+  width: 240px;
+  height: 140px;
+  border: 1px dashed var(--app-border);
+  border-radius: 4px;
+  color: var(--app-text-muted);
+}
+
+@media (max-width: 768px) {
+  .image-block-toolbar {
+    max-width: calc(100vw - 24px);
+    overflow-x: auto;
+  }
+}

@@ -1,10 +1,35 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { FileTextOutlined, UnorderedListOutlined } from "@ant-design/icons";
 import { Drawer, Button, Tooltip } from "antd";
 import { PublicDocTOC } from "./PublicDocTOC";
 import "./PublicDocHeader.css";
+
+const DOC_LIST_PATH = "/blog";
+
+function DocBackIcon() {
+  return (
+    <svg
+      className="doc-back-icon"
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+    >
+      <path
+        d="M19 12H5M5 12L12 19M5 12L12 5"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
 
 interface PublicDocHeaderProps {
   title: string;
@@ -49,6 +74,11 @@ export function PublicDocHeader({ title, icon, onToggleTocDesktop }: PublicDocHe
   return (
     <div className={`public-doc-header ${isVisible ? "visible" : "hidden"}`}>
       <div className="public-doc-header-left">
+        <Tooltip title="返回列表" placement="bottom">
+          <Link href={DOC_LIST_PATH} className="doc-back-link" aria-label="返回列表">
+            <DocBackIcon />
+          </Link>
+        </Tooltip>
         <div className="title-display">
           {icon ? <span>{icon}</span> : <FileTextOutlined style={{ fontSize: 13, opacity: 0.5 }} />}
           <span>{title || "无标题"}</span>

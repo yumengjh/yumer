@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useState, useMemo, useRef, useLayoutEffect } from "react";
 import { RightOutlined, DownOutlined, MenuUnfoldOutlined, MenuFoldOutlined } from "@ant-design/icons";
 import { Button, Tooltip } from "antd";
 import "./PublicDocTOC.css";
@@ -11,9 +11,14 @@ interface TOCItem {
   level: number;
 }
 
+const SCROLL_HEADER_OFFSET = 76;
+
 export function PublicDocTOC() {
   const [headings, setHeadings] = useState<TOCItem[]>([]);
   const [collapsedLevels, setCollapsedLevels] = useState<Record<string, boolean>>({});
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [indicator, setIndicator] = useState({ top: 0, height: 0 });
+  const itemsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     // wait for DOM to render content
@@ -32,15 +37,76 @@ export function PublicDocTOC() {
         };
       });
       setHeadings(items);
+      if (items.length > 0) {
+        setActiveId(items[0].id);
+      }
     }, 100);
     return () => clearTimeout(timer);
   }, []);
 
+  useEffect(() => {
+    if (headings.length === 0) return;
+
+    const updateActiveHeading = () => {
+      let currentId = headings[0].id;
+      for (const item of headings) {
+        const el = document.getElementById(item.id);
+        if (!el) continue;
+        if (el.getBoundingClientRect().top <= SCROLL_HEADER_OFFSET) {
+          currentId = item.id;
+        }
+      }
+      setActiveId(currentId);
+    };
+
+    updateActiveHeading();
+    window.addEventListener("scroll", updateActiveHeading, { passive: true });
+    window.addEventListener("resize", updateActiveHeading);
+    return () => {
+      window.removeEventListener("scroll", updateActiveHeading);
+      window.removeEventListener("resize", updateActiveHeading);
+    };
+  }, [headings]);
+
+  const updateIndicator = useCallback(() => {
+    const container = itemsRef.current;
+    if (!container || !activeId) return;
+    const activeEl = container.querySelector<HTMLElement>(`.toc-item[data-id="${activeId}"]`);
+    if (!activeEl) return;
+    setIndicator({ top: activeEl.offsetTop, height: activeEl.offsetHeight });
+  }, [activeId]);
+
+  useLayoutEffect(() => {
+    updateIndicator();
+  }, [activeId, headings, collapsedLevels, updateIndicator]);
+
+  useEffect(() => {
+    const container = itemsRef.current;
+    if (!container) return;
+
+    const observer = new ResizeObserver(() => updateIndicator());
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [activeId, headings, collapsedLevels, updateIndicator]);
+
+  useEffect(() => {
+    if (!activeId) return;
+    const panel = document.querySelector(".public-toc-panel .toc-content");
+    const activeEl = document.querySelector(".public-toc-panel .toc-item-active");
+    if (!panel || !activeEl) return;
+
+    const panelRect = panel.getBoundingClientRect();
+    const elRect = activeEl.getBoundingClientRect();
+    if (elRect.top < panelRect.top || elRect.bottom > panelRect.bottom) {
+      activeEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [activeId]);
+
   const scrollToHeading = (id: string) => {
+    setActiveId(id);
     const el = document.getElementById(id);
     if (el) {
-      const headerHeight = 56;
-      const top = el.getBoundingClientRect().top + window.scrollY - headerHeight - 20;
+      const top = el.getBoundingClientRect().top + window.scrollY - SCROLL_HEADER_OFFSET;
       window.scrollTo({ top, behavior: "smooth" });
     }
   };
@@ -106,20 +172,20 @@ export function PublicDocTOC() {
       if (shouldHide) return;
 
       items.push(
-        <div 
-          key={item.id} 
-          className={`toc-item level-${item.level}`}
+        <div
+          key={item.id}
+          data-id={item.id}
+          className={`toc-item level-${item.level}${activeId === item.id ? " toc-item-active" : ""}`}
           onClick={() => scrollToHeading(item.id)}
         >
-          <span className="toc-item-indent" style={{ width: (item.level - 1) * 12 }} />
-          <span className="toc-item-icon">
-            {isParent && (
-              <span className="toc-toggle" onClick={(e) => toggleCollapse(item.id, e)}>
-                {isCollapsed ? <RightOutlined /> : <DownOutlined />}
-              </span>
-            )}
+          {isParent && (
+            <span className="toc-toggle" onClick={(e) => toggleCollapse(item.id, e)}>
+              {isCollapsed ? <RightOutlined /> : <DownOutlined />}
+            </span>
+          )}
+          <span className="toc-item-text" title={item.text}>
+            {item.text}
           </span>
-          <span className="toc-item-text" title={item.text}>{item.text}</span>
         </div>
       );
     });
@@ -142,7 +208,18 @@ export function PublicDocTOC() {
         </Tooltip>
       </div>
       <div className="toc-content">
-        {renderItems()}
+        <div className="toc-items" ref={itemsRef}>
+          <div className="toc-rail" aria-hidden>
+            <div className="toc-rail-track" />
+            {activeId && indicator.height > 0 && (
+              <div
+                className="toc-rail-indicator"
+                style={{ top: indicator.top, height: indicator.height }}
+              />
+            )}
+          </div>
+          {renderItems()}
+        </div>
       </div>
     </div>
   );

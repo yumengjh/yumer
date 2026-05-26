@@ -23,6 +23,7 @@ import {
   DownOutlined,
   BgColorsOutlined,
   TableOutlined,
+  PictureOutlined,
   MinusOutlined,
   FormatPainterOutlined,
   PlusOutlined,
@@ -51,6 +52,7 @@ import {
   runInlineMarkCommand,
 } from "./toolbarState";
 import "./style.css";
+import { uploadImage } from "@/services/images";
 
 type ToolbarItem = {
   id: string;
@@ -112,7 +114,7 @@ function OutdentIcon() {
 
 export default function DesktopToolbar() {
   const { message } = App.useApp();
-  const { editor, defaultFontSize } = useMarkdownEditorContext();
+  const { editor, defaultFontSize, workspaceId } = useMarkdownEditorContext();
   const [linkPopupOpen, setLinkPopupOpen] = useState(false);
   const [linkTextValue, setLinkTextValue] = useState("");
   const [linkUrlValue, setLinkUrlValue] = useState("");
@@ -125,6 +127,7 @@ export default function DesktopToolbar() {
   const editorReady = Boolean(tiptap);
   const [, forceUpdate] = useState(0);
   const savedSelectionRef = useRef<Selection | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [tooltipOpen, setTooltipOpen] = useState<Record<string, boolean>>({});
   const [copiedMarks, setCopiedMarks] = useState<Array<{ type: string; attrs?: Record<string, any> }>>([]);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
@@ -263,10 +266,49 @@ export default function DesktopToolbar() {
       case "divider":
         tiptap.chain().focus().setHorizontalRule().run();
         break;
+      case "image":
+        savedSelectionRef.current = tiptap.state.selection;
+        imageInputRef.current?.click();
+        break;
       default:
         break;
     }
   };
+
+  const handleImageFileSelect = useCallback(
+    async (file: File) => {
+      if (!tiptap) return;
+      if (!workspaceId) {
+        message.error("未选择工作空间");
+        return;
+      }
+      try {
+        const image = await uploadImage(workspaceId, file);
+        if (savedSelectionRef.current) {
+          tiptap.view.dispatch(tiptap.state.tr.setSelection(savedSelectionRef.current));
+        }
+        tiptap
+          .chain()
+          .focus()
+          .insertImageBlock({
+            imageId: image.imageId,
+            src: image.publicUrl || image.url,
+            filename: image.filename,
+            mimeType: image.mimeType,
+            size: image.size,
+            naturalWidth: image.width,
+            naturalHeight: image.height,
+            width: image.width,
+            height: image.height,
+            alt: image.filename,
+          })
+          .run();
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : "图片上传失败");
+      }
+    },
+    [message, tiptap, workspaceId],
+  );
 
   const getCurrentHeadingKey = (): string => {
     return `${toolbarState.headingLevel}`;
@@ -602,6 +644,7 @@ export default function DesktopToolbar() {
     [
       { id: "blockquote", label: "引用", content: <QuoteIcon /> },
       { id: "divider", label: "分割线", content: <MinusOutlined /> },
+      { id: "image", label: "图片", content: <PictureOutlined /> },
       {
         id: "code-language",
         label: "代码语言",
@@ -615,6 +658,17 @@ export default function DesktopToolbar() {
 
   return (
     <div className="toolbar">
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        hidden
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (file) void handleImageFileSelect(file);
+        }}
+      />
       {toolbarGroups.map((group, index) => (
         <div className="toolbar-group" key={`toolbar-group-${index}`}>
           {group.map((item) =>

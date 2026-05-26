@@ -17,9 +17,32 @@
 .public-doc-header-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
   flex: 1;
   min-width: 0;
+}
+
+.doc-back-link {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-left: -6px;
+  color: #4a4a4a;
+  text-decoration: none;
+  border-radius: 6px;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.doc-back-link:hover {
+  color: #1a1a1a;
+  background-color: rgba(0, 0, 0, 0.04);
+}
+
+.doc-back-icon {
+  display: block;
 }
 
 .public-doc-header-center {

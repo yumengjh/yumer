@@ -37,6 +37,8 @@ import { createMarkdownShortcutsExtension } from "./extensions/markdownShortcuts
 import { HighlightBlock } from "./extensions/highlightBlock";
 import HighlightBlockView from "./HighlightBlockView";
 import { Indent } from "./extensions/indent";
+import { ImageBlock } from "./extensions/imageBlock";
+import ImageBlockView from "./ImageBlockView";
 import { BlockIdAttribute } from "./extensions/blockIdAttribute";
 import TaskItemView from "./TaskItemView";
 import { EditorContextProvider } from "./EditorContext";
@@ -44,6 +46,7 @@ import Toolbar from "./Toolbar";
 import BlockToolbar from "./BlockToolbar";
 import TableOfContents from "./TableOfContents";
 import AppLoader from "@/components/AppLoader";
+import { uploadImage } from "@/services/images";
 import {
   BLOCK_IDENTITY_PATCH_META,
   patchEditorBlockIdentityFromDoc,
@@ -93,6 +96,8 @@ export interface MarkdownEditorProps {
   defaultFontSize?: number;
   /** 编辑宽度 */
   contentWidth?: number;
+  /** 当前工作空间，用于图片上传 */
+  workspaceId?: string | null;
 }
 
 function EditorSkeleton() {
@@ -119,6 +124,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
   loading = false,
   defaultFontSize = 15,
   contentWidth = 750,
+  workspaceId = null,
 }, ref) {
   const [systemThemeMode, setSystemThemeMode] = useState<CodeThemeMode>("light");
   const themeMode = themeProp ?? systemThemeMode;
@@ -203,6 +209,16 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
     [onChange],
   );
 
+  const handleUploadImageFile = useCallback(
+    async (file: File) => {
+      if (!workspaceId) {
+        throw new Error("未选择工作空间");
+      }
+      return uploadImage(workspaceId, file);
+    },
+    [workspaceId],
+  );
+
   const editor = useEditor(
     {
       extensions: [
@@ -267,7 +283,23 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
         TableRow,
         TableCell,
         TableHeader,
-        createPasteHandlerExtension(),
+        createPasteHandlerExtension({
+          uploadImage: async (file) => {
+            const image = await handleUploadImageFile(file);
+            return {
+              imageId: image.imageId,
+              src: image.publicUrl || image.url,
+              filename: image.filename,
+              mimeType: image.mimeType,
+              size: image.size,
+              naturalWidth: image.width,
+              naturalHeight: image.height,
+              width: image.width,
+              height: image.height,
+              alt: image.filename,
+            };
+          },
+        }),
         createFontSizeExtension(),
         OrderedListStyle,
         LineHeight.configure({
@@ -277,6 +309,11 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
         HighlightBlock.extend({
           addNodeView() {
             return ReactNodeViewRenderer(HighlightBlockView);
+          },
+        }),
+        ImageBlock.extend({
+          addNodeView() {
+            return ReactNodeViewRenderer(ImageBlockView);
           },
         }),
         Indent.configure({
@@ -296,7 +333,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
       },
       onUpdate: handleUpdate,
     },
-    [codeBlockExtension],
+    [codeBlockExtension, handleUploadImageFile],
   );
 
   // 同步 themeMode 到代码高亮
@@ -368,7 +405,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
   return (
     <div className={`tiptap-shell ${className || ""}`} style={style}>
       <div className="tiptap-card" data-code-theme={themeMode}>
-        <EditorContextProvider value={{ editor, defaultFontSize: `${defaultFontSize}px` }}>
+        <EditorContextProvider value={{ editor, defaultFontSize: `${defaultFontSize}px`, workspaceId }}>
           {showToolbar && <Toolbar />}
           <div
             ref={wrapperRef}

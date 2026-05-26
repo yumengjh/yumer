@@ -20,16 +20,21 @@ import {
   AlignCenterOutlined,
   AlignRightOutlined,
   HighlightOutlined,
+  PictureOutlined,
 } from "@ant-design/icons";
 import { useToolbarActions } from "./useToolbarActions";
+import { uploadImage } from "@/services/images";
+import { useMarkdownEditorContext } from "../EditorContext";
 import { titleLevelItems } from "./data";
 import "./MobileToolbar.css";
 
 export default function MobileToolbar() {
   const actions = useToolbarActions();
+  const { workspaceId } = useMarkdownEditorContext();
   const [moreOpen, setMoreOpen] = useState(false);
   const [pressedAction, setPressedAction] = useState<string | null>(null);
   const pressedTimerRef = useRef<number | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   const clearPressedAction = () => {
     if (pressedTimerRef.current) {
@@ -67,10 +72,51 @@ export default function MobileToolbar() {
     setMoreOpen(false);
   };
 
+  const handleImageFile = async (file: File) => {
+    if (!actions.editor) return;
+    if (!workspaceId) {
+      actions.message.error("未选择工作空间");
+      return;
+    }
+    try {
+      const image = await uploadImage(workspaceId, file);
+      actions.editor
+        .chain()
+        .focus()
+        .insertImageBlock({
+          imageId: image.imageId,
+          src: image.publicUrl || image.url,
+          filename: image.filename,
+          mimeType: image.mimeType,
+          size: image.size,
+          naturalWidth: image.width,
+          naturalHeight: image.height,
+          width: image.width,
+          height: image.height,
+          alt: image.filename,
+        })
+        .run();
+      setMoreOpen(false);
+    } catch (error) {
+      actions.message.error(error instanceof Error ? error.message : "图片上传失败");
+    }
+  };
+
   return (
     <>
       {/* 工具栏：sticky 吸附在顶部导航栏正下方 */}
       <div className="mobile-toolbar-wrapper">
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          hidden
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (file) void handleImageFile(file);
+          }}
+        />
         <div className="mobile-toolbar-scroll">
           {quickActions.map((action) => (
             <button
@@ -169,6 +215,7 @@ export default function MobileToolbar() {
             <Button icon={<HighlightOutlined />} onClick={() => { actions.setTextColor("#1677ff"); setMoreOpen(false); }}>蓝色文字</Button>
             <Button icon={<BgColorsOutlined />}  onClick={() => { actions.setBgColor("#FFF2CC");  setMoreOpen(false); }}>高亮背景</Button>
             <Button icon={<TableOutlined />}     onClick={handleTable}>插入 3×3 表格</Button>
+            <Button icon={<PictureOutlined />}   onClick={() => imageInputRef.current?.click()}>上传图片</Button>
           </div>
         </div>
       </Drawer>

@@ -1,5 +1,19 @@
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE || "https://api-zzz.yumgjs.com/api/v1";
+export const BASE_URL = process.env.NEXT_PUBLIC_API_BASE || "https://api-zzz.yumgjs.com/api/v1";
 // const BASE_URL = "https://api-zzz.yumgjs.com/api/v1";
+
+export function resolveApiUrl(path: string): string {
+  try {
+    return new URL(path).toString();
+  } catch {
+    const base = BASE_URL.replace(/\/$/, "");
+    const apiPrefix = new URL(`${base}/`).pathname.replace(/\/$/, "");
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+    const suffix = apiPrefix && normalizedPath.startsWith(`${apiPrefix}/`)
+      ? normalizedPath.slice(apiPrefix.length)
+      : normalizedPath;
+    return `${base}${suffix}`;
+  }
+}
 
 const ACCESS_TOKEN_KEY = "accessToken";
 const REFRESH_TOKEN_KEY = "refreshToken";
@@ -67,30 +81,45 @@ interface ApiResponse<T> {
   error?: { code: string; message: string | string[] };
 }
 
-async function apiRequest<T>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
+export async function apiFetch(path: string, options: RequestInit = {}): Promise<Response> {
   const token = getAccessToken();
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
     ...(token && { Authorization: `Bearer ${token}` }),
     ...(options.headers as Record<string, string>),
   };
 
-  let response = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+  let response = await fetch(resolveApiUrl(path), { ...options, headers });
 
-  // 401 尝试刷新 token
   if (response.status === 401) {
     const refreshed = await refreshTokenOnce();
     if (refreshed) {
       const newToken = getAccessToken();
-      headers.Authorization = `Bearer ${newToken}`;
-      response = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+      response = await fetch(resolveApiUrl(path), {
+        ...options,
+        headers: {
+          ...(newToken && { Authorization: `Bearer ${newToken}` }),
+          ...(options.headers as Record<string, string>),
+        },
+      });
     } else {
       throw new Error("认证已过期，请重新登录");
     }
   }
+
+  return response;
+}
+
+async function apiRequest<T>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> {
+  const response = await apiFetch(path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers as Record<string, string>),
+    },
+  });
 
   const result: ApiResponse<T> = await response.json();
 
@@ -113,6 +142,46 @@ export function apiPost<T>(path: string, body?: unknown): Promise<T> {
     method: "POST",
     body: body ? JSON.stringify(body) : undefined,
   });
+}
+
+export async function apiPostForm<T>(path: string, body: FormData): Promise<T> {
+  const token = getAccessToken();
+  const headers: Record<string, string> = {
+    ...(token && { Authorization: `Bearer ${token}` }),
+  };
+
+  let response = await fetch(resolveApiUrl(path), {
+    method: "POST",
+    headers,
+    body,
+  });
+
+  if (response.status === 401) {
+    const refreshed = await refreshTokenOnce();
+    if (refreshed) {
+      const newToken = getAccessToken();
+      response = await fetch(resolveApiUrl(path), {
+        method: "POST",
+        headers: {
+          ...(newToken && { Authorization: `Bearer ${newToken}` }),
+        },
+        body,
+      });
+    } else {
+      throw new Error("认证已过期，请重新登录");
+    }
+  }
+
+  const result: ApiResponse<T> = await response.json();
+
+  if (!response.ok || !result.success) {
+    const msg = Array.isArray(result.error?.message)
+      ? result.error!.message.join(", ")
+      : result.error?.message || "请求失败";
+    throw new Error(msg);
+  }
+
+  return result.data;
 }
 
 export function apiPatch<T>(path: string, body?: unknown): Promise<T> {
