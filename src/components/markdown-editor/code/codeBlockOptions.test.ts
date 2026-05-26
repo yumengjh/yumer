@@ -26,7 +26,7 @@ describe("codeBlockOptions", () => {
     ).toEqual(CODE_BLOCK_DEFAULTS);
   });
 
-  it("keeps valid attrs and trims text attrs", () => {
+  it("keeps valid attrs and normalizes language while preserving title text", () => {
     expect(
       normalizeCodeBlockAttrs({
         language: " TypeScript ",
@@ -50,7 +50,7 @@ describe("codeBlockOptions", () => {
       wordWrap: true,
       lineNumbers: false,
       autoIndent: false,
-      title: "Example",
+      title: "  Example  ",
       statusBarCollapsed: true,
       codeCollapsed: true,
     });

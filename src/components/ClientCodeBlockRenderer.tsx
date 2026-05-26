@@ -2,7 +2,6 @@
 
 import { useEffect } from "react";
 import {
-  escapeCodeHtml,
   normalizeCodeBlockAttrs,
   type CodeBlockAttrs,
 } from "@/components/markdown-editor/code/codeBlockOptions";
@@ -13,6 +12,14 @@ import {
   resolveCodeLanguageForShiki,
   type CodeThemeMode,
 } from "@/components/markdown-editor/code/codeHighlight";
+import {
+  renderCodeBlockBodyHtml,
+  tokenLineToHtml,
+} from "@/components/markdown-editor/code/codeBlockLineHtml";
+import {
+  bindPublicCodeBlockChrome,
+  renderPublicCodeBlockChrome,
+} from "@/components/markdown-editor/code/publicCodeBlockChrome";
 
 function readAttrs(element: HTMLElement): CodeBlockAttrs {
   const raw = element.getAttribute("data-code-block-attrs");
@@ -30,32 +37,18 @@ function readThemeMode(): CodeThemeMode {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-function renderFallback(code: string, attrs: CodeBlockAttrs, codeHtml?: string): string {
-  const lines = code.split("\n");
-  const numbers = attrs.lineNumbers
-    ? `<div class="code-block-line-numbers">${lines
-        .map((_, index) => `<span class="code-block-line-number">${index + 1}</span>`)
-        .join("")}</div>`
-    : "";
-  return `<div class="code-block-body">${numbers}<div class="code-block-content"><code>${codeHtml ?? escapeCodeHtml(code)}</code></div></div>`;
-}
-
-function renderStatus(attrs: CodeBlockAttrs): string {
-  if (attrs.statusBarCollapsed) {
-    return "";
-  }
-
-  return [
-    `<div class="code-block-status-bar">`,
-    `<span class="code-block-public-title">${escapeCodeHtml(attrs.title || attrs.language)}</span>`,
-    `<span>${escapeCodeHtml(attrs.language)}</span>`,
-    `</div>`,
-  ].join("");
+function renderBody(code: string, attrs: CodeBlockAttrs, lineContents?: string[]): string {
+  return renderCodeBlockBodyHtml({
+    code,
+    lineNumbers: attrs.lineNumbers,
+    lineContents,
+  });
 }
 
 export default function ClientCodeBlockRenderer() {
   useEffect(() => {
     let cancelled = false;
+    const unbindChrome = bindPublicCodeBlockChrome(document);
 
     async function renderAll() {
       const placeholders = Array.from(
@@ -73,44 +66,36 @@ export default function ClientCodeBlockRenderer() {
           element.getAttribute("data-code-block-code") ||
           element.querySelector("code")?.textContent ||
           "";
+
         element.dataset.language = attrs.language;
         element.dataset.codeTheme = attrs.codeTheme;
         element.classList.toggle("is-wrapped", attrs.wordWrap);
+        element.classList.toggle("has-line-numbers", attrs.lineNumbers);
+        element.classList.remove("is-code-collapsed");
         element.classList.toggle("is-status-collapsed", attrs.statusBarCollapsed);
-        element.classList.toggle("is-code-collapsed", attrs.codeCollapsed);
         element.style.setProperty("--code-tab-size", String(attrs.indentSize));
         element.style.setProperty(
           "--code-font-size",
           attrs.fontSize === "inherit" ? "inherit" : attrs.fontSize,
         );
 
-        const statusHtml = renderStatus(attrs);
+        const statusHtml = renderPublicCodeBlockChrome(attrs);
+        let bodyHtml = renderBody(code, attrs);
 
-        if (attrs.codeCollapsed) {
-          element.innerHTML = statusHtml;
-          element.dataset.codeBlockRendered = "true";
-          continue;
+        if (highlighter) {
+          try {
+            const explicitTheme = getCodeThemeByName(attrs.codeTheme);
+            const theme = explicitTheme || getCodeThemeByMode(readThemeMode());
+            const lang = resolveCodeLanguageForShiki(highlighter, attrs.language);
+            const { tokens } = highlighter.codeToTokens(code, { lang, theme });
+            const lineContents = tokens.map((line) => tokenLineToHtml(line));
+            bodyHtml = renderBody(code, attrs, lineContents);
+          } catch (error) {
+            console.log("[public-doc] code block render failed", error);
+          }
         }
 
-        if (!highlighter) {
-          element.innerHTML = statusHtml + renderFallback(code, attrs);
-          element.dataset.codeBlockRendered = "true";
-          continue;
-        }
-
-        try {
-          const explicitTheme = getCodeThemeByName(attrs.codeTheme);
-          const theme = explicitTheme || getCodeThemeByMode(readThemeMode());
-          const lang = resolveCodeLanguageForShiki(highlighter, attrs.language);
-          const highlighted = highlighter.codeToHtml(code, { lang, theme });
-          const temp = document.createElement("div");
-          temp.innerHTML = highlighted;
-          const codeHtml = temp.querySelector("code")?.innerHTML || escapeCodeHtml(code);
-          element.innerHTML = statusHtml + renderFallback(code, attrs, codeHtml);
-        } catch (error) {
-          console.log("[public-doc] code block render failed", error);
-          element.innerHTML = statusHtml + renderFallback(code, attrs);
-        }
+        element.innerHTML = statusHtml + bodyHtml;
         element.dataset.codeBlockRendered = "true";
       }
     }
@@ -142,6 +127,7 @@ export default function ClientCodeBlockRenderer() {
     return () => {
       cancelled = true;
       window.removeEventListener("load", start);
+      unbindChrome();
     };
   }, []);
 

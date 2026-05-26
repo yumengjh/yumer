@@ -295,13 +295,84 @@
    CodeBlockView — React Node View 简洁代码块
    ===================================================== */
 
-.tiptap-editor .code-block-view {
+/*
+ * 代码块布局变量（在 .code-block-view 或外层覆盖即可微调）
+ *
+ * 变量一览（均在 .code-block-view 上定义，可在外层覆盖）：
+ *   --code-block-font-size / --code-block-line-height / --code-tab-size
+ *   --code-block-padding-x / --code-block-padding-y          （无行号）
+ *   --code-block-gutter-padding-left / -right / -min-width / -text-align
+ *   --code-block-code-padding-left / -right                  （有行号时代码列）
+ *   --code-block-line-number-color / --code-block-line-number-font-size
+ *   --code-block-cell-vertical-align                         （展示页 table 行）
+ *   --code-block-floating-copy-top / -right / -size            （折叠状态栏时复制钮）
+ *   别名：--code-block-gutter-min、--code-block-gutter-gap（= gutter-padding-right）
+ *
+ * 示例 — 仅展示页：
+ *   .doc-content .code-block-view {
+ *     --code-block-line-height: 1.5;
+ *     --code-block-gutter-padding-right: 24px;
+ *   }
+ *
+ * 示例 — 编辑器 + 展示页：
+ *   .tiptap-card .code-block-view { --code-block-padding-y: 12px; }
+ */
+.code-block-view {
+  /* 字号 / 行高（--code-font-size 也可由节点属性 --code-font-size 覆盖） */
+  --code-block-font-size: 14px;
+  --code-block-line-height: 1.45;
+  --code-tab-size: 2;
+
+  /* 无行号：代码区四向内边距 */
+  --code-block-padding-x: 16px;
+  --code-block-padding-y: 16px;
+
+  /*
+   * 有行号：行号列（编辑器左侧列 & 展示页 table 左单元格共用）
+   * ┌─ gutter-padding-left ─┬─ gutter-min-width ─┬─ gutter-gap ─┬─ 代码 ─┐
+   */
+  --code-block-gutter-padding-left: 18px;
+  --code-block-gutter-padding-right: 15px;
+  --code-block-gutter-min-width: 1.25rem;
+  --code-block-gutter-text-align: left;
+
+  /* 有行号：代码列（展示页 table 右单元格；编辑器右侧 content 区） */
+  --code-block-code-padding-left: 0;
+  --code-block-code-padding-right: 16px;
+
+  /* 行号样式 */
+  --code-block-line-number-color: var(--app-text-muted);
+  --code-block-line-number-font-size: var(--code-font-size, var(--code-block-font-size));
+
+  /* 展示页 table 行：行号格 / 代码格垂直对齐（top | middle | baseline） */
+  --code-block-cell-vertical-align: top;
+
+  /* 展示页「折叠状态栏」时右上角浮动复制按钮 */
+  --code-block-floating-copy-top: 8px;
+  --code-block-floating-copy-right: 8px;
+  --code-block-floating-copy-size: 28px;
+
+  /* 兼容旧变量名 */
+  --code-block-gutter-min: var(--code-block-gutter-min-width);
+  --code-block-gutter-gap: var(--code-block-gutter-padding-right);
+
+  word-break: normal;
+}
+
+.tiptap-editor .code-block-view,
+pre.code-block-view {
   position: relative;
   margin: 16px 0;
-  overflow: visible;
-  border-radius: 6px;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 4px;
   border: 1px solid var(--app-border-lighter);
   background: #fff;
+}
+
+pre.code-block-view {
+  padding: 0;
+  white-space: normal;
 }
 
 /* Node view 已有内容，隐藏旧版语言标签 */
@@ -320,18 +391,54 @@
   color: var(--app-code-dark-text);
 }
 
-.code-block-status-bar {
+.code-block-status-shell {
   position: relative;
+  flex-shrink: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.code-block-status-shell * {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.code-block-status-shell .code-block-title-input,
+.code-block-status-shell .code-block-title-input * {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.code-block-status-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   min-height: 36px;
+  max-height: 36px;
   padding: 0 10px 0 8px;
   border-bottom: 1px solid var(--app-border-lighter);
   background: #f7f7f7;
   color: var(--app-text-secondary);
-  overflow: visible;
+  overflow: hidden;
+  opacity: 1;
+  pointer-events: auto;
+  transition:
+    max-height 0.24s cubic-bezier(0.4, 0, 0.2, 1),
+    min-height 0.24s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.2s ease,
+    border-color 0.2s ease,
+    padding 0.24s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.code-block-view.is-status-collapsed .code-block-status-bar {
+  max-height: 0;
+  min-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom-color: transparent;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .code-block-status-collapse-tab,
@@ -343,7 +450,7 @@
   align-items: center;
   justify-content: center;
   width: 54px;
-  height: 8px;
+  height: 10px;
   padding: 0;
   border: 0;
   border-radius: 0 0 6px 6px;
@@ -355,34 +462,50 @@
   transform: translateX(-50%);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.12s ease;
+  transition:
+    opacity 0.16s ease,
+    bottom 0.24s cubic-bezier(0.4, 0, 0.2, 1),
+    top 0.24s cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 0.2s ease;
 }
 
 .code-block-status-collapse-tab {
-  bottom: -8px;
+  bottom: -10px;
+  top: auto;
 }
 
-.code-block-status-restore-tab {
-  top: -1px;
-  width: 58px;
-  height: 15px;
-  border-radius: 0 0 8px 8px;
-  background: #cfd4da;
-  font-size: 11px;
-}
-
+.code-block-view.is-status-collapsed .code-block-status-collapse-tab,
 .code-block-view.is-status-collapsed .code-block-status-restore-tab {
+  bottom: auto;
   top: -1px;
+  border-radius: 0 0 8px 8px;
+}
+
+.code-block-status-collapse-icon {
+  display: inline-flex;
+  font-size: 10px;
+  line-height: 1;
+  transition: transform 0.24s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.code-block-view.is-status-collapsed .code-block-status-collapse-icon {
+  transform: rotate(180deg);
 }
 
 .code-block-view.is-status-collapsed .code-block-body {
-  padding-top: 10px;
+  padding-top: 8px;
 }
 
 .code-block-view.is-code-focused .code-block-status-collapse-tab,
 .code-block-view.is-code-focused .code-block-status-restore-tab {
   opacity: 1;
   pointer-events: auto;
+}
+
+.code-block-status-collapse-tab:hover,
+.code-block-status-restore-tab:hover {
+  background: #c8cdd4;
+  color: #5f6368;
 }
 
 .tiptap-card[data-code-theme="dark"] .code-block-status-bar,
@@ -401,6 +524,11 @@
 
 .code-block-toolbar-left {
   flex: 1 1 auto;
+  gap: 2px;
+}
+
+.code-block-fold-button.ant-btn {
+  flex-shrink: 0;
 }
 
 .code-block-toolbar-right {
@@ -420,6 +548,30 @@
   background: rgba(0, 0, 0, 0.05);
 }
 
+.code-block-title-display {
+  min-width: 0;
+  max-width: 260px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: #4f545c;
+  font-size: 14px;
+  line-height: 22px;
+  text-align: left;
+  cursor: text;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.code-block-title-display.is-placeholder {
+  color: #b6bbc3;
+}
+
+.code-block-title-display.has-title:hover {
+  color: #202124;
+}
+
 .code-block-title-input.ant-input {
   min-width: 170px;
   max-width: 260px;
@@ -433,23 +585,22 @@
   color: #b6bbc3;
 }
 
-.code-block-language-select.ant-select,
-.code-block-theme-select.ant-select {
+.code-block-language-select.ant-select {
+  width: 108px;
   color: #30343b;
 }
 
-.code-block-language-select.ant-select {
-  width: 128px;
+.code-block-language-select.ant-select .ant-select-selection-item {
+  font-size: 13px;
 }
 
-.code-block-theme-select.ant-select {
-  width: 160px;
+.code-block-language-dropdown.ant-select-dropdown {
+  min-width: 108px !important;
+  width: 108px !important;
 }
 
-.code-block-toolbar-separator {
-  width: 1px;
-  height: 18px;
-  background: #d8dce2;
+.code-block-more-dropdown.ant-dropdown {
+  z-index: 1100;
 }
 
 .code-block-more-panel {
@@ -487,34 +638,261 @@
 
 .code-block-body {
   display: flex;
+  min-width: 0;
+  max-width: 100%;
   padding: 0;
   background: #fff;
   border-radius: 0 0 6px 6px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* 未开启自动换行：在代码块内部横向滚动，避免撑破页面布局 */
+.code-block-view:not(.is-wrapped) .code-block-line-content,
+.code-block-view:not(.is-wrapped) .code-block-code {
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+.code-block-body .code-block-content,
+.code-block-body .code-block-code,
+.code-block-body .code-block-code * {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .code-block-view.is-code-collapsed .code-block-body {
   display: none;
 }
 
-.code-block-placeholder .code-block-status-bar {
-  justify-content: space-between;
-  color: var(--app-text-secondary);
-}
-
 .code-block-placeholder:not([data-code-block-rendered="true"]) {
   min-height: 48px;
 }
 
-.code-block-public-title {
-  font-weight: 600;
+/* ---------- 展示页代码块顶栏（参考语雀） ---------- */
+.code-block-view.code-block-placeholder .code-block-public-chrome .code-block-status-bar {
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--app-text-secondary);
 }
 
-/* 行号列 */
+.code-block-public-fold {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #8f959e;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.code-block-public-fold:hover {
+  color: #4f545c;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.code-block-view.is-code-collapsed .code-block-public-fold-icon {
+  transform: rotate(-90deg);
+}
+
+.code-block-public-fold-icon {
+  display: block;
+  transition: transform 0.2s ease;
+}
+
+.code-block-public-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+  color: #30343b;
+}
+
+.code-block-public-title.is-placeholder {
+  color: #b6bbc3;
+  font-weight: 400;
+}
+
+.code-block-public-language {
+  flex-shrink: 0;
+  font-size: 13px;
+  line-height: 22px;
+  color: #8f959e;
+}
+
+.code-block-view.code-block-placeholder .code-block-toolbar-right {
+  gap: 10px;
+}
+
+.code-block-public-copy {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #5f6368;
+  font-size: 13px;
+  line-height: 22px;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.code-block-public-copy:hover {
+  color: #202124;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.code-block-public-copy-icon {
+  position: relative;
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+}
+
+.code-block-public-copy-icon .code-block-public-icon-check {
+  position: absolute;
+  opacity: 0;
+  transform: scale(0.85);
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+  color: #52c41a;
+}
+
+.code-block-public-copy-icon .code-block-public-icon-copy {
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+
+.code-block-public-copy.is-copied {
+  color: #389e0d;
+}
+
+.code-block-public-copy.is-copied .code-block-public-copy-icon .code-block-public-icon-copy {
+  opacity: 0;
+  transform: scale(0.85);
+}
+
+.code-block-public-copy.is-copied .code-block-public-copy-icon .code-block-public-icon-check {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.code-block-public-copy-label {
+  white-space: nowrap;
+}
+
+.code-block-icon-button.ant-btn.is-copied {
+  color: #52c41a;
+}
+
+/* 展示页：状态栏隐藏时仅右上角悬浮复制 */
+.code-block-view.code-block-placeholder.is-status-collapsed {
+  position: relative;
+}
+
+.code-block-public-chrome--minimal {
+  position: absolute;
+  top: var(--code-block-floating-copy-top, 8px);
+  right: var(--code-block-floating-copy-right, 8px);
+  z-index: 3;
+  pointer-events: none;
+}
+
+.code-block-public-copy--floating {
+  width: var(--code-block-floating-copy-size, 28px);
+  height: var(--code-block-floating-copy-size, 28px);
+  padding: 0;
+  opacity: 0;
+  pointer-events: auto;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.03);
+  color: #8f959e;
+  box-shadow: none;
+  transition:
+    opacity 0.18s ease,
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.code-block-public-copy--floating .code-block-public-copy-label {
+  display: none;
+}
+
+.code-block-public-copy--floating .code-block-public-copy-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.code-block-public-copy--floating .code-block-public-icon-copy,
+.code-block-public-copy--floating .code-block-public-icon-check {
+  color: currentColor;
+}
+
+.code-block-public-copy--floating.is-copied {
+  color: #5f6368;
+  background: rgba(0, 0, 0, 0.03);
+  border-color: transparent;
+}
+
+.code-block-public-copy--floating.is-copied .code-block-public-icon-check {
+  color: currentColor;
+}
+
+.code-block-view.code-block-placeholder.is-status-collapsed:hover .code-block-public-copy--floating,
+.code-block-view.code-block-placeholder.is-status-collapsed:focus-within .code-block-public-copy--floating,
+.code-block-public-copy--floating.is-copied {
+  opacity: 1;
+}
+
+.code-block-public-copy--floating:hover {
+  background: rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.06);
+  color: #5f6368;
+}
+
+.code-block-view.code-block-placeholder.is-status-collapsed .code-block-body {
+  border-radius: 6px;
+}
+
+/* ---------- 编辑器：双列行号 + 单块可编辑代码 ---------- */
+.code-block-view.has-line-numbers .code-block-body:has(.code-block-content) {
+  display: flex;
+  align-items: flex-start;
+}
+
 .code-block-line-numbers {
   flex-shrink: 0;
-  padding: 12px 0;
-  min-width: 40px;
-  text-align: right;
+  box-sizing: border-box;
+  width: auto;
+  min-width: calc(var(--code-block-gutter-padding-left) + var(--code-block-gutter-min-width));
+  padding: var(--code-block-padding-y) var(--code-block-gutter-padding-right) var(--code-block-padding-y)
+    var(--code-block-gutter-padding-left);
+  text-align: var(--code-block-gutter-text-align);
   user-select: none;
   -webkit-user-select: none;
 }
@@ -525,23 +903,138 @@
 
 .code-block-line-number {
   display: block;
-  padding: 0 12px 0 16px;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--app-text-disabled);
+  box-sizing: border-box;
+  min-height: calc(var(--code-block-line-number-font-size) * var(--code-block-line-height));
+  padding: 0;
+  margin: 0;
+  font-size: var(--code-block-line-number-font-size);
+  line-height: var(--code-block-line-height);
+  color: var(--code-block-line-number-color);
   font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, Courier, monospace;
 }
 
-.tiptap-card[data-code-theme="dark"] .code-block-line-number {
-  color: var(--app-code-dark-label);
+/* ---------- 展示页 / 静态：table 双列（行号 | 代码）避免逐行错位 ---------- */
+.code-block-body.has-line-numbers .code-block-lines {
+  display: table;
+  box-sizing: border-box;
+  width: 100%;
+  border-collapse: collapse;
+  border-spacing: 0;
+  padding: var(--code-block-padding-y) 0;
+  font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, Courier, monospace;
+  font-size: var(--code-font-size, var(--code-block-font-size));
+  line-height: var(--code-block-line-height);
+  table-layout: auto;
 }
 
-/* 代码内容区域 */
+.code-block-line {
+  display: table-row;
+}
+
+.code-block-view:not(.is-wrapped) .code-block-body.has-line-numbers {
+  overflow-x: auto;
+  overflow-y: visible;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.code-block-view:not(.is-wrapped) .code-block-body.has-line-numbers .code-block-lines {
+  width: max-content;
+  min-width: 100%;
+}
+
+/* 有行号：行号右对齐，右侧留白后再接代码 */
+.code-block-body.has-line-numbers .code-block-line-number {
+  display: table-cell;
+  box-sizing: border-box;
+  width: 1%;
+  padding: 0 var(--code-block-gutter-padding-right) 0 var(--code-block-gutter-padding-left);
+  vertical-align: var(--code-block-cell-vertical-align, top);
+  text-align: var(--code-block-gutter-text-align);
+  white-space: nowrap;
+  color: var(--code-block-line-number-color);
+  font-family: inherit;
+  font-size: var(--code-block-line-number-font-size);
+  line-height: var(--code-block-line-height);
+}
+
+.code-block-line-content {
+  display: table-cell;
+  box-sizing: border-box;
+  width: auto;
+  margin: 0;
+  padding: 0 var(--code-block-code-padding-right) 0 var(--code-block-code-padding-left);
+  border: none;
+  border-radius: 0;
+  vertical-align: var(--code-block-cell-vertical-align, top);
+  background: transparent !important;
+  color: inherit;
+  font-family:
+    SFMono-Regular,
+    Consolas,
+    "Liberation Mono",
+    Menlo,
+    Courier,
+    monospace !important;
+  font-size: var(--code-font-size, var(--code-block-font-size)) !important;
+  line-height: var(--code-block-line-height) !important;
+  white-space: pre;
+  tab-size: var(--code-tab-size, 2);
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.code-block-view:not(.is-wrapped) .code-block-line-content {
+  width: max-content;
+  max-width: none;
+}
+
+.code-block-view.is-wrapped .code-block-line-content {
+  width: auto;
+  max-width: none;
+}
+
+/* 展示页 doc-content 继承正文字号/行高，需强制与行号列一致 */
+.doc-content .code-block-view .code-block-line-content,
+.doc-content .code-block-view .code-block-line-content .tiptap-shiki-token {
+  font-size: var(--code-font-size, var(--code-block-font-size)) !important;
+  line-height: var(--code-block-line-height) !important;
+}
+
+
+/* 无行号：四周统一内边距 */
+.code-block-view:not(.has-line-numbers) .code-block-content,
+.code-block-body:not(.has-line-numbers) .code-block-content {
+  padding: var(--code-block-padding-y) var(--code-block-padding-x);
+}
+
+.code-block-body:not(.has-line-numbers) .code-block-content > code {
+  padding: 0;
+}
+
+.code-block-view.is-wrapped .code-block-line-content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* 代码内容区域（编辑器单块 / 无行号展示） */
 .code-block-content {
   flex: 1;
   min-width: 0;
-  padding: 0 16px 0 0;
+  box-sizing: border-box;
+  padding: var(--code-block-padding-y) var(--code-block-padding-x);
+}
+
+.code-block-view:not(.is-wrapped) .code-block-content {
   overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.code-block-view.has-line-numbers .code-block-body:has(.code-block-content) .code-block-content {
+  padding: var(--code-block-padding-y) var(--code-block-code-padding-right) var(--code-block-padding-y)
+    var(--code-block-code-padding-left);
 }
 
 .code-block-view.is-wrapped .code-block-content {
@@ -562,10 +1055,16 @@
     monospace !important;
   white-space: pre;
   tab-size: var(--code-tab-size, 2);
-  line-height: 1.6;
-  font-size: var(--code-font-size, 13px);
-  padding: 12px 0;
+  line-height: var(--code-block-line-height);
+  font-size: var(--code-font-size, var(--code-block-font-size));
+  padding: 0;
   margin: 0;
+}
+
+.code-block-view:not(.is-wrapped) .code-block-code {
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
 }
 
 .code-block-view.is-wrapped .code-block-content > code {
@@ -585,13 +1084,21 @@
 }
 
 .code-block-view[data-code-theme="github-dark"] .code-block-line-number,
+.code-block-view[data-code-theme="github-dark"] .code-block-line-content,
 .code-block-view[data-code-theme="github-dark"] .code-block-content > code,
 .code-block-view[data-code-theme="github-dark"] .code-block-code {
   color: var(--app-code-dark-text);
 }
 
+.tiptap-card[data-code-theme="dark"] .code-block-view,
+.code-block-view[data-code-theme="github-dark"] {
+  --code-block-line-number-color: var(--app-code-dark-label);
+}
+
 /* ---------- 行内代码 — 语雀 ne-code-content ---------- */
-.tiptap-editor code:not(pre code):not(.shiki code):not(.shiki) {
+.tiptap-editor code:not(pre code):not(.shiki code):not(.shiki):not(.code-block-line-content):not(
+    .code-block-code
+  ) {
   background-color: rgba(27, 31, 35, 0.05);
   color: inherit;
   word-break: break-all;

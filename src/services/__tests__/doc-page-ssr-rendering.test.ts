@@ -315,14 +315,23 @@ describe("doc page SSR rendering contract", () => {
     expect(html).not.toContain(">console.log(1);<");
   });
 
-  it("does not render public code block title or language when the status bar is collapsed", () => {
+  it("renders public code block chrome with fold, title, language label, and copy", () => {
     const rendererSource = fs.readFileSync(
       path.resolve(process.cwd(), "src/components/ClientCodeBlockRenderer.tsx"),
       "utf8",
     ).replace(/\r\n/g, "\n");
+    const chromeSource = fs.readFileSync(
+      path.resolve(process.cwd(), "src/components/markdown-editor/code/publicCodeBlockChrome.ts"),
+      "utf8",
+    ).replace(/\r\n/g, "\n");
 
-    expect(rendererSource).toContain("if (attrs.statusBarCollapsed) {\n    return \"\";");
-    expect(rendererSource).not.toContain("class=\"code-block-status-restore\"");
+    expect(rendererSource).toContain("renderPublicCodeBlockChrome");
+    expect(rendererSource).toContain("bindPublicCodeBlockChrome");
+    expect(rendererSource).toContain('classList.toggle("is-status-collapsed"');
+    expect(rendererSource).toContain('classList.remove("is-code-collapsed"');
+    expect(chromeSource).toContain("code-block-public-fold");
+    expect(chromeSource).toContain("code-block-public-copy");
+    expect(chromeSource).toContain("is-copied");
   });
 
   it("defers public document layout settings fetch until after the window load event", () => {

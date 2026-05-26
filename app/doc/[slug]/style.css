@@ -41,6 +41,34 @@
   padding: 0 !important;
   font-size: var(--doc-font-size, 16px);
   line-height: 1.8;
+  overflow-x: clip;
+}
+
+/*
+ * 代码块布局微调：变量定义见 editor.css → .code-block-view
+ * 取消注释并改数值即可，无需改组件代码。
+ */
+
+ .doc-content .code-block-view {
+  --code-block-line-height: 1.5;
+  /* 行号本身 */
+  --code-block-gutter-padding-left: 18px;
+  --code-block-gutter-min-width: 2.2em;
+  --code-block-gutter-text-align: left;
+  --code-block-line-number-font-size: 12px;
+  --code-block-line-number-color: #9aa0a6;
+  /* 行号与代码之间 */
+  --code-block-gutter-padding-right: 15px;
+  --code-block-code-padding-left: 0;
+}
+
+
+/* 代码块使用独立行高，避免正文 line-height: 1.8 导致行号错位 */
+.doc-content .code-block-view,
+.doc-content .code-block-view .code-block-lines,
+.doc-content .code-block-view .code-block-line,
+.doc-content .code-block-view .code-block-line-content {
+  line-height: var(--code-block-line-height, 1.6);
 }
 
 .doc-content img {

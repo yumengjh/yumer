@@ -13,7 +13,14 @@ import {
   type ShikiHighlighter,
 } from "./codeHighlight";
 import { normalizeCodeBlockAttrs } from "./codeBlockOptions";
+import {
+  dispatchSelectAllCodeBlockText,
+  isSelectAllKey,
+  selectAllCodeBlockText,
+} from "./codeBlockSelection";
 import CodeBlockView from "./CodeBlockView";
+
+const CODE_BLOCK_SELECT_ALL_KEY = new PluginKey("code-block-select-all");
 
 export const SHIKI_CODE_BLOCK_PLUGIN_KEY = new PluginKey<DecorationSet>(
   "shiki-code-block-highlight",
@@ -137,8 +144,17 @@ export const createShikiCodeBlockExtension = ({
     addNodeView() {
       return ReactNodeViewRenderer(CodeBlockView);
     },
+    addKeyboardShortcuts() {
+      const parentShortcuts = this.parent?.() ?? {};
+      return {
+        ...parentShortcuts,
+        "Mod-a": () => selectAllCodeBlockText(this.editor),
+      };
+    },
     addProseMirrorPlugins() {
+      const parentPlugins = this.parent?.() ?? [];
       return [
+        ...parentPlugins,
         new Plugin<DecorationSet>({
           key: SHIKI_CODE_BLOCK_PLUGIN_KEY,
           state: {
@@ -154,6 +170,19 @@ export const createShikiCodeBlockExtension = ({
           },
           props: {
             decorations: (state) => SHIKI_CODE_BLOCK_PLUGIN_KEY.getState(state) || null,
+          },
+        }),
+        new Plugin({
+          key: CODE_BLOCK_SELECT_ALL_KEY,
+          props: {
+            handleDOMEvents: {
+              keydown: (view, event) => {
+                if (!isSelectAllKey(event)) return false;
+                if (!dispatchSelectAllCodeBlockText(view)) return false;
+                event.preventDefault();
+                return true;
+              },
+            },
           },
         }),
       ];

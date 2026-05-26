@@ -82,7 +82,7 @@ export function normalizeCodeBlockAttrs(attrs?: Record<string, unknown> | null):
   const indentSize = indentSizes.has(raw.indentSize as CodeBlockIndentSize)
     ? (raw.indentSize as CodeBlockIndentSize)
     : CODE_BLOCK_DEFAULTS.indentSize;
-  const title = typeof raw.title === "string" ? raw.title.trim() : CODE_BLOCK_DEFAULTS.title;
+  const title = typeof raw.title === "string" ? raw.title : CODE_BLOCK_DEFAULTS.title;
 
   return {
     language,
