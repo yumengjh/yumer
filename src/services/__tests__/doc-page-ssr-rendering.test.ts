@@ -19,7 +19,8 @@ describe("doc page SSR rendering contract", () => {
       "utf8",
     );
 
-    expect(pageSource).toContain("/content?mode=html");
+    expect(pageSource).toContain("getPublicDocSnapshot");
+    expect(pageSource).toContain("isLatestRequest");
   });
 
   it("metadata generation should not warm the html render cache", () => {
@@ -33,7 +34,8 @@ describe("doc page SSR rendering contract", () => {
     );
 
     expect(metadataSource).not.toContain("/content?mode=all");
-    expect(metadataSource).toContain("getDocMetadata");
+    expect(metadataSource).toContain("generateMetadata");
+    expect(metadataSource).toContain("getPublicDocSnapshot(slug, latest)");
   });
 
   it("server page delegates code highlighting to the browser", () => {

@@ -225,6 +225,16 @@
   border-color: var(--app-border-strong) !important;
 }
 
+.header-btn-export {
+  color: var(--app-text-secondary);
+  border-color: var(--app-border-lighter);
+}
+
+.header-btn-export:hover {
+  color: var(--app-text) !important;
+  border-color: var(--app-border-strong) !important;
+}
+
 .header-btn-revalidate {
   width: 32px;
   padding-inline: 0;

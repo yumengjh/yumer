@@ -17,6 +17,9 @@ import {
   UserOutlined,
   SettingOutlined,
   ReloadOutlined,
+  DownloadOutlined,
+  CodeOutlined,
+  FilePdfOutlined,
 } from "@ant-design/icons";
 import { useDocument, type SaveStatus } from "../contexts/DocumentContext";
 import { VersionDiffModal } from "./VersionDiffModal";
@@ -38,12 +41,14 @@ import {
   type ManualPublicDocRevalidationResult,
 } from "@/services/public-doc-revalidation";
 import type { PublicDocRevalidationResult } from "@/services/document";
+import { downloadDocumentExport, type DocumentExportFormat } from "@/services/document-export";
+import { getDocumentSyncState } from "@/services/sync/api";
 import "./DocumentHeader.css";
 
 const PUBLIC_DOC_REVALIDATE_SECRET_KEY = "publicDocRevalidateSecret";
 
 interface DocumentHeaderProps {
-  onSave: () => void;
+  onSave: () => void | Promise<void>;
   onDiscardDraft: () => void;
   saving?: boolean;
   discardingDraft?: boolean;
@@ -192,6 +197,7 @@ export function DocumentHeader({
   const [infoOpen, setInfoOpen] = useState(false);
   const [tagManageOpen, setTagManageOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [exportingFormat, setExportingFormat] = useState<DocumentExportFormat | null>(null);
 
   useEffect(() => {
     refreshDocs().catch(() => {});
@@ -272,6 +278,65 @@ export function DocumentHeader({
     });
   }, []);
 
+  const exportDocumentNow = useCallback(
+    async (format: DocumentExportFormat) => {
+      if (!currentDoc || exportingFormat) return;
+      setExportingFormat(format);
+      try {
+        const result = await downloadDocumentExport(currentDoc.docId, format);
+        message.success(`已开始导出 ${result.filename}`);
+      } catch (error) {
+        message.error(`导出失败：${error instanceof Error ? error.message : "未知错误"}`);
+      } finally {
+        setExportingFormat((current) => (current === format ? null : current));
+      }
+    },
+    [currentDoc, exportingFormat],
+  );
+
+  const handleExport = useCallback(
+    async (format: DocumentExportFormat) => {
+      if (!currentDoc) return;
+      if (exportingFormat) return;
+      if (saving || saveStatus === "flushing") {
+        message.info("文档正在保存，请稍后再导出");
+        return;
+      }
+
+      let syncState: Awaited<ReturnType<typeof getDocumentSyncState>> | null = null;
+      try {
+        syncState = await getDocumentSyncState(currentDoc.docId);
+      } catch {
+        syncState = null;
+      }
+
+      const shouldPromptSave =
+        saveStatus === "dirty" ||
+        saveStatus === "draft-synced" ||
+        Boolean(syncState?.hasPendingDraft || (syncState?.pendingCount ?? 0) > 0);
+
+      if (shouldPromptSave) {
+        Modal.confirm({
+          title: "先保存再导出？",
+          content: "当前文档还有未提交变更。导出会基于最近一次提交版本。",
+          okText: "先保存并导出",
+          cancelText: "直接导出",
+          onOk: async () => {
+            await Promise.resolve(onSave());
+            await exportDocumentNow(format);
+          },
+          onCancel: () => {
+            void exportDocumentNow(format);
+          },
+        });
+        return;
+      }
+
+      await exportDocumentNow(format);
+    },
+    [currentDoc, exportDocumentNow, exportingFormat, onSave, saveStatus, saving],
+  );
+
   const handleManualRevalidate = useCallback(async () => {
     if (!currentDoc || !currentDocSlug) return;
     if (currentDoc.visibility !== "public") {
@@ -312,6 +377,30 @@ export function DocumentHeader({
     },
   ];
 
+  const exportMenuItems: MenuProps["items"] = [
+    {
+      key: "export-md",
+      icon: <FileTextOutlined />,
+      label: "导出 Markdown",
+      disabled: Boolean(exportingFormat),
+      onClick: () => void handleExport("md"),
+    },
+    {
+      key: "export-html",
+      icon: <CodeOutlined />,
+      label: "导出 HTML 压缩包",
+      disabled: Boolean(exportingFormat),
+      onClick: () => void handleExport("html"),
+    },
+    {
+      key: "export-pdf",
+      icon: <FilePdfOutlined />,
+      label: "导出 PDF",
+      disabled: Boolean(exportingFormat),
+      onClick: () => void handleExport("pdf"),
+    },
+  ];
+
   const mobileMoreItems: MenuProps["items"] = currentDoc
     ? [
         {
@@ -332,6 +421,12 @@ export function DocumentHeader({
           label: "刷新公开页缓存",
           disabled: currentDoc.visibility !== "public" || revalidating,
           onClick: handleManualRevalidate,
+        },
+        {
+          key: "export",
+          icon: <DownloadOutlined />,
+          label: "导出",
+          children: exportMenuItems,
         },
         { type: "divider" },
         {
@@ -482,6 +577,17 @@ export function DocumentHeader({
                 aria-label="刷新公开页缓存"
               />
             </Tooltip>
+            <Dropdown placement="bottomLeft" trigger={["click"]} menu={{ items: exportMenuItems }}>
+              <Button
+                size="small"
+                className="header-btn-export"
+                icon={<DownloadOutlined />}
+                loading={Boolean(exportingFormat)}
+                disabled={Boolean(exportingFormat)}
+              >
+                导出
+              </Button>
+            </Dropdown>
             {currentDoc.publishedHead ? (
               <span className="header-published" title={`已发布版本 ${currentDoc.publishedHead}`}>
                 <span className="header-published__dot" />

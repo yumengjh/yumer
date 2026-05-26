@@ -25,6 +25,7 @@ describe("sync batching", () => {
         create: 2,
         update: 1,
         delete: 2,
+        move: 2,
       },
     };
 
@@ -42,6 +43,7 @@ describe("sync batching", () => {
         create: 1,
         update: 1,
         delete: 1,
+        move: 1,
       },
     };
 
