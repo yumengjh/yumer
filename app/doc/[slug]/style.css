@@ -45,6 +45,7 @@
 
 .doc-content img {
   border-radius: 8px;
+  cursor: zoom-in;
 }
 
 .doc-footer {

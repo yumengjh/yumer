@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import DeferredCodeBlockRenderer from "@/components/DeferredCodeBlockRenderer";
+import DeferredDocImagePreview from "@/components/DeferredDocImagePreview";
 import { DocPageLayout } from "@/components/DocPageLayout";
 import { PublicDocTOC } from "@/components/PublicDocTOC";
 import {
@@ -90,6 +91,7 @@ export default async function DocPage({ params, searchParams }: PageProps) {
         dangerouslySetInnerHTML={{ __html: doc.html }}
       />
       <DeferredCodeBlockRenderer />
+      <DeferredDocImagePreview />
 
       <footer className="doc-footer">
         <div className="doc-footer-meta">
