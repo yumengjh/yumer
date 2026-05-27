@@ -31,6 +31,36 @@ export function createSortKeyBetween(previous: string | null, next: string | nul
   return formatSortKey((left + right) / 2);
 }
 
+export function createSortKeysBetween(
+  previous: string | null,
+  next: string | null,
+  count: number,
+): string[] {
+  if (!Number.isInteger(count) || count <= 0) return [];
+
+  const previousValue = parseSortKey(previous);
+  const nextValue = parseSortKey(next);
+
+  if (previousValue == null && nextValue == null) {
+    return Array.from({ length: count }, (_, index) => formatSortKey((index + 1) * 1000));
+  }
+
+  if (previousValue != null && nextValue == null) {
+    return Array.from({ length: count }, (_, index) => formatSortKey(previousValue + (index + 1) * 1000));
+  }
+
+  const left = previousValue ?? 0;
+  const right = nextValue ?? left + (count + 1) * 1000;
+  const gap = right - left;
+
+  if (gap > count) {
+    const step = Math.max(1, Math.floor(gap / (count + 1)));
+    return Array.from({ length: count }, (_, index) => formatSortKey(left + step * (index + 1)));
+  }
+
+  return Array.from({ length: count }, (_, index) => formatSortKey(left + index + 1));
+}
+
 export function readTopLevelOrder(doc: TiptapDoc): OrderedBlockRef[] {
   const nodes = Array.isArray(doc.content) ? doc.content : [];
   return nodes.flatMap((node, index) => {

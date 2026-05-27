@@ -39,6 +39,19 @@ export const BlockIdAttribute = Extension.create({
               };
             },
           },
+          sortKey: {
+            default: null,
+            parseHTML: (element) =>
+              element.getAttribute("sortKey") ?? element.getAttribute("data-sort-key"),
+            renderHTML: (attributes) => {
+              const sortKey = attributes.sortKey ?? attributes["data-sort-key"];
+              if (!sortKey) return {};
+              return {
+                sortKey,
+                "data-sort-key": sortKey,
+              };
+            },
+          },
         },
       },
     ];

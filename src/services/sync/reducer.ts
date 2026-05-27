@@ -1,5 +1,25 @@
 import type { SyncEntry, SyncReducerState, SyncBatchResult } from "./types";
 
+function normalizeCreatePayload(entry: SyncEntry): SyncEntry {
+  if (entry.opType !== "create" || !entry.payload) return entry;
+
+  const syncCreateId = entry.syncCreateId ?? `sync-create:${entry.clientId}`;
+  return {
+    ...entry,
+    syncCreateId,
+    payload: {
+      ...entry.payload,
+      attrs: {
+        ...((entry.payload.attrs as Record<string, unknown> | undefined) ?? {}),
+        blockId: null,
+        clientId: entry.clientId,
+        syncCreateId,
+        ...(entry.sortKey ? { sortKey: entry.sortKey } : {}),
+      },
+    },
+  };
+}
+
 function isDeleteNotFound(entry: SyncEntry | undefined, result: SyncBatchResult): boolean {
   if (!entry || entry.opType !== "delete") return false;
   if (result.success) return false;
@@ -32,11 +52,11 @@ export function enqueueChange(state: SyncReducerState, incoming: SyncEntry): Syn
   const current = state.entries[incoming.clientId];
 
   if (current?.opType === "create" && incoming.opType === "update") {
-    const merged: SyncEntry = {
+    const merged: SyncEntry = normalizeCreatePayload({
       ...current,
       payload: incoming.payload ?? current.payload,
       sortKey: incoming.sortKey ?? current.sortKey,
-    };
+    });
     return upsertEntry(state, merged);
   }
 
@@ -73,24 +93,24 @@ export function enqueueChange(state: SyncReducerState, incoming: SyncEntry): Syn
   }
 
   if (current && incoming.opType === "move") {
-    return upsertEntry(state, {
+    return upsertEntry(state, normalizeCreatePayload({
       ...current,
       opType: current.opType === "create" ? "create" : current.opType,
       parentId: incoming.parentId ?? current.parentId,
       sortKey: incoming.sortKey ?? current.sortKey,
-    });
+    }));
   }
 
   if (current) {
-    return upsertEntry(state, {
+    return upsertEntry(state, normalizeCreatePayload({
       ...current,
       ...incoming,
       payload: incoming.payload ?? current.payload,
       sortKey: incoming.sortKey ?? current.sortKey,
-    });
+    }));
   }
 
-  return upsertEntry(state, incoming);
+  return upsertEntry(state, normalizeCreatePayload(incoming));
 }
 
 function upsertEntry(state: SyncReducerState, entry: SyncEntry): SyncReducerState {

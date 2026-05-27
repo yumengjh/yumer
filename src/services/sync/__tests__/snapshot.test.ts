@@ -55,4 +55,66 @@ describe("sync snapshot advancement", () => {
     );
     expect(next.snapshot.content?.[0].content?.[0].text).toBe("new text just typed");
   });
+
+  it("persists generated sortKeys into the local snapshot for sequential blank-line creation", () => {
+    let state = createInitialSyncState("doc_1", "root_1", 1);
+
+    const previous: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { blockId: "block_1", clientId: "client_1", sortKey: "001000" },
+          content: [{ type: "text", text: "1" }],
+        },
+      ],
+    };
+
+    const currentStep1: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { blockId: "block_1", clientId: "client_1", sortKey: "001000" },
+          content: [{ type: "text", text: "1" }],
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "blank_1" },
+        },
+      ],
+    };
+
+    const step1 = advanceSyncSnapshot(state, previous, currentStep1);
+    state = step1.state;
+
+    expect(step1.snapshot.content?.[1].attrs?.sortKey).toBe("002000");
+
+    const currentStep2: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { blockId: "block_1", clientId: "client_1", sortKey: "001000" },
+          content: [{ type: "text", text: "1" }],
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "blank_1" },
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "block_2" },
+          content: [{ type: "text", text: "2" }],
+        },
+      ],
+    };
+
+    const step2 = advanceSyncSnapshot(state, step1.snapshot, currentStep2);
+
+    expect(step2.snapshot.content?.[1].attrs?.sortKey).toBe("002000");
+    expect(step2.snapshot.content?.[2].attrs?.sortKey).toBe("003000");
+    expect(step2.state.entries.blank_1.sortKey).toBe("002000");
+    expect(step2.state.entries.block_2.sortKey).toBe("003000");
+  });
 });

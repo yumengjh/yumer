@@ -263,4 +263,37 @@ describe("sync reducer", () => {
     expect(state.entries.client_deleted_new.opType).toBe("delete");
     expect(state.entries.client_deleted_new.blockId).toBe("server_block_deleted_new");
   });
+
+  it("normalizes create payload attrs after create+update merge", () => {
+    let state = createInitialSyncState("doc_1", "root_1", 3);
+    state = enqueueChange(state, {
+      clientId: "client_fix",
+      blockId: null,
+      opType: "create",
+      syncCreateId: "sync-create:client_fix",
+      blockType: "paragraph",
+      sortKey: "001995",
+      payload: {
+        type: "paragraph",
+        attrs: { clientId: "client_fix", syncCreateId: "sync-create:client_fix" },
+      },
+    });
+    state = enqueueChange(state, {
+      clientId: "client_fix",
+      blockId: null,
+      opType: "update",
+      payload: {
+        type: "paragraph",
+        attrs: { clientId: "client_fix", syncCreateId: "sync-create:foreign" },
+        content: [{ type: "text", text: "2" }],
+      },
+    });
+
+    expect((state.entries.client_fix.payload as { attrs?: Record<string, unknown> }).attrs).toMatchObject({
+      blockId: null,
+      clientId: "client_fix",
+      syncCreateId: "sync-create:client_fix",
+      sortKey: "001995",
+    });
+  });
 });

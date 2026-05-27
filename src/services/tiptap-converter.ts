@@ -98,7 +98,11 @@ export function blocksToTiptapJson(
   const content: TiptapNode[] = contentBlocks.map((block) => {
     if (block.payload.type && typeof block.payload.type === "string") {
       const payloadNode = block.payload as unknown as TiptapNode;
-      const attrs = { ...(payloadNode.attrs || {}), blockId: block.blockId };
+      const attrs = {
+        ...(payloadNode.attrs || {}),
+        blockId: block.blockId,
+        ...(block.sortKey ? { sortKey: block.sortKey } : {}),
+      };
       return { ...payloadNode, attrs };
     }
 
@@ -109,6 +113,7 @@ export function blocksToTiptapJson(
       attrs: {
         ...((block.payload.attrs as Record<string, unknown> | undefined) || {}),
         blockId: block.blockId,
+        ...(block.sortKey ? { sortKey: block.sortKey } : {}),
       },
     } as unknown as TiptapNode;
   });

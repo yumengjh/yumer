@@ -24,6 +24,7 @@ type SyncSource = "autosync" | "manual-save";
 type BatchCreateBody = {
   type: "create";
   clientId: string;
+  syncCreateId?: string;
   data: {
     docId: string;
     type: string;
@@ -56,6 +57,20 @@ type BatchMoveBody = {
 
 type BatchOperationBody = BatchCreateBody | BatchUpdateBody | BatchDeleteBody | BatchMoveBody;
 
+function buildCreatePayload(entry: SyncEntry): Record<string, unknown> {
+  const syncCreateId = entry.syncCreateId ?? `sync-create:${entry.clientId}`;
+  return {
+    ...(entry.payload as Record<string, unknown>),
+    attrs: {
+      ...(((entry.payload?.attrs as Record<string, unknown> | undefined) ?? {})),
+      blockId: null,
+      clientId: entry.clientId,
+      syncCreateId,
+      ...(entry.sortKey ? { sortKey: entry.sortKey } : {}),
+    },
+  };
+}
+
 export async function postSyncBatch(input: {
   docId: string;
   rootBlockId: string;
@@ -68,13 +83,15 @@ export async function postSyncBatch(input: {
   for (const entry of input.operations) {
     if (entry.opType === "create") {
       if (!entry.payload || !entry.blockType) continue;
+      const syncCreateId = entry.syncCreateId ?? `sync-create:${entry.clientId}`;
       bodyOperations.push({
         type: "create",
         clientId: entry.clientId,
+        syncCreateId,
         data: {
           docId: input.docId,
           type: entry.blockType,
-          payload: entry.payload,
+          payload: buildCreatePayload(entry),
           parentId: input.rootBlockId,
           sortKey: entry.sortKey,
         },

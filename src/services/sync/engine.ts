@@ -1,7 +1,7 @@
 import type { TiptapDoc, TiptapNode } from "@/services/tiptap-converter";
 import { extractPlainText } from "@/services/tiptap-converter";
 import { ensureDocumentIdentity, readIdentityFromAttrs } from "./identity";
-import { createSortKeyBetween } from "./order";
+import { createSortKeyBetween, createSortKeysBetween } from "./order";
 import type { SyncEntry } from "./types";
 
 const TIPTAP_TO_BLOCK_TYPE: Record<string, string> = {
@@ -102,8 +102,8 @@ function indexTopLevel(doc: TiptapDoc): Record<string, IndexedNode> {
 function sortKeyForPosition(nextNodes: IndexedNode[], index: number): string {
   const previousExisting = [...nextNodes.slice(0, index)]
     .reverse()
-    .find((item) => item.blockId);
-  const nextExisting = nextNodes.slice(index + 1).find((item) => item.blockId);
+    .find((item) => item.blockId || item.sortKey);
+  const nextExisting = nextNodes.slice(index + 1).find((item) => item.blockId || item.sortKey);
 
   return createSortKeyBetween(
     previousExisting?.sortKey ?? null,
@@ -111,22 +111,85 @@ function sortKeyForPosition(nextNodes: IndexedNode[], index: number): string {
   );
 }
 
+function createSyncCreateId(clientId: string): string {
+  return `sync-create:${clientId}`;
+}
+
+function withCreateIdentity(node: TiptapNode, clientId: string): Record<string, unknown> {
+  const syncCreateId = createSyncCreateId(clientId);
+  return {
+    ...node,
+    attrs: {
+      ...(node.attrs ?? {}),
+      clientId,
+      syncCreateId,
+      "data-sync-create-id": syncCreateId,
+      blockId: null,
+      "data-block-id": undefined,
+    },
+  } as Record<string, unknown>;
+}
+
+function allocateCreateSortKeys(
+  orderedNextNodes: IndexedNode[],
+  prevIndexed: Record<string, IndexedNode>,
+): Map<string, string> {
+  const sortKeys = new Map<string, string>();
+  let index = 0;
+
+  while (index < orderedNextNodes.length) {
+    const node = orderedNextNodes[index];
+    if (prevIndexed[node.clientId]) {
+      index += 1;
+      continue;
+    }
+
+    const runStart = index;
+    const run: IndexedNode[] = [];
+    while (index < orderedNextNodes.length && !prevIndexed[orderedNextNodes[index].clientId]) {
+      run.push(orderedNextNodes[index]);
+      index += 1;
+    }
+
+    const previousExisting = [...orderedNextNodes.slice(0, runStart)]
+      .reverse()
+      .find((item) => item.blockId || prevIndexed[item.clientId] || item.sortKey);
+    const nextExisting = orderedNextNodes
+      .slice(index)
+      .find((item) => item.blockId || prevIndexed[item.clientId] || item.sortKey);
+    const allocated = createSortKeysBetween(
+      previousExisting?.sortKey ?? null,
+      nextExisting?.sortKey ?? null,
+      run.length,
+    );
+
+    run.forEach((item, offset) => {
+      sortKeys.set(item.clientId, allocated[offset]);
+    });
+  }
+
+  return sortKeys;
+}
+
 export function deriveSyncEntries(prevDoc: TiptapDoc | null, nextDoc: TiptapDoc): SyncEntry[] {
   const nextIndexed = indexTopLevel(nextDoc);
   const prevIndexed = prevDoc ? indexTopLevel(prevDoc) : {};
   const entries: SyncEntry[] = [];
   const orderedNextNodes = Object.values(nextIndexed).sort((a, b) => a.index - b.index);
+  const createSortKeys = allocateCreateSortKeys(orderedNextNodes, prevIndexed);
 
   for (const nextNode of orderedNextNodes) {
     const prevNode = prevIndexed[nextNode.clientId];
     if (!prevNode) {
+      const syncCreateId = createSyncCreateId(nextNode.clientId);
       entries.push({
         clientId: nextNode.clientId,
         blockId: null,
         opType: "create",
+        syncCreateId,
         blockType: toBlockType(nextNode.node.type),
-        payload: nextNode.node as unknown as Record<string, unknown>,
-        sortKey: sortKeyForPosition(orderedNextNodes, nextNode.index),
+        payload: withCreateIdentity(nextNode.node, nextNode.clientId),
+        sortKey: createSortKeys.get(nextNode.clientId) ?? sortKeyForPosition(orderedNextNodes, nextNode.index),
       });
       continue;
     }

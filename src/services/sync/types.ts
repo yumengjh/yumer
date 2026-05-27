@@ -26,6 +26,7 @@ export interface SyncEntry {
   clientId: string;
   blockId: string | null;
   opType: SyncOpType;
+  syncCreateId?: string;
   blockType?: string;
   payload?: Record<string, unknown>;
   plainText?: string;
