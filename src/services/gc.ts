@@ -17,13 +17,25 @@ export interface BlockVersionGcHealth {
 export interface BlockVersionGcRunSummary {
   blockVersionsScanned: number;
   hardRootedBlockVersions: number;
+  liveRootedBlockVersions?: number;
+  tombstoneRootedBlockVersions?: number;
   policyRetainedBlockVersions: number;
+  softDeletedMapEntries?: number;
   candidateBlockVersions: number;
+  tombstoneCompactionCandidates?: number;
   rootSources?: {
     docSnapshots: number;
     documentDrafts: number;
   };
   candidateReasons?: Record<string, number>;
+}
+
+export interface BlockVersionGcPolicySnapshot {
+  gracePeriodMs: number;
+  tombstoneGracePeriodMs?: number;
+  keepLatestPerBlock: number;
+  maxCandidatesToStore: number;
+  rootSources: Array<"doc_snapshots" | "document_drafts">;
 }
 
 export interface BlockVersionGcRun {
@@ -35,7 +47,7 @@ export interface BlockVersionGcRun {
     workspaceId?: string | null;
     docId?: string | null;
   };
-  policySnapshot?: Record<string, unknown>;
+  policySnapshot?: BlockVersionGcPolicySnapshot;
   health?: BlockVersionGcHealth;
   summary: BlockVersionGcRunSummary;
   candidateDetailsStored?: boolean;

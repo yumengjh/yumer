@@ -11,6 +11,7 @@ import {
   listBlockVersionGcRuns,
   type BlockVersionGcCandidate,
   type BlockVersionGcHealth,
+  type BlockVersionGcPolicySnapshot,
   type BlockVersionGcRun,
 } from "@/services/gc";
 import "./GcDebugModal.css";
@@ -24,6 +25,12 @@ type GcDebugModalProps = {
   workspaceId?: string;
   docId?: string;
   docTitle?: string;
+};
+
+type PolicyItem = {
+  key: string;
+  label: string;
+  value: string;
 };
 
 function getStatusColor(status?: string) {
@@ -44,14 +51,76 @@ function getStatusColor(status?: string) {
 }
 
 function formatTime(value?: string | number | null) {
-  if (!value) return "—";
+  if (!value) return "--";
   const date = typeof value === "number" ? new Date(value) : new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) return "--";
   return date.toLocaleString();
 }
 
 function formatCount(value?: number) {
   return typeof value === "number" ? value.toLocaleString() : "0";
+}
+
+function formatDuration(value?: number | null) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "--";
+  if (value < 1000) return `${value}ms`;
+
+  const totalSeconds = Math.floor(value / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const parts: string[] = [];
+
+  if (hours > 0) parts.push(`${hours}h`);
+  if (minutes > 0) parts.push(`${minutes}m`);
+  if (seconds > 0 || parts.length === 0) parts.push(`${seconds}s`);
+
+  return parts.join(" ");
+}
+
+function toPolicyItems(policy?: BlockVersionGcPolicySnapshot): PolicyItem[] {
+  if (!policy) return [];
+
+  return [
+    {
+      key: "gracePeriodMs",
+      label: "普通候选宽限期",
+      value: `${formatDuration(policy.gracePeriodMs)} (${policy.gracePeriodMs}ms)`,
+    },
+    {
+      key: "tombstoneGracePeriodMs",
+      label: "Tombstone 宽限期",
+      value:
+        typeof policy.tombstoneGracePeriodMs === "number"
+          ? `${formatDuration(policy.tombstoneGracePeriodMs)} (${policy.tombstoneGracePeriodMs}ms)`
+          : "--",
+    },
+    {
+      key: "keepLatestPerBlock",
+      label: "每块额外保留版本数",
+      value: String(policy.keepLatestPerBlock),
+    },
+    {
+      key: "maxCandidatesToStore",
+      label: "候选明细存储上限",
+      value: String(policy.maxCandidatesToStore),
+    },
+    {
+      key: "rootSources",
+      label: "Root 来源",
+      value: policy.rootSources.join(", "),
+    },
+  ];
+}
+
+function formatPolicySummary(policy?: BlockVersionGcPolicySnapshot) {
+  if (!policy) return "--";
+
+  return [
+    `普通 ${formatDuration(policy.gracePeriodMs)}`,
+    `Tombstone ${formatDuration(policy.tombstoneGracePeriodMs ?? null)}`,
+    `每块保留 ${policy.keepLatestPerBlock}`,
+  ].join(" / ");
 }
 
 export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: GcDebugModalProps) {
@@ -75,17 +144,152 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
 
   const persistCredentials = useCallback((nextToken: string, nextOperatorId: string) => {
     if (typeof window === "undefined") return;
+
     if (nextToken.trim()) {
       sessionStorage.setItem(GC_SYSTEM_ADMIN_TOKEN_KEY, nextToken.trim());
     } else {
       sessionStorage.removeItem(GC_SYSTEM_ADMIN_TOKEN_KEY);
     }
+
     if (nextOperatorId.trim()) {
       sessionStorage.setItem(GC_OPERATOR_ID_KEY, nextOperatorId.trim());
     } else {
       sessionStorage.removeItem(GC_OPERATOR_ID_KEY);
     }
   }, []);
+
+  const loadCandidatesForRun = useCallback(
+    async (activeToken: string, runId: string, activeOperatorId: string) => {
+      const candidateResult = await getBlockVersionGcCandidates({
+        token: activeToken,
+        operatorId: activeOperatorId || undefined,
+        runId,
+        page: 1,
+        pageSize: 100,
+      });
+      setCandidates(candidateResult.items);
+      setCandidatesTotal(candidateResult.total);
+    },
+    [],
+  );
+
+  const loadRunDetail = useCallback(
+    async (run: BlockVersionGcRun, activeToken: string, activeOperatorId: string) => {
+      const fullRun = await getBlockVersionGcRun({
+        token: activeToken,
+        operatorId: activeOperatorId || undefined,
+        runId: run.runId,
+      });
+
+      setSelectedRun(fullRun);
+
+      if (fullRun.candidateDetailsStored) {
+        await loadCandidatesForRun(activeToken, fullRun.runId, activeOperatorId);
+      } else {
+        setCandidates([]);
+        setCandidatesTotal(0);
+      }
+    },
+    [loadCandidatesForRun],
+  );
+
+  const loadPanelData = useCallback(
+    async (activeToken = token, activeOperatorId = operatorId) => {
+      if (!activeToken.trim()) {
+        setError("请先输入系统管理员令牌");
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+      persistCredentials(activeToken, activeOperatorId);
+
+      try {
+        const [healthResult, runsResult] = await Promise.all([
+          getBlockVersionGcHealth({
+            token: activeToken,
+            operatorId: activeOperatorId || undefined,
+            workspaceId,
+            docId,
+          }),
+          listBlockVersionGcRuns({
+            token: activeToken,
+            operatorId: activeOperatorId || undefined,
+            workspaceId,
+            docId,
+            page: 1,
+            pageSize: 10,
+          }),
+        ]);
+
+        setHealth(healthResult);
+        setRuns(runsResult.items);
+
+        const latestRun = runsResult.items[0] ?? null;
+        if (latestRun) {
+          await loadRunDetail(latestRun, activeToken, activeOperatorId);
+        } else {
+          setSelectedRun(null);
+          setCandidates([]);
+          setCandidatesTotal(0);
+        }
+      } catch (nextError) {
+        setError(nextError instanceof Error ? nextError.message : "GC 调试信息加载失败");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [docId, loadRunDetail, operatorId, persistCredentials, token, workspaceId],
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    void loadPanelData();
+  }, [loadPanelData, open]);
+
+  const handleRunPreview = useCallback(async () => {
+    if (!token.trim()) {
+      setError("请先输入系统管理员令牌");
+      return;
+    }
+
+    setRunning(true);
+    setError(null);
+    persistCredentials(token, operatorId);
+
+    try {
+      const run = await createBlockVersionGcRun({
+        token,
+        operatorId: operatorId || undefined,
+        workspaceId,
+        docId,
+        includeCandidates,
+      });
+
+      message.success(`GC preview 已触发：${run.runId}`);
+      await loadPanelData(token, operatorId);
+    } catch (nextError) {
+      const messageText = nextError instanceof Error ? nextError.message : "GC preview 触发失败";
+      setError(messageText);
+      message.error(messageText);
+    } finally {
+      setRunning(false);
+    }
+  }, [docId, includeCandidates, loadPanelData, operatorId, persistCredentials, token, workspaceId]);
+
+  const scopeLabel = useMemo(
+    () => ({
+      workspaceId: workspaceId || "--",
+      docId: docId || "--",
+      docTitle: docTitle || "当前未选中文档",
+    }),
+    [docId, docTitle, workspaceId],
+  );
+
+  const selectedPolicyItems = useMemo(
+    () => toPolicyItems(selectedRun?.policySnapshot),
+    [selectedRun?.policySnapshot],
+  );
 
   const runColumns = useMemo<ColumnsType<BlockVersionGcRun>>(
     () => [
@@ -105,14 +309,21 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
       {
         title: "扫描",
         key: "scanned",
-        width: 90,
+        width: 88,
         render: (_, record) => formatCount(record.summary?.blockVersionsScanned),
       },
       {
-        title: "候选",
+        title: "普通候选",
         key: "candidateBlockVersions",
-        width: 90,
+        width: 96,
         render: (_, record) => formatCount(record.summary?.candidateBlockVersions),
+      },
+      {
+        title: "策略",
+        key: "policy",
+        render: (_, record) => (
+          <span className="gc-debug__table-policy">{formatPolicySummary(record.policySnapshot)}</span>
+        ),
       },
       {
         title: "开始时间",
@@ -139,11 +350,21 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
         width: 240,
       },
       {
+        title: "动作",
+        key: "action",
+        width: 160,
+        render: (_, record) => String(record.reasonDetail?.action ?? "--"),
+      },
+      {
         title: "风险",
         dataIndex: "riskLevel",
         key: "riskLevel",
         width: 100,
-        render: (value?: string) => <Tag color={value === "high" ? "red" : value === "low" ? "green" : "orange"}>{value || "medium"}</Tag>,
+        render: (value?: string) => (
+          <Tag color={value === "high" ? "red" : value === "low" ? "green" : "orange"}>
+            {value || "medium"}
+          </Tag>
+        ),
       },
       {
         title: "版本时间",
@@ -156,129 +377,12 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
     [],
   );
 
-  const loadCandidatesForRun = useCallback(
-    async (activeToken: string, runId: string, activeOperatorId: string) => {
-      const candidateResult = await getBlockVersionGcCandidates({
-        token: activeToken,
-        operatorId: activeOperatorId || undefined,
-        runId,
-        page: 1,
-        pageSize: 100,
-      });
-      setCandidates(candidateResult.items);
-      setCandidatesTotal(candidateResult.total);
-    },
-    [],
-  );
-
-  const loadPanelData = useCallback(
-    async (activeToken = token, activeOperatorId = operatorId) => {
-      if (!activeToken.trim()) {
-        setError("请先输入系统管理员令牌");
-        return;
-      }
-
-      setLoading(true);
-      setError(null);
-      persistCredentials(activeToken, activeOperatorId);
-      try {
-        const [healthResult, runsResult] = await Promise.all([
-          getBlockVersionGcHealth({
-            token: activeToken,
-            operatorId: activeOperatorId || undefined,
-            workspaceId,
-            docId,
-          }),
-          listBlockVersionGcRuns({
-            token: activeToken,
-            operatorId: activeOperatorId || undefined,
-            workspaceId,
-            docId,
-            page: 1,
-            pageSize: 10,
-          }),
-        ]);
-
-        setHealth(healthResult);
-        setRuns(runsResult.items);
-
-        const latestRun = runsResult.items[0] ?? null;
-        setSelectedRun(latestRun);
-        if (latestRun) {
-          const fullRun = await getBlockVersionGcRun({
-            token: activeToken,
-            operatorId: activeOperatorId || undefined,
-            runId: latestRun.runId,
-          });
-          setSelectedRun(fullRun);
-          if (fullRun.candidateDetailsStored) {
-            await loadCandidatesForRun(activeToken, fullRun.runId, activeOperatorId);
-          } else {
-            setCandidates([]);
-            setCandidatesTotal(0);
-          }
-        } else {
-          setCandidates([]);
-          setCandidatesTotal(0);
-        }
-      } catch (nextError) {
-        const messageText = nextError instanceof Error ? nextError.message : "GC 调试信息加载失败";
-        setError(messageText);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [docId, loadCandidatesForRun, operatorId, persistCredentials, token, workspaceId],
-  );
-
-  useEffect(() => {
-    if (!open) return;
-    void loadPanelData();
-  }, [loadPanelData, open]);
-
-  const handleRunPreview = useCallback(async () => {
-    if (!token.trim()) {
-      setError("请先输入系统管理员令牌");
-      return;
-    }
-
-    setRunning(true);
-    setError(null);
-    persistCredentials(token, operatorId);
-    try {
-      const run = await createBlockVersionGcRun({
-        token,
-        operatorId: operatorId || undefined,
-        workspaceId,
-        docId,
-        includeCandidates,
-      });
-      setSelectedRun(run);
-      message.success(`GC preview 已触发：${run.runId}`);
-      await loadPanelData(token, operatorId);
-    } catch (nextError) {
-      const messageText = nextError instanceof Error ? nextError.message : "GC preview 触发失败";
-      setError(messageText);
-      message.error(messageText);
-    } finally {
-      setRunning(false);
-    }
-  }, [docId, includeCandidates, loadPanelData, operatorId, persistCredentials, token, workspaceId]);
-
-  const scopeLabel = useMemo(() => {
-    return {
-      workspaceId: workspaceId || "—",
-      docId: docId || "—",
-      docTitle: docTitle || "当前未选中文档",
-    };
-  }, [docId, docTitle, workspaceId]);
-
   return (
     <Modal
       open={open}
       onCancel={onClose}
       footer={null}
-      width={1120}
+      width={1180}
       title="GC 调试面板"
       className="gc-debug-modal"
       destroyOnClose={false}
@@ -309,8 +413,12 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
         </div>
 
         <div className="gc-debug__scope">
-          <span>工作区：<code>{scopeLabel.workspaceId}</code></span>
-          <span>文档：<code>{scopeLabel.docId}</code></span>
+          <span>
+            工作区：<code>{scopeLabel.workspaceId}</code>
+          </span>
+          <span>
+            文档：<code>{scopeLabel.docId}</code>
+          </span>
           <span className="gc-debug__scope-title">{scopeLabel.docTitle}</span>
         </div>
 
@@ -335,7 +443,7 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
                       <strong>{formatCount(health.missingPublishedSnapshots)}</strong>
                     </div>
                     <div className="gc-debug__metric">
-                      <span className="gc-debug__metric-label">缺 root version</span>
+                      <span className="gc-debug__metric-label">缺 Root Version</span>
                       <strong>{formatCount(health.missingRootBlockVersions)}</strong>
                     </div>
                   </div>
@@ -353,29 +461,60 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
               </div>
               {selectedRun ? (
                 <>
-                  <div className="gc-debug__metrics gc-debug__metrics--dense">
+                  <div className="gc-debug__metrics gc-debug__metrics--summary">
                     <div className="gc-debug__metric">
                       <span className="gc-debug__metric-label">扫描</span>
                       <strong>{formatCount(selectedRun.summary?.blockVersionsScanned)}</strong>
                     </div>
                     <div className="gc-debug__metric">
-                      <span className="gc-debug__metric-label">硬 root</span>
-                      <strong>{formatCount(selectedRun.summary?.hardRootedBlockVersions)}</strong>
+                      <span className="gc-debug__metric-label">Live Root</span>
+                      <strong>{formatCount(selectedRun.summary?.liveRootedBlockVersions)}</strong>
+                    </div>
+                    <div className="gc-debug__metric">
+                      <span className="gc-debug__metric-label">Tombstone Root</span>
+                      <strong>{formatCount(selectedRun.summary?.tombstoneRootedBlockVersions)}</strong>
                     </div>
                     <div className="gc-debug__metric">
                       <span className="gc-debug__metric-label">策略保留</span>
                       <strong>{formatCount(selectedRun.summary?.policyRetainedBlockVersions)}</strong>
                     </div>
                     <div className="gc-debug__metric">
-                      <span className="gc-debug__metric-label">候选</span>
+                      <span className="gc-debug__metric-label">普通候选</span>
                       <strong>{formatCount(selectedRun.summary?.candidateBlockVersions)}</strong>
+                    </div>
+                    <div className="gc-debug__metric">
+                      <span className="gc-debug__metric-label">Map 压缩候选</span>
+                      <strong>{formatCount(selectedRun.summary?.tombstoneCompactionCandidates)}</strong>
                     </div>
                   </div>
                   <div className="gc-debug__meta">
-                    <span>Run：<code>{selectedRun.runId}</code></span>
+                    <span>
+                      Run：<code>{selectedRun.runId}</code>
+                    </span>
                     <span>开始：{formatTime(selectedRun.startedAt || selectedRun.createdAt)}</span>
                     <span>结束：{formatTime(selectedRun.finishedAt)}</span>
+                    <span>触发人：{selectedRun.triggeredBy || "--"}</span>
                   </div>
+
+                  <div className="gc-debug__subsection">
+                    <div className="gc-debug__subsection-head">
+                      <h4>Policy</h4>
+                      <Typography.Text type="secondary">本次 run 固化的策略快照</Typography.Text>
+                    </div>
+                    {selectedPolicyItems.length > 0 ? (
+                      <div className="gc-debug__policy-list">
+                        {selectedPolicyItems.map((item) => (
+                          <div key={item.key} className="gc-debug__policy-item">
+                            <span className="gc-debug__policy-label">{item.label}</span>
+                            <strong className="gc-debug__policy-value">{item.value}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="该 run 未返回策略快照" />
+                    )}
+                  </div>
+
                   <pre className="gc-debug__json">{JSON.stringify(selectedRun, null, 2)}</pre>
                 </>
               ) : (
@@ -398,13 +537,7 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
               locale={{ emptyText: "暂无 run 记录" }}
               onRow={(record) => ({
                 onClick: () => {
-                  setSelectedRun(record);
-                  if (record.candidateDetailsStored) {
-                    void loadCandidatesForRun(token, record.runId, operatorId);
-                  } else {
-                    setCandidates([]);
-                    setCandidatesTotal(0);
-                  }
+                  void loadRunDetail(record, token, operatorId);
                 },
               })}
             />
@@ -414,7 +547,7 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
             <div className="gc-debug__card-head">
               <h3>Candidates</h3>
               <Typography.Text type="secondary">
-                {selectedRun?.runId ? `run ${selectedRun.runId}` : "未选中 run"} · {formatCount(candidatesTotal)} 条
+                {selectedRun?.runId ? `run ${selectedRun.runId}` : "未选中 run"} / {formatCount(candidatesTotal)} 条
               </Typography.Text>
             </div>
             <Table
