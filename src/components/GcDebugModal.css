@@ -1,0 +1,143 @@
+.gc-debug-modal .ant-modal-body {
+  padding-top: 8px;
+}
+
+.gc-debug {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.gc-debug__toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) minmax(180px, 1fr) auto auto auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.gc-debug__token,
+.gc-debug__operator {
+  min-width: 0;
+}
+
+.gc-debug__scope {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--app-border-lighter);
+  border-radius: 8px;
+  background: linear-gradient(180deg, #fbfbfc 0%, #f4f6f9 100%);
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+
+.gc-debug__scope-title {
+  color: var(--app-text);
+  font-weight: 600;
+}
+
+.gc-debug__alert {
+  margin-bottom: 0;
+}
+
+.gc-debug__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.gc-debug__card {
+  border: 1px solid var(--app-border-lighter);
+  border-radius: 10px;
+  background: #fff;
+  padding: 14px 16px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+}
+
+.gc-debug__card--table {
+  padding-bottom: 10px;
+}
+
+.gc-debug__card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.gc-debug__card-head h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--app-text);
+}
+
+.gc-debug__metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.gc-debug__metrics--dense {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.gc-debug__metric {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f7f8fb;
+  border: 1px solid rgba(15, 23, 42, 0.05);
+}
+
+.gc-debug__metric-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: var(--app-text-muted);
+}
+
+.gc-debug__metric strong {
+  font-size: 18px;
+  line-height: 1;
+  color: #111827;
+}
+
+.gc-debug__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+
+.gc-debug__json {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 12px;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #dbe7ff;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+@media (max-width: 960px) {
+  .gc-debug__toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .gc-debug__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .gc-debug__metrics,
+  .gc-debug__metrics--dense {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -247,6 +247,15 @@
   border-color: var(--app-border-strong) !important;
 }
 
+.header-btn-gc {
+  color: #0f766e;
+}
+
+.header-btn-gc:hover {
+  color: #115e59 !important;
+  background: rgba(15, 118, 110, 0.08) !important;
+}
+
 /* 响应式 */
 .header-end--mobile {
   display: none;

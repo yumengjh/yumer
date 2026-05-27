@@ -20,6 +20,7 @@ import {
   DownloadOutlined,
   CodeOutlined,
   FilePdfOutlined,
+  BugOutlined,
 } from "@ant-design/icons";
 import { useDocument, type SaveStatus } from "../contexts/DocumentContext";
 import { VersionDiffModal } from "./VersionDiffModal";
@@ -43,6 +44,7 @@ import {
 import type { PublicDocRevalidationResult } from "@/services/document";
 import { downloadDocumentExport, type DocumentExportFormat } from "@/services/document-export";
 import { getDocumentSyncState } from "@/services/sync/api";
+import { GcDebugModal } from "./GcDebugModal";
 import "./DocumentHeader.css";
 
 const PUBLIC_DOC_REVALIDATE_SECRET_KEY = "publicDocRevalidateSecret";
@@ -198,6 +200,7 @@ export function DocumentHeader({
   const [tagManageOpen, setTagManageOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [exportingFormat, setExportingFormat] = useState<DocumentExportFormat | null>(null);
+  const [gcDebugOpen, setGcDebugOpen] = useState(false);
 
   useEffect(() => {
     refreshDocs().catch(() => {});
@@ -520,6 +523,19 @@ export function DocumentHeader({
           </button>
         </Tooltip>
 
+        {currentDoc && (
+          <Tooltip title="GC 调试面板">
+            <button
+              type="button"
+              className="header-icon-btn header-btn-gc"
+              onClick={() => setGcDebugOpen(true)}
+              aria-label="GC 调试面板"
+            >
+              <BugOutlined />
+            </button>
+          </Tooltip>
+        )}
+
         {currentDoc && visibleSaveStatus && (
           <div className="header-start__live">
             <SyncStatus status={visibleSaveStatus} lastSavedAt={lastSavedAt} />
@@ -706,6 +722,13 @@ export function DocumentHeader({
         />
       )}
       <TagManagementModal open={tagManageOpen} onClose={() => setTagManageOpen(false)} />
+      <GcDebugModal
+        open={gcDebugOpen}
+        onClose={() => setGcDebugOpen(false)}
+        workspaceId={currentDoc?.workspaceId}
+        docId={currentDoc?.docId}
+        docTitle={currentDoc?.title}
+      />
     </header>
   );
 }
