@@ -86,8 +86,10 @@ function stripIdentityAttrs(value: unknown): unknown {
     const attrs = { ...(out.attrs as Record<string, unknown>) };
     delete attrs.blockId;
     delete attrs.clientId;
+    delete attrs.sortKey;
     delete attrs["data-block-id"];
     delete attrs["data-client-id"];
+    delete attrs["data-sort-key"];
     out.attrs = attrs;
   }
 
@@ -140,6 +142,12 @@ export function patchEditorBlockIdentityFromDoc(editor: EditorLike, nextDoc: Tip
     const nextBlockId = nextIdentity.blockId ?? null;
     if ((currentNode.attrs.blockId ?? null) !== nextBlockId) {
       nextAttrs.blockId = nextBlockId;
+      changed = true;
+    }
+
+    const nextSortKey = typeof nextNode.attrs?.sortKey === "string" ? nextNode.attrs.sortKey : null;
+    if ((currentNode.attrs.sortKey ?? null) !== nextSortKey) {
+      nextAttrs.sortKey = nextSortKey;
       changed = true;
     }
 
