@@ -44,13 +44,16 @@ interface DocumentContextValue {
   currentDocVersion: number | null;
   currentContentSource: "draft" | "head" | null;
   currentDraftMeta: EditDraftMeta | null;
+  pendingScrollBlockId: string | null;
   setWorkspace: (id: string) => void;
   clearWorkspace: () => void;
   selectDoc: (docId: string) => Promise<void>;
+  selectDocAndScroll: (docId: string, blockId: string) => Promise<void>;
   loadContent: (docId: string) => Promise<{ content: EditorContent; docVer: number }>;
   markSavedAt: (at: Date | null) => void;
   setSaveStatus: (status: SaveStatus) => void;
   setHasUnsavedChanges: (value: boolean) => void;
+  setPendingScrollBlockId: (blockId: string | null) => void;
   createDoc: (data: { title: string; icon?: string; cover?: string; visibility?: string; category?: string }) => Promise<Document>;
   updateDoc: (docId: string, data: { title?: string; icon?: string; cover?: string; visibility?: string; tags?: string[]; category?: string; status?: string }) => Promise<void>;
   deleteDoc: (docId: string) => Promise<void>;
@@ -94,6 +97,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const currentDocRef = useRef<Document | null>(null);
   const blockIdsRef = useRef<string[]>([]);
+  const [pendingScrollBlockId, setPendingScrollBlockId] = useState<string | null>(null);
 
   const resetSaveState = useCallback((status: SaveStatus = "idle") => {
     setSaveStatus(status);
@@ -162,6 +166,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     if (!belongsToWorkspace(doc, workspaceId)) {
       throw new Error("文档不属于当前工作空间");
     }
+    setCurrentDocument(doc);
+    pushWindowPath(doc.docId);
+  }, [setCurrentDocument, workspaceId]);
+
+  const selectDocAndScroll = useCallback(async (docId: string, blockId: string) => {
+    const doc = await getDocument(docId);
+    if (!belongsToWorkspace(doc, workspaceId)) {
+      throw new Error("文档不属于当前工作空间");
+    }
+    setPendingScrollBlockId(blockId);
     setCurrentDocument(doc);
     pushWindowPath(doc.docId);
   }, [setCurrentDocument, workspaceId]);
@@ -259,13 +273,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         currentDocVersion,
         currentContentSource,
         currentDraftMeta,
+        pendingScrollBlockId,
         setWorkspace,
         clearWorkspace,
         selectDoc,
+        selectDocAndScroll,
         loadContent,
         markSavedAt: setLastSavedAt,
         setSaveStatus,
         setHasUnsavedChanges,
+        setPendingScrollBlockId,
         createDoc,
         updateDoc,
         deleteDoc,

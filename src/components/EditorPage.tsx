@@ -301,6 +301,8 @@ function EditorContent() {
     hasUnsavedChanges,
     setHasUnsavedChanges,
     lastSavedAt,
+    pendingScrollBlockId,
+    setPendingScrollBlockId,
   } = useDocument();
 
   const [content, setContent] = useState<EditorContent>(DEFAULT_CONTENT);
@@ -445,6 +447,33 @@ function EditorContent() {
         setLoadingDoc(false);
       });
   }, [currentDoc, loadContent, markSavedAt, setHasUnsavedChanges, setSaveStatus]);
+
+  // 搜索结果滚动定位
+  useEffect(() => {
+    if (loadingDoc || !editorRef.current || !pendingScrollBlockId) return;
+
+    const blockId = pendingScrollBlockId;
+    setPendingScrollBlockId(null);
+
+    const HEADER_OFFSET = 96 + 20;
+
+    const tryScroll = () => {
+      const editor = editorRef.current?.getEditor();
+      if (!editor) return false;
+      const el = editor.view.dom.querySelector(`[data-block-id="${blockId}"]`) as HTMLElement | null;
+      if (!el) return false;
+      const rect = el.getBoundingClientRect();
+      const targetY = window.scrollY + rect.top - HEADER_OFFSET;
+      window.scrollTo({ top: targetY, behavior: "smooth" });
+      return true;
+    };
+
+    requestAnimationFrame(() => {
+      if (!tryScroll()) {
+        setTimeout(tryScroll, 300);
+      }
+    });
+  }, [loadingDoc, pendingScrollBlockId, setPendingScrollBlockId]);
 
   const saveLegacyContent = useCallback(async (nextContent: EditorContent) => {
     if (!currentDoc) return;

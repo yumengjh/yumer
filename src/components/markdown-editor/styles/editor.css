@@ -153,6 +153,33 @@
   letter-spacing: 0;
 }
 
+/* ---------- 标题锚点图标（紧跟标题文字右侧）---------- */
+.tiptap-editor .heading-anchor-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  vertical-align: middle;
+  color: var(--app-text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+  border-radius: 3px;
+  background: transparent;
+  position: relative;
+  top: -1px;
+}
+
+.tiptap-editor .heading-anchor-icon.is-visible {
+  opacity: 1;
+}
+
+.tiptap-editor .heading-anchor-icon:hover {
+  color: var(--app-primary-active);
+}
+
 .tiptap-editor :where(h1) {
   font-size: 28px;
   margin-top: 0;

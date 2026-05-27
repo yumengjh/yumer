@@ -40,6 +40,7 @@ import { Indent } from "./extensions/indent";
 import { ImageBlock } from "./extensions/imageBlock";
 import ImageBlockView from "./ImageBlockView";
 import { BlockIdAttribute } from "./extensions/blockIdAttribute";
+import { HeadingAnchor } from "./extensions/headingAnchor";
 import TaskItemView from "./TaskItemView";
 import { EditorContextProvider } from "./EditorContext";
 import Toolbar from "./Toolbar";
@@ -63,6 +64,8 @@ export interface MarkdownEditorRef {
   getText: () => string;
   /** 获取 Tiptap Editor 实例 */
   getEditor: () => Editor | null;
+  /** 滚动到指定 blockId 的块位置 */
+  scrollToBlock: (blockId: string) => boolean;
 }
 
 export interface MarkdownEditorProps {
@@ -321,6 +324,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
           maxLevel: 8,
         }),
         BlockIdAttribute,
+        HeadingAnchor,
       ],
       content: content || "<p></p>",
       immediatelyRender: false,
@@ -386,6 +390,19 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
     getHTML: () => editor?.getHTML() ?? "",
     getText: () => editor?.getText() ?? "",
     getEditor: () => editor,
+    scrollToBlock: (blockId: string) => {
+      if (!editor) return false;
+      let el = editor.view.dom.querySelector(`[data-block-id="${blockId}"]`) as HTMLElement | null;
+      if (!el) {
+        el = editor.view.dom.querySelector(`[data-anchor="${blockId}"]`) as HTMLElement | null;
+      }
+      if (!el) return false;
+      const HEADER_OFFSET = 96 + 20;
+      const rect = el.getBoundingClientRect();
+      const targetY = window.scrollY + rect.top - HEADER_OFFSET;
+      window.scrollTo({ top: targetY, behavior: "smooth" });
+      return true;
+    },
   }), [editor]);
 
   if (!editor || !shikiReady) {
