@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, type ReactNode } from "react";
 import { Button, Spin, message, Tooltip, Dropdown, Modal, Input } from "antd";
 import type { MenuProps } from "antd";
 import {
+  SearchOutlined,
   SaveOutlined,
   CheckCircleOutlined,
   ExclamationCircleOutlined,
@@ -29,6 +30,7 @@ import { CreateDocumentModal } from "./CreateDocumentModal";
 import { DocumentInfoModal } from "./DocumentInfoModal";
 import { TagManagementModal } from "./TagManagementModal";
 import { WorkspaceSettingsModal } from "./WorkspaceSettingsModal";
+import { DocumentSearchModal } from "./DocumentSearchModal";
 import { useAuth } from "../contexts/AuthContext";
 import type {
   AppSettings,
@@ -198,6 +200,7 @@ export function DocumentHeader({
   const [createOpen, setCreateOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [tagManageOpen, setTagManageOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [exportingFormat, setExportingFormat] = useState<DocumentExportFormat | null>(null);
   const [gcDebugOpen, setGcDebugOpen] = useState(false);
@@ -205,6 +208,18 @@ export function DocumentHeader({
   useEffect(() => {
     refreshDocs().catch(() => {});
   }, [refreshDocs]);
+
+  // Ctrl+K 打开搜索
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        setSearchOpen((prev) => !prev);
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const handleDocChange = useCallback(
     async (docId: string) => {
@@ -471,6 +486,18 @@ export function DocumentHeader({
             </span>
           </button>
 
+          <Tooltip title="搜索 (Ctrl+K)">
+            <button
+              type="button"
+              className="header-search-btn"
+              onClick={() => setSearchOpen(true)}
+              aria-label="搜索"
+            >
+              <SearchOutlined />
+              <span className="header-search-btn__text">搜索</span>
+            </button>
+          </Tooltip>
+
           {currentDoc && (
             <nav className="header-nav header-nav--desktop" aria-label="文档工具">
               <Tooltip title="版本历史">
@@ -698,6 +725,7 @@ export function DocumentHeader({
         }}
         currentDocId={currentDoc?.docId}
       />
+      <DocumentSearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
       <CreateDocumentModal open={createOpen} onClose={() => setCreateOpen(false)} />
       <WorkspaceSettingsModal
         open={settingsOpen}

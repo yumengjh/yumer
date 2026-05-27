@@ -108,6 +108,34 @@
   min-width: 0;
 }
 
+.header-search-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--app-border-lighter);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--app-text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease,
+    background 0.15s ease;
+}
+
+.header-search-btn:hover {
+  color: var(--app-text);
+  border-color: var(--app-border-strong);
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.header-search-btn__text {
+  white-space: nowrap;
+}
+
 /* 图标按钮组 */
 .header-nav {
   display: inline-flex;
@@ -276,6 +304,14 @@
   .header-doc {
     max-width: min(160px, 38vw);
     padding: 0 8px 0 6px;
+  }
+
+  .header-search-btn {
+    padding: 0 8px;
+  }
+
+  .header-search-btn__text {
+    display: none;
   }
 
   .header-nav--desktop {
