@@ -4,6 +4,7 @@ import DeferredCodeBlockRenderer from "@/components/DeferredCodeBlockRenderer";
 import DeferredDocImagePreview from "@/components/DeferredDocImagePreview";
 import { DocPageLayout } from "@/components/DocPageLayout";
 import { PublicDocTOC } from "@/components/PublicDocTOC";
+import { PublicHeadingAnchorEnhancer } from "@/components/PublicHeadingAnchorEnhancer";
 import {
   getPublicDocSnapshot,
   isLatestRequest,
@@ -90,6 +91,7 @@ export default async function DocPage({ params, searchParams }: PageProps) {
         data-yuediter-render-version={doc.renderHeaders.renderVersion || undefined}
         dangerouslySetInnerHTML={{ __html: doc.html }}
       />
+      <PublicHeadingAnchorEnhancer />
       <DeferredCodeBlockRenderer />
       <DeferredDocImagePreview />
 

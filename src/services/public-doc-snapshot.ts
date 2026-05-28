@@ -23,6 +23,7 @@ interface Block {
 
 interface ContentResponse {
   title: string;
+  html?: string;
   tree: Block;
 }
 
@@ -67,6 +68,51 @@ export interface PublicDocSnapshot {
   authorAvatar: string | null;
   viewCount: number;
   renderHeaders: RenderHeaderInfo;
+}
+
+export function resolvePublicDocHtml(data: ContentResponse): string {
+  if (typeof data.html === "string" && data.html.trim()) {
+    return data.html;
+  }
+
+  return renderBlockTreeToHtml(data.tree);
+}
+
+export function sanitizePublicDocHtml(rawHtml: string): string {
+  return sanitizeHtml(rawHtml, {
+    allowedTags: sanitizeHtml.defaults.allowedTags.concat([
+      "img",
+      "span",
+      "pre",
+      "code",
+      "table",
+      "thead",
+      "tbody",
+      "tr",
+      "th",
+      "td",
+    ]),
+    allowedAttributes: {
+      ...sanitizeHtml.defaults.allowedAttributes,
+      "*": ["class", "style", "data-*", "blockId", "clientId"],
+      a: ["href", "name", "target", "rel", "class"],
+      img: ["src", "alt", "title", "width", "height", "class"],
+      div: ["class", "style", "data-*", "blockId", "clientId"],
+      code: ["class", "data-language"],
+      pre: ["class", "data-language"],
+      span: ["class", "style", "data-*"],
+      button: ["type", "class", "data-*"],
+      th: ["colspan", "rowspan", "style", "class"],
+      td: ["colspan", "rowspan", "style", "class"],
+      h1: ["id", "data-anchor", "data-client-id"],
+      h2: ["id", "data-anchor", "data-client-id"],
+      h3: ["id", "data-anchor", "data-client-id"],
+      h4: ["id", "data-anchor", "data-client-id"],
+      h5: ["id", "data-anchor", "data-client-id"],
+      h6: ["id", "data-anchor", "data-client-id"],
+    },
+    allowedSchemes: ["http", "https", "mailto", "tel"],
+  });
 }
 
 function readRenderHeaderInfo(headers: Headers): RenderHeaderInfo {
@@ -176,35 +222,8 @@ async function readPublicDocSnapshot(
     }
   }
 
-  const rawHtml = renderBlockTreeToHtml(data.tree);
-  const html = sanitizeHtml(rawHtml, {
-    allowedTags: sanitizeHtml.defaults.allowedTags.concat([
-      "img",
-      "span",
-      "pre",
-      "code",
-      "table",
-      "thead",
-      "tbody",
-      "tr",
-      "th",
-      "td",
-    ]),
-    allowedAttributes: {
-      ...sanitizeHtml.defaults.allowedAttributes,
-      "*": ["class", "style", "data-*", "blockId", "clientId"],
-      a: ["href", "name", "target", "rel", "class"],
-      img: ["src", "alt", "title", "width", "height", "class"],
-      div: ["class", "style", "data-*", "blockId", "clientId"],
-      code: ["class", "data-language"],
-      pre: ["class", "data-language"],
-      span: ["class", "style", "data-*"],
-      button: ["type", "class", "data-*"],
-      th: ["colspan", "rowspan", "style", "class"],
-      td: ["colspan", "rowspan", "style", "class"],
-    },
-    allowedSchemes: ["http", "https", "mailto", "tel"],
-  });
+  const rawHtml = resolvePublicDocHtml(data);
+  const html = sanitizePublicDocHtml(rawHtml);
 
   return {
     title: data.title || "\u65E0\u6807\u9898",

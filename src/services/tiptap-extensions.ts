@@ -29,6 +29,7 @@ import { LineHeight } from "../components/markdown-editor/extensions/lineHeight"
 import { Indent } from "../components/markdown-editor/extensions/indent";
 import { BlockIdAttribute } from "../components/markdown-editor/extensions/blockIdAttribute";
 import { ImageBlock } from "../components/markdown-editor/extensions/imageBlock";
+import { HeadingAnchor } from "../components/markdown-editor/extensions/headingAnchor";
 
 export const serializationExtensions = [
   StarterKit.configure({
@@ -67,4 +68,5 @@ export const serializationExtensions = [
   ImageBlock,
   Indent.configure({ types: ["paragraph", "heading"], maxLevel: 8 }),
   BlockIdAttribute,
+  HeadingAnchor,
 ];

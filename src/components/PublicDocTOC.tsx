@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState, useMemo, useRef, useLayoutEffect } from "react";
 import { RightOutlined, DownOutlined, MenuUnfoldOutlined, MenuFoldOutlined } from "@ant-design/icons";
 import { Button, Tooltip } from "antd";
+import { resolveHeadingElementId } from "./markdown-editor/TableOfContents/headingId";
+import { readPublicHeadingLabel, updatePublicHeadingHash } from "./public-heading-anchor";
 import "./PublicDocTOC.css";
 
 interface TOCItem {
@@ -21,18 +23,18 @@ export function PublicDocTOC() {
   const itemsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // wait for DOM to render content
     const timer = setTimeout(() => {
       const elements = Array.from(
-        document.querySelectorAll(".doc-content h1, .doc-content h2, .doc-content h3, .doc-content h4, .doc-content h5, .doc-content h6")
+        document.querySelectorAll(".doc-content h1, .doc-content h2, .doc-content h3, .doc-content h4, .doc-content h5, .doc-content h6"),
       );
       const items = elements.map((el, index) => {
-        if (!el.id) {
-          el.id = `heading-${index}`;
+        const resolvedId = resolveHeadingElementId(el, `heading-${index}`);
+        if (el.id !== resolvedId) {
+          el.id = resolvedId;
         }
         return {
-          id: el.id,
-          text: el.textContent || "",
+          id: resolvedId,
+          text: readPublicHeadingLabel(el as HTMLElement),
           level: parseInt(el.tagName[1], 10),
         };
       });
@@ -106,6 +108,7 @@ export function PublicDocTOC() {
     setActiveId(id);
     const el = document.getElementById(id);
     if (el) {
+      updatePublicHeadingHash(id);
       const top = el.getBoundingClientRect().top + window.scrollY - SCROLL_HEADER_OFFSET;
       window.scrollTo({ top, behavior: "smooth" });
     }
@@ -120,12 +123,12 @@ export function PublicDocTOC() {
   };
 
   const toggleAll = () => {
-    const allParentIds = headings.filter((item, index) => 
+    const allParentIds = headings.filter((item, index) =>
       index < headings.length - 1 && headings[index + 1].level > item.level
     ).map(item => item.id);
 
     const isAnyExpanded = allParentIds.some(id => !collapsedLevels[id]);
-    
+
     if (isAnyExpanded) {
       const newCollapsed: Record<string, boolean> = {};
       allParentIds.forEach(id => newCollapsed[id] = true);
@@ -136,7 +139,7 @@ export function PublicDocTOC() {
   };
 
   const isAllCollapsed = useMemo(() => {
-    const allParentIds = headings.filter((item, index) => 
+    const allParentIds = headings.filter((item, index) =>
       index < headings.length - 1 && headings[index + 1].level > item.level
     ).map(item => item.id);
     if (allParentIds.length === 0) return false;
@@ -150,7 +153,7 @@ export function PublicDocTOC() {
     headings.forEach((item, index) => {
       const isParent = index < headings.length - 1 && headings[index + 1].level > item.level;
       const isCollapsed = collapsedLevels[item.id];
-      
+
       let shouldHide = false;
       for (let i = 0; i < index; i++) {
         const prev = headings[i];
@@ -198,10 +201,10 @@ export function PublicDocTOC() {
       <div className="toc-header">
         <span className="toc-header-title">大纲</span>
         <Tooltip title={isAllCollapsed ? "全部展开" : "全部收起"}>
-          <Button 
-            type="text" 
-            size="small" 
-            icon={isAllCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} 
+          <Button
+            type="text"
+            size="small"
+            icon={isAllCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
             onClick={toggleAll}
             className="toc-global-toggle"
           />

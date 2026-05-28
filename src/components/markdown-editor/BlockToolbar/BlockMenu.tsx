@@ -1,13 +1,12 @@
 import { useMemo, useCallback } from 'react';
 import { Menu, message } from 'antd';
 import type { MenuProps } from 'antd';
-import {
-  DeleteOutlined, CopyOutlined, ScissorOutlined,
-  ArrowUpOutlined, ArrowDownOutlined, ClearOutlined, PlusCircleOutlined,
-} from '@ant-design/icons';
+import { DeleteOutlined, ClearOutlined, PlusCircleOutlined } from '@ant-design/icons';
 import { TextSelection } from '@tiptap/pm/state';
 import { useMarkdownEditor } from '../EditorContext';
 import { getTableElementFromToolbarTarget } from './blockTarget';
+import { createBlockMenuItems, getHeadingAnchorIdFromBlock } from './blockMenuItems';
+import { buildAnchorUrl } from '../utils/anchorId';
 
 interface BlockMenuProps {
   onClose: () => void;
@@ -40,7 +39,7 @@ function getBlockRange(
     if (depth < 1) return null;
     return { from: $pos.before(depth), to: $pos.after(depth), depth };
   } catch (error) {
-    console.error('[BlockMenu] 解析块范围失败:', error);
+    console.error('[BlockMenu] resolve block range failed:', error);
     return null;
   }
 }
@@ -82,6 +81,10 @@ export function BlockMenu({ onClose, hoveredBlock, hoveredTableCell, onWillDelet
     [hoveredBlock],
   );
   const isTableTarget = Boolean(tableElement);
+  const headingAnchorId = useMemo(
+    () => getHeadingAnchorIdFromBlock(hoveredBlock),
+    [hoveredBlock],
+  );
 
   const canMoveUp = useMemo(() => {
     if (!editor || !hoveredBlock || isTableTarget) return false;
@@ -155,6 +158,20 @@ export function BlockMenu({ onClose, hoveredBlock, hoveredTableCell, onWillDelet
     }
   }, [hoveredBlock]);
 
+  const copyAnchorLink = useCallback(async () => {
+    if (!headingAnchorId) return;
+
+    const url = buildAnchorUrl(window.location.href, headingAnchorId);
+    window.history.replaceState(null, '', url);
+
+    try {
+      await navigator.clipboard.writeText(url);
+      message.success('锚点链接已复制');
+    } catch {
+      message.warning('复制锚点链接失败');
+    }
+  }, [headingAnchorId]);
+
   const clearFormat = useCallback(() => {
     if (!editor || !hoveredBlock || isTableTarget) return;
     const { view } = editor;
@@ -177,7 +194,7 @@ export function BlockMenu({ onClose, hoveredBlock, hoveredTableCell, onWillDelet
     try {
       view.dispatch(view.state.tr.insert(insertAt, paragraph));
     } catch (error) {
-      console.error('[BlockMenu] 插入段落失败:', error);
+      console.error('[BlockMenu] insert paragraph failed:', error);
       message.warning('当前位置暂不支持插入普通段落');
     }
   }, [editor, hoveredBlock, isTableTarget]);
@@ -212,7 +229,7 @@ export function BlockMenu({ onClose, hoveredBlock, hoveredTableCell, onWillDelet
             return;
           }
         } catch (err) {
-          console.error('[BlockMenu] 子块移动失败:', err);
+          console.error('[BlockMenu] move nested block failed:', err);
         }
       }
     }
@@ -237,7 +254,7 @@ export function BlockMenu({ onClose, hoveredBlock, hoveredTableCell, onWillDelet
         view.dispatch(state.tr.replaceWith(startA, endB, [nodeB, nodeA]));
       }
     } catch (err) {
-      console.error('[BlockMenu] 顶层块移动失败:', err);
+      console.error('[BlockMenu] move top-level block failed:', err);
     }
   }, [editor, hoveredBlock, isTableTarget]);
 
@@ -254,7 +271,7 @@ export function BlockMenu({ onClose, hoveredBlock, hoveredTableCell, onWillDelet
       view.dispatch(view.state.tr.setSelection(selection));
       view.focus();
     } catch (error) {
-      console.error('[BlockMenu] 聚焦表格单元格失败:', error);
+      console.error('[BlockMenu] focus table cell failed:', error);
       editor.commands.focus();
     }
   }, [editor, tableElement, hoveredTableCell]);
@@ -279,19 +296,13 @@ export function BlockMenu({ onClose, hoveredBlock, hoveredTableCell, onWillDelet
     }
   }, [editor, tableElement, focusTableCell]);
 
-  const blockItems: MenuProps['items'] = useMemo(() => [
-    { key: 'delete',   icon: <DeleteOutlined />,     label: '删除' },
-    { key: 'copy',     icon: <CopyOutlined />,       label: '复制' },
-    { key: 'cut',      icon: <ScissorOutlined />,    label: '剪切' },
-    { type: 'divider' },
-    { key: 'clear',    icon: <ClearOutlined />,      label: '清除格式' },
-    { type: 'divider' },
-    { key: 'addAbove', icon: <PlusCircleOutlined />, label: '在上方添加' },
-    { key: 'addBelow', icon: <PlusCircleOutlined />, label: '在下方添加' },
-    { type: 'divider' },
-    { key: 'moveUp',   icon: <ArrowUpOutlined />,    label: '上移',  disabled: !canMoveUp },
-    { key: 'moveDown', icon: <ArrowDownOutlined />,  label: '下移',  disabled: !canMoveDown },
-  ], [canMoveUp, canMoveDown]);
+  const blockItems: MenuProps['items'] = useMemo(() => (
+    createBlockMenuItems({
+      canMoveUp,
+      canMoveDown,
+      headingAnchorId,
+    })
+  ), [canMoveUp, canMoveDown, headingAnchorId]);
 
   const tableItems: MenuProps['items'] = useMemo(() => [
     { key: 'addRowBefore', icon: <PlusCircleOutlined />, label: '上方插入行' },
@@ -322,15 +333,16 @@ export function BlockMenu({ onClose, hoveredBlock, hoveredTableCell, onWillDelet
       case 'delete':   void deleteBlock(); break;
       case 'copy':     void copyBlock(); break;
       case 'cut':      void copyBlock().then(() => deleteBlock()); break;
+      case 'copyAnchorLink': void copyAnchorLink(); break;
       case 'clear':    clearFormat(); break;
       case 'addAbove': insertParagraph('above'); break;
       case 'addBelow': insertParagraph('below'); break;
       case 'moveUp':   swapBlocks('up'); break;
       case 'moveDown': swapBlocks('down'); break;
-      default: console.log(`[BlockMenu] 点击: ${key}`);
+      default: console.log(`[BlockMenu] clicked: ${key}`);
     }
     onClose();
-  }, [isTableTarget, runTableCommand, onClose, deleteBlock, copyBlock, clearFormat, insertParagraph, swapBlocks]);
+  }, [isTableTarget, runTableCommand, onClose, deleteBlock, copyBlock, copyAnchorLink, clearFormat, insertParagraph, swapBlocks]);
 
   return (
     <div className={`block-menu-popover${isTableTarget ? ' block-menu-popover--table' : ''}`}>

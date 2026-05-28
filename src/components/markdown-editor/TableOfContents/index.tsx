@@ -8,6 +8,7 @@ import {
 import { Button, Tooltip } from "antd";
 import type { Editor } from "@tiptap/react";
 import { useMarkdownEditor } from "../EditorContext";
+import { resolveHeadingId } from "./headingId";
 import "./style.css";
 
 interface TOCItem {
@@ -33,7 +34,10 @@ export default function TableOfContents({ onClose }: TableOfContentsProps) {
     editor.state.doc.descendants((node, pos) => {
       if (node.type.name === "heading") {
         items.push({
-          id: `heading-${pos}`,
+          id: resolveHeadingId({
+            anchorId: typeof node.attrs.anchorId === "string" ? node.attrs.anchorId : null,
+            fallbackId: `heading-${pos}`,
+          }),
           text: node.textContent,
           level: node.attrs.level,
           pos,
