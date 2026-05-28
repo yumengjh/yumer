@@ -50,6 +50,29 @@ describe("deriveSyncEntries order handling", () => {
     expect(creates.map((entry) => entry.sortKey)).toEqual(["002000", "003000", "004000"]);
   });
 
+  it("overrides duplicated inherited sortKeys when creating multiple adjacent blocks", () => {
+    const previous: TiptapDoc = {
+      type: "doc",
+      content: [
+        { type: "paragraph", attrs: { clientId: "c_a", blockId: "b_a", sortKey: "000998" } },
+      ],
+    };
+    const next: TiptapDoc = {
+      type: "doc",
+      content: [
+        { type: "paragraph", attrs: { clientId: "c_a", blockId: "b_a", sortKey: "000998" } },
+        { type: "paragraph", attrs: { clientId: "c_new_1", sortKey: "001998" } },
+        { type: "paragraph", attrs: { clientId: "c_new_2", sortKey: "001998" }, content: [{ type: "text", text: "2" }] },
+        { type: "paragraph", attrs: { clientId: "c_new_3", sortKey: "001998" } },
+      ],
+    };
+
+    const creates = deriveSyncEntries(previous, next).filter((entry) => entry.opType === "create");
+
+    expect(creates.map((entry) => entry.sortKey)).toEqual(["001998", "002998", "003998"]);
+    expect(new Set(creates.map((entry) => entry.sortKey)).size).toBe(3);
+  });
+
   it("overrides inherited syncCreateId so each create keeps its own stable identity", () => {
     const previous: TiptapDoc = {
       type: "doc",

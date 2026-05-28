@@ -1,4 +1,5 @@
 import { apiGet, apiPost } from "@/services/api-client";
+import { createSortKeyBetween } from "./order";
 import type { SyncEntry, SyncBatchResult } from "./types";
 
 export interface SyncBatchResponse {
@@ -55,9 +56,9 @@ type BatchMoveBody = {
   sortKey: string;
 };
 
-type BatchOperationBody = BatchCreateBody | BatchUpdateBody | BatchDeleteBody | BatchMoveBody;
+export type BatchOperationBody = BatchCreateBody | BatchUpdateBody | BatchDeleteBody | BatchMoveBody;
 
-function buildCreatePayload(entry: SyncEntry): Record<string, unknown> {
+function buildCreatePayload(entry: SyncEntry, sortKey?: string): Record<string, unknown> {
   const syncCreateId = entry.syncCreateId ?? `sync-create:${entry.clientId}`;
   return {
     ...(entry.payload as Record<string, unknown>),
@@ -66,24 +67,39 @@ function buildCreatePayload(entry: SyncEntry): Record<string, unknown> {
       blockId: null,
       clientId: entry.clientId,
       syncCreateId,
-      ...(entry.sortKey ? { sortKey: entry.sortKey } : {}),
+      ...(sortKey ? { sortKey } : {}),
     },
   };
 }
 
-export async function postSyncBatch(input: {
+function reserveCreateSortKey(requestedSortKey: string | undefined, reservedSortKeys: Set<string>): string | undefined {
+  if (!requestedSortKey) return requestedSortKey;
+  if (!reservedSortKeys.has(requestedSortKey)) {
+    reservedSortKeys.add(requestedSortKey);
+    return requestedSortKey;
+  }
+
+  let candidate = requestedSortKey;
+  while (reservedSortKeys.has(candidate)) {
+    candidate = createSortKeyBetween(candidate, null);
+  }
+  reservedSortKeys.add(candidate);
+  return candidate;
+}
+
+export function buildSyncBatchOperations(input: {
   docId: string;
   rootBlockId: string;
-  baseVersion: number;
-  clientBatchId: string;
-  source: SyncSource;
   operations: SyncEntry[];
-}): Promise<SyncBatchResponse> {
+}): BatchOperationBody[] {
   const bodyOperations: BatchOperationBody[] = [];
+  const reservedCreateSortKeys = new Set<string>();
+
   for (const entry of input.operations) {
     if (entry.opType === "create") {
       if (!entry.payload || !entry.blockType) continue;
       const syncCreateId = entry.syncCreateId ?? `sync-create:${entry.clientId}`;
+      const sortKey = reserveCreateSortKey(entry.sortKey, reservedCreateSortKeys);
       bodyOperations.push({
         type: "create",
         clientId: entry.clientId,
@@ -91,9 +107,9 @@ export async function postSyncBatch(input: {
         data: {
           docId: input.docId,
           type: entry.blockType,
-          payload: buildCreatePayload(entry),
+          payload: buildCreatePayload(entry, sortKey),
           parentId: input.rootBlockId,
-          sortKey: entry.sortKey,
+          sortKey,
         },
       });
       continue;
@@ -137,6 +153,19 @@ export async function postSyncBatch(input: {
       blockId: entry.blockId,
     });
   }
+
+  return bodyOperations;
+}
+
+export async function postSyncBatch(input: {
+  docId: string;
+  rootBlockId: string;
+  baseVersion: number;
+  clientBatchId: string;
+  source: SyncSource;
+  operations: SyncEntry[];
+}): Promise<SyncBatchResponse> {
+  const bodyOperations = buildSyncBatchOperations(input);
 
   if (bodyOperations.length === 0) {
     return {
