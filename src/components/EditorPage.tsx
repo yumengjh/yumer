@@ -495,7 +495,7 @@ function EditorContent() {
         }
       }, 200);
     });
-  }, []);
+  }, [currentDoc?.docId]);
 
   // 搜索结果滚动定位
   useEffect(() => {

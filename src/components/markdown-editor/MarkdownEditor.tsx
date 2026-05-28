@@ -54,6 +54,7 @@ import {
   patchEditorBlockIdentityFromDoc,
   patchEditorDocumentIdentity,
 } from "./editorIdentity";
+import { resolveEditorScrollContainer, resolveEditorViewportTop } from "./scrollContainer";
 import "./styles/editor.css";
 
 export interface MarkdownEditorRef {
@@ -178,11 +179,8 @@ function readViewportBlockPosition(editor: Editor): {
   if (blockElements.length === 0) return null;
 
   const HEADER_OFFSET = 96 + 20;
-  const scrollContainer =
-    editor.view.dom.closest<HTMLElement>(".main-content") ??
-    editor.view.dom.ownerDocument.documentElement;
-  const containerTop =
-    scrollContainer instanceof HTMLElement ? scrollContainer.getBoundingClientRect().top : 0;
+  const scrollContainer = resolveEditorScrollContainer(editor.view.dom);
+  const containerTop = resolveEditorViewportTop(scrollContainer);
   const target =
     blockElements.find(
       (element) => element.getBoundingClientRect().bottom > containerTop + HEADER_OFFSET,
@@ -195,17 +193,18 @@ function readViewportBlockPosition(editor: Editor): {
   const currentIndex = blockIds.indexOf(blockId);
   if (currentIndex < 0) return null;
 
-  return {
+  const result = {
     blockId,
     previousBlockId: blockIds[currentIndex - 1] ?? null,
     nextBlockId: blockIds[currentIndex + 1] ?? null,
   };
+
+  return result;
 }
 
 function scrollElementIntoEditorView(element: HTMLElement): void {
   const HEADER_OFFSET = 96 + 20;
-  const scrollContainer =
-    element.closest<HTMLElement>(".main-content") ?? element.ownerDocument.scrollingElement;
+  const scrollContainer = resolveEditorScrollContainer(element);
 
   if (scrollContainer instanceof HTMLElement) {
     const containerRect = scrollContainer.getBoundingClientRect();
