@@ -96,13 +96,13 @@ export default function TableInteractions({ wrapperRef }: TableInteractionsProps
   const handleCopy = useCallback(async () => {
     if (!editor) return;
     const ok = await writeTableToClipboard(editor);
-    message[ok ? "success" : "warning"](ok ? "Table region copied" : "Copy failed");
+    message[ok ? "success" : "warning"](ok ? "已复制表格区域" : "复制失败");
   }, [editor]);
 
   const handlePaste = useCallback(async () => {
     if (!editor) return;
     const ok = await pasteTableFromClipboard(editor);
-    message[ok ? "success" : "warning"](ok ? "Table pasted" : "Paste failed");
+    message[ok ? "success" : "warning"](ok ? "已粘贴表格" : "粘贴失败");
     if (ok) closeMenu();
   }, [closeMenu, editor]);
 
@@ -153,27 +153,27 @@ export default function TableInteractions({ wrapperRef }: TableInteractionsProps
     }
 
     if (!handled) {
-      message.warning("Action unavailable");
+      message.warning("操作不可用");
     }
     closeMenu();
   }, [closeMenu, editor, handleCopy, handlePaste]);
 
   const items: MenuProps["items"] = useMemo(() => [
-    { key: "copy", icon: <CopyOutlined />, label: "Copy table region" },
-    { key: "paste", icon: <CopyOutlined />, label: "Paste table" },
+    { key: "copy", icon: <CopyOutlined />, label: "复制表格区域" },
+    { key: "paste", icon: <CopyOutlined />, label: "粘贴表格" },
     { type: "divider" },
-    { key: "row-before", icon: <InsertRowAboveOutlined />, label: "Insert row above" },
-    { key: "row-after", icon: <InsertRowBelowOutlined />, label: "Insert row below" },
-    { key: "col-before", icon: <PlusOutlined />, label: "Insert column left" },
-    { key: "col-after", icon: <PlusOutlined />, label: "Insert column right" },
-    { key: "index-col", icon: <PlusOutlined />, label: "Insert index column" },
+    { key: "row-before", icon: <InsertRowAboveOutlined />, label: "在上方插入行" },
+    { key: "row-after", icon: <InsertRowBelowOutlined />, label: "在下方插入行" },
+    { key: "col-before", icon: <PlusOutlined />, label: "在左侧插入列" },
+    { key: "col-after", icon: <PlusOutlined />, label: "在右侧插入列" },
+    { key: "index-col", icon: <PlusOutlined />, label: "插入序号列" },
     { type: "divider" },
-    { key: "delete-table", icon: <DeleteOutlined />, danger: true, label: "Delete table" },
-    { key: "delete-row", icon: <DeleteOutlined />, danger: true, label: "Delete row" },
-    { key: "delete-col", icon: <DeleteOutlined />, danger: true, label: "Delete column" },
+    { key: "delete-table", icon: <DeleteOutlined />, danger: true, label: "删除表格" },
+    { key: "delete-row", icon: <DeleteOutlined />, danger: true, label: "删除行" },
+    { key: "delete-col", icon: <DeleteOutlined />, danger: true, label: "删除列" },
     { type: "divider" },
-    { key: "merge", icon: <ClearOutlined />, label: "Merge cells" },
-    { key: "clear", icon: <ClearOutlined />, label: "Clear content" },
+    { key: "merge", icon: <ClearOutlined />, label: "合并单元格" },
+    { key: "clear", icon: <ClearOutlined />, label: "清除内容" },
   ], []);
 
   if (!menuState.open) return null;
