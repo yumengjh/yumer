@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { Form, InputNumber, Modal, Radio, Space, Typography } from "antd";
+import { Form, InputNumber, Modal, Radio, Space, Switch, Typography } from "antd";
 import type {
   SettingsPriority,
   SettingsScope,
@@ -118,6 +118,12 @@ export function WorkspaceSettingsModal({
         <Form.Item label="编辑区默认字号" name={["editor", "fontSize"]} rules={[{ required: true }]}>
           <InputNumber min={13} max={22} step={1} addonAfter="px" style={{ width: "100%" }} />
         </Form.Item>
+
+        {scope === "user" && (
+          <Form.Item label="离开页面时确认" name={["editor", "confirmBeforeLeave"]} valuePropName="checked">
+            <Switch />
+          </Form.Item>
+        )}
 
         {scope === "workspace" ? (
           <>

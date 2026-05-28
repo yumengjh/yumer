@@ -797,18 +797,6 @@ function EditorContent() {
     setSaveStatus,
   ]);
 
-  useEffect(() => {
-    if (!workspaceId || !currentDoc || !hasUnsavedChanges) return;
-
-    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [currentDoc, hasUnsavedChanges, workspaceId]);
-
   const handleSetupComplete = useCallback(
     (wsId: string) => {
       setWorkspace(wsId);
@@ -838,6 +826,28 @@ function EditorContent() {
     authed && workspaceId
       ? settingsState
       : buildSettingsState({ priority: readSettingsPriority() });
+
+  useEffect(() => {
+    if (
+      !workspaceId ||
+      !currentDoc ||
+      !hasUnsavedChanges ||
+      !activeSettingsState.effectiveSettings.editor.confirmBeforeLeave
+    ) return;
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [
+    activeSettingsState.effectiveSettings.editor.confirmBeforeLeave,
+    currentDoc,
+    hasUnsavedChanges,
+    workspaceId,
+  ]);
 
   if (authLoading) {
     return (

@@ -41,6 +41,41 @@ describe("settings service helpers", () => {
       editor: {
         contentWidth: DEFAULT_APP_SETTINGS.editor.contentWidth,
         fontSize: 18,
+        confirmBeforeLeave: false,
+      },
+    });
+  });
+
+  it("normalizes confirmBeforeLeave boolean", () => {
+    expect(
+      normalizeSettings({
+        settings: {
+          editor: { confirmBeforeLeave: true },
+        },
+      }),
+    ).toEqual({
+      reader: DEFAULT_APP_SETTINGS.reader,
+      editor: {
+        contentWidth: DEFAULT_APP_SETTINGS.editor.contentWidth,
+        fontSize: DEFAULT_APP_SETTINGS.editor.fontSize,
+        confirmBeforeLeave: true,
+      },
+    });
+  });
+
+  it("falls back to default for invalid confirmBeforeLeave", () => {
+    expect(
+      normalizeSettings({
+        settings: {
+          editor: { confirmBeforeLeave: "yes" },
+        },
+      }),
+    ).toEqual({
+      reader: DEFAULT_APP_SETTINGS.reader,
+      editor: {
+        contentWidth: DEFAULT_APP_SETTINGS.editor.contentWidth,
+        fontSize: DEFAULT_APP_SETTINGS.editor.fontSize,
+        confirmBeforeLeave: false,
       },
     });
   });
@@ -49,7 +84,7 @@ describe("settings service helpers", () => {
     expect(
       buildWorkspaceSettingsPatch({
         reader: { contentWidth: 3000, fontSize: 1 },
-        editor: { contentWidth: 100, fontSize: 99 },
+        editor: { contentWidth: 100, fontSize: 99, confirmBeforeLeave: false },
       }),
     ).toEqual({
       settings: {
@@ -63,17 +98,17 @@ describe("settings service helpers", () => {
     expect(
       resolveSettings(
         {
-          editor: { contentWidth: 910, fontSize: 18 },
+          editor: { contentWidth: 910, fontSize: 18, confirmBeforeLeave: true },
         },
         {
           reader: { contentWidth: 860, fontSize: 15 },
-          editor: { contentWidth: 870, fontSize: 16 },
+          editor: { contentWidth: 870, fontSize: 16, confirmBeforeLeave: false },
         },
         "workspace-first",
       ),
     ).toEqual({
       reader: { contentWidth: 860, fontSize: 15 },
-      editor: { contentWidth: 870, fontSize: 16 },
+      editor: { contentWidth: 870, fontSize: 16, confirmBeforeLeave: true },
     });
   });
 
@@ -81,18 +116,33 @@ describe("settings service helpers", () => {
     expect(
       resolveSettings(
         {
-          editor: { contentWidth: 910, fontSize: 18 },
+          editor: { contentWidth: 910, fontSize: 18, confirmBeforeLeave: true },
         },
         {
           reader: { contentWidth: 860, fontSize: 15 },
-          editor: { contentWidth: 870, fontSize: 16 },
+          editor: { contentWidth: 870, fontSize: 16, confirmBeforeLeave: false },
         },
         "user-first",
       ),
     ).toEqual({
       reader: { contentWidth: 860, fontSize: 15 },
-      editor: { contentWidth: 910, fontSize: 18 },
+      editor: { contentWidth: 910, fontSize: 18, confirmBeforeLeave: true },
     });
+  });
+
+  it("confirmBeforeLeave always comes from user settings", () => {
+    expect(
+      resolveSettings(
+        {
+          editor: { contentWidth: 800, fontSize: 16, confirmBeforeLeave: true },
+        },
+        {
+          reader: { contentWidth: 800, fontSize: 16 },
+          editor: { contentWidth: 800, fontSize: 16, confirmBeforeLeave: false },
+        },
+        "workspace-first",
+      ).editor.confirmBeforeLeave,
+    ).toBe(true);
   });
 
   it("user settings only keep editor fields", () => {
@@ -107,6 +157,7 @@ describe("settings service helpers", () => {
       editor: {
         contentWidth: DEFAULT_USER_SETTINGS.editor.contentWidth,
         fontSize: 19,
+        confirmBeforeLeave: false,
       },
     });
   });
@@ -114,13 +165,14 @@ describe("settings service helpers", () => {
   it("builds user patch with editor fields only", () => {
     expect(
       buildUserSettingsPatch({
-        editor: { contentWidth: 9999, fontSize: 1 },
+        editor: { contentWidth: 9999, fontSize: 1, confirmBeforeLeave: true },
       }),
     ).toEqual({
       settings: {
         editor: {
           contentWidth: 1200,
           fontSize: 13,
+          confirmBeforeLeave: true,
         },
       },
     });
@@ -137,5 +189,6 @@ describe("settings service helpers", () => {
     expect(state.userSettings.editor.fontSize).toBe(20);
     expect(state.workspaceSettings.reader.contentWidth).toBe(860);
     expect(state.effectiveSettings.reader.contentWidth).toBe(860);
+    expect(state.effectiveSettings.editor.confirmBeforeLeave).toBe(false);
   });
 });

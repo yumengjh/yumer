@@ -11,6 +11,7 @@ export interface ReaderSettings {
 export interface EditorSettings {
   contentWidth: number;
   fontSize: number;
+  confirmBeforeLeave: boolean;
 }
 
 export interface AppSettings {
@@ -54,6 +55,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   editor: {
     contentWidth: 800,
     fontSize: 16,
+    confirmBeforeLeave: false,
   },
 };
 
@@ -61,6 +63,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   editor: {
     contentWidth: DEFAULT_APP_SETTINGS.editor.contentWidth,
     fontSize: DEFAULT_APP_SETTINGS.editor.fontSize,
+    confirmBeforeLeave: DEFAULT_APP_SETTINGS.editor.confirmBeforeLeave,
   },
 };
 
@@ -72,6 +75,7 @@ export const DEFAULT_WORKSPACE_SETTINGS: WorkspaceSettings = {
   editor: {
     contentWidth: DEFAULT_APP_SETTINGS.editor.contentWidth,
     fontSize: DEFAULT_APP_SETTINGS.editor.fontSize,
+    confirmBeforeLeave: false,
   },
 };
 
@@ -85,6 +89,10 @@ function normalizeWidth(value: unknown, fallback: number): number {
 
 function normalizeFontSize(value: unknown, fallback: number): number {
   return typeof value === "number" ? clamp(value, 13, 22) : fallback;
+}
+
+function normalizeBoolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
 }
 
 export function readSettingsPriority(): SettingsPriority {
@@ -121,6 +129,7 @@ export function normalizeSettings(payload?: unknown): AppSettings {
     editor: {
       contentWidth: normalizeWidth(partial.editor?.contentWidth, DEFAULT_APP_SETTINGS.editor.contentWidth),
       fontSize: normalizeFontSize(partial.editor?.fontSize, DEFAULT_APP_SETTINGS.editor.fontSize),
+      confirmBeforeLeave: normalizeBoolean(partial.editor?.confirmBeforeLeave, DEFAULT_APP_SETTINGS.editor.confirmBeforeLeave),
     },
   };
 }
@@ -132,6 +141,7 @@ export function normalizeUserSettings(payload?: unknown): UserSettings {
     editor: {
       contentWidth: normalizeWidth(partial.editor?.contentWidth, DEFAULT_USER_SETTINGS.editor.contentWidth),
       fontSize: normalizeFontSize(partial.editor?.fontSize, DEFAULT_USER_SETTINGS.editor.fontSize),
+      confirmBeforeLeave: normalizeBoolean(partial.editor?.confirmBeforeLeave, DEFAULT_USER_SETTINGS.editor.confirmBeforeLeave),
     },
   };
 }
@@ -165,6 +175,10 @@ export function buildUserSettingsPatch(settings: UserSettings) {
       editor: {
         contentWidth: normalizeWidth(settings.editor.contentWidth, DEFAULT_USER_SETTINGS.editor.contentWidth),
         fontSize: normalizeFontSize(settings.editor.fontSize, DEFAULT_USER_SETTINGS.editor.fontSize),
+        confirmBeforeLeave: normalizeBoolean(
+          settings.editor.confirmBeforeLeave,
+          DEFAULT_USER_SETTINGS.editor.confirmBeforeLeave,
+        ),
       },
     },
   };
@@ -194,6 +208,7 @@ function mergeSettings(base: AppSettings, override: AppSettings): AppSettings {
     editor: {
       contentWidth: normalizeWidth(override.editor.contentWidth, base.editor.contentWidth),
       fontSize: normalizeFontSize(override.editor.fontSize, base.editor.fontSize),
+      confirmBeforeLeave: normalizeBoolean(override.editor.confirmBeforeLeave, base.editor.confirmBeforeLeave),
     },
   };
 }
@@ -214,18 +229,13 @@ export function resolveSettings(
       ? {
           contentWidth: normalizeWidth(userSettings.editor.contentWidth, workspaceSettings.editor.contentWidth),
           fontSize: normalizeFontSize(userSettings.editor.fontSize, workspaceSettings.editor.fontSize),
+          confirmBeforeLeave: userSettings.editor.confirmBeforeLeave,
         }
       : {
           contentWidth: normalizeWidth(workspaceSettings.editor.contentWidth, baseEditor.contentWidth),
           fontSize: normalizeFontSize(workspaceSettings.editor.fontSize, baseEditor.fontSize),
+          confirmBeforeLeave: userSettings.editor.confirmBeforeLeave,
         };
-
-  if (priority === "workspace-first") {
-    return {
-      reader,
-      editor,
-    };
-  }
 
   return {
     reader,

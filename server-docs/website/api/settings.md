@@ -35,7 +35,7 @@
 ```json
 {
   "reader": { "contentWidth": 800, "fontSize": 16 },
-  "editor": { "contentWidth": 800, "fontSize": 16 },
+  "editor": { "contentWidth": 800, "fontSize": 16, "confirmBeforeLeave": false },
   "advanced": {
     "compactList": true,
     "codeFontFamily": "SFMono-Regular, Consolas, \"Liberation Mono\", Menlo, Courier, monospace"
@@ -47,6 +47,7 @@
 
 - `reader.contentWidth` / `editor.contentWidth`: `680 ~ 1200`
 - `reader.fontSize` / `editor.fontSize`: `13 ~ 22`
+- `editor.confirmBeforeLeave`: boolean（仅用户设置，离开页面时是否弹出未保存确认）
 - `advanced.codeFontFamily`: `1 ~ 500` 字符
 - `advanced.compactList`: boolean
 - 未知字段：拒绝（400）
