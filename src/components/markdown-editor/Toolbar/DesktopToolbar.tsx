@@ -35,6 +35,7 @@ import {
   titleLevelItems,
   fontSizeItems,
   codeLanguageItems,
+  codeCleanupItems,
   orderedListTypeItems,
   lineHeightItems,
   highlightBlockColors,
@@ -47,6 +48,10 @@ import TablePicker from "./TablePicker";
 import LinkPickerPopup from "./LinkPickerPopup";
 import SplitDropdown from "./SplitDropdown";
 import {
+  cleanupCodeBlocks,
+  type CodeCleanupActionKey,
+} from "../code/codeBlockCleanup";
+import {
   getToolbarState,
   isToolbarItemActive,
   runInlineMarkCommand,
@@ -58,7 +63,7 @@ type ToolbarItem = {
   id: string;
   label: string;
   content: ReactNode;
-  type?: "dropdown" | "color-picker" | "highlight-block-picker" | "indent-picker" | "table-picker" | "link-picker" | "format-painter";
+  type?: "dropdown" | "color-picker" | "highlight-block-picker" | "indent-picker" | "table-picker" | "link-picker" | "format-painter" | "code-cleanup-picker";
 };
 
 function QuoteIcon() {
@@ -133,6 +138,9 @@ export default function DesktopToolbar() {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [lastHighlightColor, setLastHighlightColor] = useState(defaultHighlightBlockColor);
   const [lastIndentAction, setLastIndentAction] = useState<"indent" | "outdent">("indent");
+  const [defaultCodeCleanupAction, setDefaultCodeCleanupAction] = useState<CodeCleanupActionKey>(
+    "removeTrailingBlankLines",
+  );
 
   useEffect(() => {
     if (!tiptap) return;
@@ -485,6 +493,52 @@ export default function DesktopToolbar() {
     [tiptap, setLastTableSize],
   );
 
+  const runCodeCleanupAction = useCallback(
+    (action: CodeCleanupActionKey) => {
+      const result = cleanupCodeBlocks(tiptap, action);
+      const messages: Record<
+        CodeCleanupActionKey,
+        {
+          success: (count: number) => string;
+          unchanged: string;
+        }
+      > = {
+        removeTrailingBlankLines: {
+          success: (count) => `??? ${count} ?????????`,
+          unchanged: "???????????????",
+        },
+        removeEmptyCodeBlocks: {
+          success: (count) => `??? ${count} ?????`,
+          unchanged: "???????",
+        },
+        collapseStatusBars: {
+          success: (count) => `??? ${count} ????????`,
+          unchanged: "???????????",
+        },
+        expandStatusBars: {
+          success: (count) => `??? ${count} ????????`,
+          unchanged: "???????????",
+        },
+        enableLineNumbers: {
+          success: (count) => `??? ${count} ???????`,
+          unchanged: "??????????",
+        },
+        disableLineNumbers: {
+          success: (count) => `??? ${count} ???????`,
+          unchanged: "??????????",
+        },
+      };
+
+      const actionMessages = messages[action];
+      if (result.changed) {
+        message.success(actionMessages.success(result.affectedCount));
+      } else {
+        message.info(actionMessages.unchanged);
+      }
+    },
+    [message, tiptap],
+  );
+
   const isActive = (id: string): boolean => {
     return isToolbarItemActive(toolbarState, id);
   };
@@ -554,6 +608,12 @@ export default function DesktopToolbar() {
         label: "字号",
         content: <span className="text-label">{getCurrentFontSize()}</span>,
         type: "dropdown",
+      },
+      {
+        id: "code-cleanup",
+        label: "\u4ee3\u7801\u6e05\u7406",
+        content: <ClearOutlined />,
+        type: "code-cleanup-picker",
       },
     ],
     [
@@ -672,7 +732,46 @@ export default function DesktopToolbar() {
       {toolbarGroups.map((group, index) => (
         <div className="toolbar-group" key={`toolbar-group-${index}`}>
           {group.map((item) =>
-            item.type === "dropdown" ? (
+            item.type === "code-cleanup-picker" ? (
+              <SplitDropdown
+                key={item.id}
+                content={item.content}
+                label={item.label}
+                disabled={!editorReady}
+                open={openDropdown === item.id}
+                onOpenChange={(open) => {
+                  setOpenDropdown(open ? item.id : null);
+                }}
+                onApply={() => {
+                  runCodeCleanupAction(defaultCodeCleanupAction);
+                }}
+                dropdownContent={
+                  <div className="ant-dropdown-menu" style={{ borderRadius: "4px", border: "1px solid var(--app-border)", boxShadow: "none" }}>
+                    {codeCleanupItems.map((cleanupItem) => {
+                      if ("type" in cleanupItem && cleanupItem.type === "divider") {
+                        return <div key={cleanupItem.key} className="ant-dropdown-menu-item-divider" />;
+                      }
+
+                      const active = cleanupItem.key === defaultCodeCleanupAction;
+                      return (
+                        <div
+                          key={cleanupItem.key}
+                          className={`ant-dropdown-menu-item ${active ? "ant-dropdown-menu-item-selected" : ""}`}
+                          onClick={() => {
+                            setDefaultCodeCleanupAction(cleanupItem.key);
+                            runCodeCleanupAction(cleanupItem.key);
+                            setOpenDropdown(null);
+                          }}
+                        >
+                          <span className="menu-check-mark">{active ? "✓" : ""}</span>
+                          {cleanupItem.label}
+                        </div>
+                      );
+                    })}
+                  </div>
+                }
+              />
+            ) : item.type === "dropdown" ? (
               <SplitDropdown
                 key={item.id}
                 content={item.content}

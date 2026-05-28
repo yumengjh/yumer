@@ -1,3 +1,5 @@
+import type { CodeCleanupActionKey } from "../code/codeBlockCleanup";
+
 export const titleLevelItems = [
   { key: "0", label: "正文", shortcut: "Alt Ctrl 0", size: "body" as const },
   { key: "1", label: "标题1", shortcut: "Alt Ctrl 1", size: "h1" as const },
@@ -44,6 +46,21 @@ export const codeLanguageItems = [
   key: item.key,
   label: item.label,
 }));
+
+export const codeCleanupItems = [
+  { key: "removeTrailingBlankLines", label: "删除行尾空行" },
+  { key: "removeEmptyCodeBlocks", label: "删除空代码块" },
+  { key: "divider-content", type: "divider" },
+  { key: "collapseStatusBars", label: "折叠状态栏" },
+  { key: "expandStatusBars", label: "展开状态栏" },
+  { key: "divider-display", type: "divider" },
+  { key: "enableLineNumbers", label: "启用行号" },
+  { key: "disableLineNumbers", label: "禁用行号" },
+] as const;
+
+export type CodeCleanupMenuItem =
+  | { key: CodeCleanupActionKey; label: string }
+  | { key: string; type: "divider" };
 
 export const orderedListTypeItems = [
   { key: "decimal", label: "1", description: "数字" },
