@@ -89,11 +89,21 @@ export interface EditDraftMeta {
   updatedBy?: string | null;
 }
 
+export interface LastEditPosition {
+  blockId: string;
+  previousBlockId?: string | null;
+  nextBlockId?: string | null;
+  updatedAt: string;
+}
+
 export interface EditContentResponse {
   docId: string;
   source: "draft" | "head";
   head: number;
   publishedHead: number;
+  editorState?: {
+    lastEditPosition?: LastEditPosition | null;
+  } | null;
   draft: EditDraftMeta;
   lock: {
     locked: boolean;
@@ -437,8 +447,10 @@ export async function loadDocumentContentV2(
   docVer: number;
   source: "draft" | "head";
   draft: EditDraftMeta;
+  lastEditPosition: LastEditPosition | null;
 }> {
   const resp = await getEditContent(docId);
+  const lastEditPosition = readLastEditPositionFromEditorState(resp.editorState);
   if (!resp.tree) {
     return {
       content: "",
@@ -446,6 +458,7 @@ export async function loadDocumentContentV2(
       docVer: resp.head,
       source: resp.source,
       draft: resp.draft,
+      lastEditPosition,
     };
   }
 
@@ -459,6 +472,7 @@ export async function loadDocumentContentV2(
       docVer: resp.head,
       source: resp.source,
       draft: resp.draft,
+      lastEditPosition,
     };
   }
 
@@ -469,7 +483,14 @@ export async function loadDocumentContentV2(
     const blockIdMap = new Map<number, string>();
     contentBlocks.forEach((b, i) => blockIdMap.set(i, b.blockId));
     const html = blocksToHtml(contentBlocks, blockIdMap);
-    return { content: html, blockIds, docVer: resp.head, source: resp.source, draft: resp.draft };
+    return {
+      content: html,
+      blockIds,
+      docVer: resp.head,
+      source: resp.source,
+      draft: resp.draft,
+      lastEditPosition,
+    };
   }
 
   // 新格式：重组为 Tiptap JSON
@@ -480,7 +501,41 @@ export async function loadDocumentContentV2(
     docVer: resp.head,
     source: resp.source,
     draft: resp.draft,
+    lastEditPosition,
   };
+}
+
+function readLastEditPositionFromEditorState(editorState: unknown): LastEditPosition | null {
+  if (!editorState || typeof editorState !== "object") return null;
+  const lastEditPosition = (editorState as Record<string, unknown>).lastEditPosition;
+  if (!lastEditPosition || typeof lastEditPosition !== "object") return null;
+  const blockId = (lastEditPosition as Record<string, unknown>).blockId;
+  const previousBlockId = (lastEditPosition as Record<string, unknown>).previousBlockId;
+  const nextBlockId = (lastEditPosition as Record<string, unknown>).nextBlockId;
+  const updatedAt = (lastEditPosition as Record<string, unknown>).updatedAt;
+  if (typeof blockId !== "string" || typeof updatedAt !== "string") return null;
+  return {
+    blockId,
+    previousBlockId: typeof previousBlockId === "string" ? previousBlockId : null,
+    nextBlockId: typeof nextBlockId === "string" ? nextBlockId : null,
+    updatedAt,
+  };
+}
+
+export async function updateDocumentLastEditPosition(input: {
+  docId: string;
+  lastEditPosition: LastEditPosition;
+}): Promise<{
+  docId: string;
+  editorState: {
+    lastEditPosition: LastEditPosition;
+  };
+}> {
+  return apiPatch(`/documents/${input.docId}/editor-state`, {
+    editorState: {
+      lastEditPosition: input.lastEditPosition,
+    },
+  });
 }
 
 /**
@@ -503,6 +558,7 @@ export async function saveDocumentContentV2(
 }
 
 /** JSON 保存路径：基于 blockId 精确匹配 diff */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- reserved for the legacy JSON save path fallback
 async function saveJsonContent(
   docId: string,
   tiptapDoc: TiptapDoc,

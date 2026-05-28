@@ -19,6 +19,7 @@ import {
   type EditDraftMeta,
   type Document,
   type EditorContent,
+  type LastEditPosition,
   type PublishDocumentResult,
 } from "../services/document";
 import { encodeDocId } from "../lib/doc-slug";
@@ -44,6 +45,8 @@ interface DocumentContextValue {
   currentDocVersion: number | null;
   currentContentSource: "draft" | "head" | null;
   currentDraftMeta: EditDraftMeta | null;
+  currentBlockIds: string[];
+  lastEditPosition: LastEditPosition | null;
   pendingScrollBlockId: string | null;
   setWorkspace: (id: string) => void;
   clearWorkspace: () => void;
@@ -94,6 +97,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const [currentDocVersion, setCurrentDocVersion] = useState<number | null>(null);
   const [currentContentSource, setCurrentContentSource] = useState<"draft" | "head" | null>(null);
   const [currentDraftMeta, setCurrentDraftMeta] = useState<EditDraftMeta | null>(null);
+  const [currentBlockIds, setCurrentBlockIds] = useState<string[]>([]);
+  const [lastEditPosition, setLastEditPosition] = useState<LastEditPosition | null>(null);
 
   const currentDocRef = useRef<Document | null>(null);
   const blockIdsRef = useRef<string[]>([]);
@@ -115,6 +120,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setCurrentDocVersion(null);
     setCurrentContentSource(null);
     setCurrentDraftMeta(null);
+    setCurrentBlockIds([]);
+    setLastEditPosition(null);
     currentDocRef.current = doc;
     resetSaveState(status);
   }, [resetSaveState]);
@@ -126,6 +133,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setCurrentDocVersion(null);
     setCurrentContentSource(null);
     setCurrentDraftMeta(null);
+    setCurrentBlockIds([]);
+    setLastEditPosition(null);
     currentDocRef.current = null;
     setDocuments([]);
     resetSaveState();
@@ -138,6 +147,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setCurrentDocVersion(null);
     setCurrentContentSource(null);
     setCurrentDraftMeta(null);
+    setCurrentBlockIds([]);
+    setLastEditPosition(null);
     currentDocRef.current = null;
     setDocuments([]);
     resetSaveState();
@@ -181,11 +192,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, [setCurrentDocument, workspaceId]);
 
   const loadContent = useCallback(async (docId: string): Promise<{ content: EditorContent; docVer: number }> => {
-    const { content, blockIds, docVer, source, draft } = await loadDocumentContentV2(docId);
+    const { content, blockIds, docVer, source, draft, lastEditPosition } = await loadDocumentContentV2(docId);
     blockIdsRef.current = blockIds;
+    setCurrentBlockIds(blockIds);
     setCurrentDocVersion(docVer);
     setCurrentContentSource(source);
     setCurrentDraftMeta(draft);
+    setLastEditPosition(lastEditPosition);
     return { content, docVer };
   }, []);
 
@@ -200,6 +213,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       resetSaveState("loaded");
       setCurrentContentSource("head");
       setCurrentDraftMeta(null);
+      setCurrentBlockIds([]);
+      setLastEditPosition(null);
       pushWindowPath(doc.docId);
       return doc;
     },
@@ -229,6 +244,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         setCurrentDocVersion(null);
         setCurrentContentSource(null);
         setCurrentDraftMeta(null);
+        setCurrentBlockIds([]);
+        setLastEditPosition(null);
         currentDocRef.current = null;
         resetSaveState();
         resetWindowPath();
@@ -256,7 +273,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const getBlockId = useCallback((_domIndex: number): string | undefined => {
+  const getBlockId = useCallback((): string | undefined => {
     return undefined;
   }, []);
 
@@ -273,6 +290,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         currentDocVersion,
         currentContentSource,
         currentDraftMeta,
+        currentBlockIds,
+        lastEditPosition,
         pendingScrollBlockId,
         setWorkspace,
         clearWorkspace,

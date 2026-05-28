@@ -15,6 +15,10 @@ import { SetupModal } from "@/components/SetupModal";
 import AppLoader from "@/components/AppLoader";
 import { shouldShowSetupModal } from "@/components/editorSetupState";
 import { resolveEditorRouteHydration } from "@/components/editorRouteHydration";
+import {
+  resolvePendingRestoreTarget,
+  shouldPersistLastEditPosition,
+} from "@/components/editorLastEditPosition";
 import { DocumentHeader } from "@/components/DocumentHeader";
 import { useAutoSave } from "@/hooks/useAutoSave";
 import {
@@ -22,6 +26,8 @@ import {
   discardDraft as discardDraftRequest,
   saveDocumentContentV2,
   type EditorContent,
+  type LastEditPosition,
+  updateDocumentLastEditPosition,
 } from "@/services/document";
 import { useDocumentSync } from "@/hooks/useDocumentSync";
 import { hashEditorDoc, shouldApplyRemoteContent } from "@/services/sync/hash";
@@ -292,6 +298,8 @@ function EditorContent() {
     currentDocSlug,
     currentDocVersion,
     currentContentSource,
+    currentBlockIds,
+    lastEditPosition,
     loadContent,
     selectDoc,
     workspaceId,
@@ -324,6 +332,13 @@ function EditorContent() {
   const lastPathnameRef = useRef<string | null>(null);
   const contentRef = useRef<EditorContent>(content);
   const editorRef = useRef<MarkdownEditorRef>(null);
+  const restoredLastEditDocIdRef = useRef<string | null>(null);
+  const [pendingLastEditRestoreBlockId, setPendingLastEditRestoreBlockId] = useState<string | null>(null);
+  const lastPersistedEditBlockIdRef = useRef<string | null>(null);
+  const lastEditPersistInflightRef = useRef(false);
+  const forceRememberPositionRef = useRef(false);
+  const [queuedLastEditPosition, setQueuedLastEditPosition] = useState<LastEditPosition | null>(null);
+  const [rememberingPosition, setRememberingPosition] = useState(false);
   const tiptapContent = typeof content === "object" && content?.type === "doc"
     ? (content as TiptapDoc)
     : null;
@@ -339,6 +354,16 @@ function EditorContent() {
   useEffect(() => {
     contentRef.current = content;
   }, [content]);
+
+  useEffect(() => {
+    restoredLastEditDocIdRef.current = null;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- restore queue must reset when the active document changes
+    setPendingLastEditRestoreBlockId(null);
+    lastPersistedEditBlockIdRef.current = lastEditPosition?.blockId ?? null;
+    lastEditPersistInflightRef.current = false;
+    forceRememberPositionRef.current = false;
+    setQueuedLastEditPosition(null);
+  }, [currentDoc?.docId, lastEditPosition?.blockId]);
 
   useEffect(() => {
     if (!workspaceId || !authed) return;
@@ -417,6 +442,7 @@ function EditorContent() {
   useEffect(() => {
     const docId = currentDoc?.docId;
     if (!docId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- document-bound editor state must reset when the active document is cleared
       setContent(DEFAULT_CONTENT);
       setContentDirty(false);
       setHasUnsavedChanges(false);
@@ -448,32 +474,66 @@ function EditorContent() {
       });
   }, [currentDoc, loadContent, markSavedAt, setHasUnsavedChanges, setSaveStatus]);
 
+  const scheduleScrollToBlock = useCallback((blockId: string, onSuccess?: () => void) => {
+    const tryScroll = () => editorRef.current?.scrollToBlock(blockId) ?? false;
+    requestAnimationFrame(() => {
+      if (tryScroll()) {
+        onSuccess?.();
+        return;
+      }
+
+      let retries = 0;
+      const retryTimer = window.setInterval(() => {
+        retries += 1;
+        if (tryScroll()) {
+          window.clearInterval(retryTimer);
+          onSuccess?.();
+          return;
+        }
+        if (retries >= 10) {
+          window.clearInterval(retryTimer);
+        }
+      }, 200);
+    });
+  }, []);
+
   // 搜索结果滚动定位
   useEffect(() => {
     if (loadingDoc || !editorRef.current || !pendingScrollBlockId) return;
 
     const blockId = pendingScrollBlockId;
     setPendingScrollBlockId(null);
+    scheduleScrollToBlock(blockId);
+  }, [loadingDoc, pendingScrollBlockId, scheduleScrollToBlock, setPendingScrollBlockId]);
 
-    const HEADER_OFFSET = 96 + 20;
-
-    const tryScroll = () => {
-      const editor = editorRef.current?.getEditor();
-      if (!editor) return false;
-      const el = editor.view.dom.querySelector(`[data-block-id="${blockId}"]`) as HTMLElement | null;
-      if (!el) return false;
-      const rect = el.getBoundingClientRect();
-      const targetY = window.scrollY + rect.top - HEADER_OFFSET;
-      window.scrollTo({ top: targetY, behavior: "smooth" });
-      return true;
-    };
-
-    requestAnimationFrame(() => {
-      if (!tryScroll()) {
-        setTimeout(tryScroll, 300);
-      }
+  useEffect(() => {
+    const targetBlockId = resolvePendingRestoreTarget({
+      docId: currentDoc?.docId ?? null,
+      loadingDoc,
+      pendingScrollBlockId,
+      currentBlockIds,
+      lastEditPosition,
+      restoredDocId: restoredLastEditDocIdRef.current,
+      pendingRestoreBlockId: pendingLastEditRestoreBlockId,
     });
-  }, [loadingDoc, pendingScrollBlockId, setPendingScrollBlockId]);
+    if (!targetBlockId) return;
+    setPendingLastEditRestoreBlockId(targetBlockId);
+  }, [
+    currentBlockIds,
+    currentDoc?.docId,
+    lastEditPosition,
+    loadingDoc,
+    pendingLastEditRestoreBlockId,
+    pendingScrollBlockId,
+  ]);
+
+  useEffect(() => {
+    if (!currentDoc?.docId || !pendingLastEditRestoreBlockId || pendingScrollBlockId) return;
+    scheduleScrollToBlock(pendingLastEditRestoreBlockId, () => {
+      restoredLastEditDocIdRef.current = currentDoc.docId;
+      setPendingLastEditRestoreBlockId(null);
+    });
+  }, [currentDoc?.docId, pendingLastEditRestoreBlockId, pendingScrollBlockId, scheduleScrollToBlock]);
 
   const saveLegacyContent = useCallback(async (nextContent: EditorContent) => {
     if (!currentDoc) return;
@@ -505,6 +565,21 @@ function EditorContent() {
     }),
   });
 
+  const queueEditorPosition = useCallback((mode: "selection" | "viewport", force = false): boolean => {
+    const position =
+      mode === "viewport"
+        ? editorRef.current?.getViewportBlockPosition()
+        : editorRef.current?.getSelectionBlockPosition();
+    if (!position) return false;
+
+    forceRememberPositionRef.current = force;
+    setQueuedLastEditPosition({
+      ...position,
+      updatedAt: new Date().toISOString(),
+    });
+    return true;
+  }, []);
+
   const handleEditorChange = useCallback((nextContent: EditorContent) => {
     setContent(nextContent);
     setContentDirty(true);
@@ -512,8 +587,41 @@ function EditorContent() {
     if (currentDoc) {
       setHasUnsavedChanges(true);
       setSaveStatus("dirty");
+      void queueEditorPosition("selection", false);
     }
-  }, [currentDoc, loadingDoc, setHasUnsavedChanges, setSaveStatus]);
+  }, [currentDoc, loadingDoc, queueEditorPosition, setHasUnsavedChanges, setSaveStatus]);
+
+  const handleRememberPosition = useCallback(async () => {
+    if (!currentDoc || rememberingPosition) return;
+
+    setRememberingPosition(true);
+    try {
+      const position =
+        editorRef.current?.getViewportBlockPosition() ??
+        editorRef.current?.getSelectionBlockPosition();
+      if (!position) {
+        message.warning("当前没有可记录的位置");
+        return;
+      }
+
+      await updateDocumentLastEditPosition({
+        docId: currentDoc.docId,
+        lastEditPosition: {
+          ...position,
+          updatedAt: new Date().toISOString(),
+        },
+      });
+
+      lastPersistedEditBlockIdRef.current = position.blockId;
+      forceRememberPositionRef.current = false;
+      setQueuedLastEditPosition(null);
+      message.success("已记录当前位置");
+    } catch (error) {
+      message.error(`记录位置失败：${error instanceof Error ? error.message : "未知错误"}`);
+    } finally {
+      setRememberingPosition(false);
+    }
+  }, [currentDoc, message, rememberingPosition]);
 
   useEffect(() => {
     if (!syncEngineEnabled) return;
@@ -537,6 +645,47 @@ function EditorContent() {
     }, 1000);
     return () => window.clearTimeout(timer);
   }, [content, loadingDoc, sync, sync.uiSaveStatus, syncEngineEnabled]);
+
+  useEffect(() => {
+    if (!syncEngineEnabled || !currentDoc || !queuedLastEditPosition) return;
+    if (!shouldPersistLastEditPosition({
+      hasQueuedPosition: true,
+      loadingDoc,
+      inFlight: lastEditPersistInflightRef.current,
+      queuedBlockId: queuedLastEditPosition.blockId,
+      lastPersistedBlockId: lastPersistedEditBlockIdRef.current,
+      force: forceRememberPositionRef.current,
+    })) return;
+
+    const queuedPosition = queuedLastEditPosition;
+    const timer = window.setTimeout(() => {
+      lastEditPersistInflightRef.current = true;
+      void updateDocumentLastEditPosition({
+        docId: currentDoc.docId,
+        lastEditPosition: queuedPosition,
+      })
+        .then(() => {
+          lastPersistedEditBlockIdRef.current = queuedPosition.blockId;
+          forceRememberPositionRef.current = false;
+          setQueuedLastEditPosition((current) =>
+            current?.updatedAt === queuedPosition.updatedAt ? null : current,
+          );
+        })
+        .catch((error) => {
+          console.warn("persist last edit position failed", error);
+        })
+        .finally(() => {
+          lastEditPersistInflightRef.current = false;
+        });
+    }, 1200);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    currentDoc,
+    loadingDoc,
+    queuedLastEditPosition,
+    syncEngineEnabled,
+  ]);
 
   const handleManualSave = useCallback(async () => {
     if (!currentDoc || manualSaving) return;
@@ -675,8 +824,7 @@ function EditorContent() {
   const jsonContent = useMemo(() => {
     if (activeTab !== "json") return "";
     if (typeof content === "object") return JSON.stringify(content, null, 2);
-    const json = editorRef.current?.getJSON();
-    return json ? JSON.stringify(json, null, 2) : "{}";
+    return "{}";
   }, [activeTab, content]);
   const outputContent = activeTab === "html" ? previewHtml : activeTab === "json" ? jsonContent : markdown;
   const copyLabel = activeTab === "html" ? "复制 HTML" : activeTab === "json" ? "复制 JSON" : "复制 Markdown";
@@ -708,8 +856,10 @@ function EditorContent() {
         <>
           <DocumentHeader
             onSave={handleManualSave}
+            onRememberPosition={handleRememberPosition}
             onDiscardDraft={handleDiscardDraft}
             saving={manualSaving}
+            rememberingPosition={rememberingPosition}
             discardingDraft={discardingDraft}
             showTOC={showTOC}
             onToggleTOC={setShowTOC}

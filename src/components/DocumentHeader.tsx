@@ -22,6 +22,7 @@ import {
   CodeOutlined,
   FilePdfOutlined,
   BugOutlined,
+  PushpinOutlined,
 } from "@ant-design/icons";
 import { useDocument, type SaveStatus } from "../contexts/DocumentContext";
 import { VersionDiffModal } from "./VersionDiffModal";
@@ -53,8 +54,10 @@ const PUBLIC_DOC_REVALIDATE_SECRET_KEY = "publicDocRevalidateSecret";
 
 interface DocumentHeaderProps {
   onSave: () => void | Promise<void>;
+  onRememberPosition: () => void | Promise<void>;
   onDiscardDraft: () => void;
   saving?: boolean;
+  rememberingPosition?: boolean;
   discardingDraft?: boolean;
   showTOC: boolean;
   onToggleTOC: (open: boolean) => void;
@@ -167,8 +170,10 @@ function showManualRevalidationMessage(result: ManualPublicDocRevalidationResult
 
 export function DocumentHeader({
   onSave,
+  onRememberPosition,
   onDiscardDraft,
   saving = false,
+  rememberingPosition = false,
   discardingDraft = false,
   showTOC,
   onToggleTOC,
@@ -434,6 +439,13 @@ export function DocumentHeader({
           onClick: () => setInfoOpen(true),
         },
         {
+          key: "remember-position",
+          icon: <PushpinOutlined />,
+          label: "记住当前位置",
+          disabled: rememberingPosition,
+          onClick: () => void onRememberPosition(),
+        },
+        {
           key: "revalidate",
           icon: <ReloadOutlined />,
           label: "刷新公开页缓存",
@@ -584,6 +596,15 @@ export function DocumentHeader({
             >
               保存
             </Button>
+            <Button
+              size="small"
+              className="header-btn-remember-position"
+              icon={<PushpinOutlined />}
+              loading={rememberingPosition}
+              onClick={() => void onRememberPosition()}
+            >
+              记住当前位置
+            </Button>
             {currentContentSource === "draft" ? (
               <Button
                 size="small"
@@ -671,6 +692,13 @@ export function DocumentHeader({
               onClick={onSave}
               disabled={saving || saveStatus === "flushing"}
               aria-label="保存"
+            />
+            <Button
+              size="small"
+              icon={<PushpinOutlined />}
+              loading={rememberingPosition}
+              onClick={() => void onRememberPosition()}
+              aria-label="记住当前位置"
             />
             {currentContentSource === "draft" ? (
               <Button

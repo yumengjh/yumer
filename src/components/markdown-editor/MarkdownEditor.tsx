@@ -66,6 +66,17 @@ export interface MarkdownEditorRef {
   getEditor: () => Editor | null;
   /** 滚动到指定 blockId 的块位置 */
   scrollToBlock: (blockId: string) => boolean;
+  /** 获取当前选区所在块及相邻块 */
+  getSelectionBlockPosition: () => {
+    blockId: string;
+    previousBlockId: string | null;
+    nextBlockId: string | null;
+  } | null;
+  getViewportBlockPosition: () => {
+    blockId: string;
+    previousBlockId: string | null;
+    nextBlockId: string | null;
+  } | null;
 }
 
 export interface MarkdownEditorProps {
@@ -109,6 +120,106 @@ function EditorSkeleton() {
     label="正在加载文档…"
     words={["读取文档", "同步内容", "加载块数据", "渲染文档", "读取文档"]}
   />;
+}
+
+function readTopLevelBlockIds(editor: Editor): string[] {
+  const blockIds: string[] = [];
+  editor.state.doc.forEach((node) => {
+    const blockId = typeof node.attrs?.blockId === "string" ? node.attrs.blockId : null;
+    if (blockId) {
+      blockIds.push(blockId);
+    }
+  });
+  return blockIds;
+}
+
+function readSelectionBlockPosition(editor: Editor): {
+  blockId: string;
+  previousBlockId: string | null;
+  nextBlockId: string | null;
+} | null {
+  const { $from } = editor.state.selection;
+  let currentBlockId: string | null = null;
+
+  for (let depth = $from.depth; depth >= 1; depth -= 1) {
+    const candidate = $from.node(depth).attrs?.blockId;
+    if (typeof candidate === "string" && candidate.length > 0) {
+      currentBlockId = candidate;
+      break;
+    }
+  }
+
+  if (!currentBlockId) return null;
+
+  const blockIds = readTopLevelBlockIds(editor);
+  const currentIndex = blockIds.indexOf(currentBlockId);
+  if (currentIndex < 0) {
+    return {
+      blockId: currentBlockId,
+      previousBlockId: null,
+      nextBlockId: null,
+    };
+  }
+
+  return {
+    blockId: currentBlockId,
+    previousBlockId: blockIds[currentIndex - 1] ?? null,
+    nextBlockId: blockIds[currentIndex + 1] ?? null,
+  };
+}
+
+function readViewportBlockPosition(editor: Editor): {
+  blockId: string;
+  previousBlockId: string | null;
+  nextBlockId: string | null;
+} | null {
+  const blockElements = Array.from(editor.view.dom.querySelectorAll<HTMLElement>("[data-block-id]"));
+  if (blockElements.length === 0) return null;
+
+  const HEADER_OFFSET = 96 + 20;
+  const scrollContainer =
+    editor.view.dom.closest<HTMLElement>(".main-content") ??
+    editor.view.dom.ownerDocument.documentElement;
+  const containerTop =
+    scrollContainer instanceof HTMLElement ? scrollContainer.getBoundingClientRect().top : 0;
+  const target =
+    blockElements.find(
+      (element) => element.getBoundingClientRect().bottom > containerTop + HEADER_OFFSET,
+    ) ??
+    blockElements[blockElements.length - 1];
+  const blockId = target.dataset.blockId;
+  if (!blockId) return null;
+
+  const blockIds = blockElements.map((element) => element.dataset.blockId).filter(Boolean) as string[];
+  const currentIndex = blockIds.indexOf(blockId);
+  if (currentIndex < 0) return null;
+
+  return {
+    blockId,
+    previousBlockId: blockIds[currentIndex - 1] ?? null,
+    nextBlockId: blockIds[currentIndex + 1] ?? null,
+  };
+}
+
+function scrollElementIntoEditorView(element: HTMLElement): void {
+  const HEADER_OFFSET = 96 + 20;
+  const scrollContainer =
+    element.closest<HTMLElement>(".main-content") ?? element.ownerDocument.scrollingElement;
+
+  if (scrollContainer instanceof HTMLElement) {
+    const containerRect = scrollContainer.getBoundingClientRect();
+    const elementRect = element.getBoundingClientRect();
+    const targetTop =
+      scrollContainer.scrollTop + (elementRect.top - containerRect.top) - HEADER_OFFSET;
+    scrollContainer.scrollTo({
+      top: Math.max(0, targetTop),
+      behavior: "smooth",
+    });
+    return;
+  }
+
+  const targetTop = window.scrollY + element.getBoundingClientRect().top - HEADER_OFFSET;
+  window.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
 }
 
 const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(function MarkdownEditor({
@@ -397,11 +508,16 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
         el = editor.view.dom.querySelector(`[data-anchor="${blockId}"]`) as HTMLElement | null;
       }
       if (!el) return false;
-      const HEADER_OFFSET = 96 + 20;
-      const rect = el.getBoundingClientRect();
-      const targetY = window.scrollY + rect.top - HEADER_OFFSET;
-      window.scrollTo({ top: targetY, behavior: "smooth" });
+      scrollElementIntoEditorView(el);
       return true;
+    },
+    getSelectionBlockPosition: () => {
+      if (!editor) return null;
+      return readSelectionBlockPosition(editor);
+    },
+    getViewportBlockPosition: () => {
+      if (!editor) return null;
+      return readViewportBlockPosition(editor);
     },
   }), [editor]);
 
