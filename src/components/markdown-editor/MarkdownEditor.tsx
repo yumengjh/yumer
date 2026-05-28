@@ -31,6 +31,7 @@ import { TableHeader } from "@tiptap/extension-table-header";
 import HorizontalRule from "@tiptap/extension-horizontal-rule";
 import { createPasteHandlerExtension } from "./extensions/pasteHandler";
 import { createFontSizeExtension } from "./extensions/fontSize";
+import { TableIndexColumn } from "./extensions/tableIndexColumn";
 import { OrderedListStyle } from "./extensions/orderedListStyle";
 import { LineHeight } from "./extensions/lineHeight";
 import { createMarkdownShortcutsExtension } from "./extensions/markdownShortcuts";
@@ -397,6 +398,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
         TableRow,
         TableCell,
         TableHeader,
+        TableIndexColumn,
         createPasteHandlerExtension({
           uploadImage: async (file) => {
             const image = await handleUploadImageFile(file);

@@ -12,6 +12,16 @@ import {
   type TableClipboardPayload,
 } from "./tableClipboard";
 
+const INDEX_COLUMN_ATTR = "indexColumn";
+const TABLE_DISPLAY_FEATURES = [
+  "hideOuterBorder",
+  "equalWidth",
+  "headerRow",
+  "headerColumn",
+] as const;
+
+export type TableDisplayFeature = (typeof TABLE_DISPLAY_FEATURES)[number];
+
 function getEmptyParagraph(editor: Editor): ProseMirrorNode {
   return editor.state.schema.nodes.paragraph.create();
 }
@@ -28,6 +38,32 @@ function getTableCellNodeAt(editor: Editor, tableStart: number, cellPos: number)
 function getTableRect(editor: Editor) {
   if (!isInTable(editor.state)) return null;
   return selectedRect(editor.state);
+}
+
+function isIndexedTable(tableNode: ProseMirrorNode): boolean {
+  return tableNode.attrs?.[INDEX_COLUMN_ATTR] === true;
+}
+
+function isTableDisplayFeature(value: string): value is TableDisplayFeature {
+  return TABLE_DISPLAY_FEATURES.includes(value as TableDisplayFeature);
+}
+
+function getTablePos(tableRect: ReturnType<typeof selectedRect>): number {
+  return tableRect.tableStart - 1;
+}
+
+function updateTableAttrs(
+  editor: Editor,
+  tableRect: ReturnType<typeof selectedRect>,
+  attrsPatch: Record<string, unknown>,
+): boolean {
+  const tr = editor.state.tr;
+  tr.setNodeMarkup(getTablePos(tableRect), undefined, {
+    ...tableRect.table.attrs,
+    ...attrsPatch,
+  });
+  editor.view.dispatch(tr);
+  return true;
 }
 
 function getUniqueCellsFromRect(editor: Editor, rect = getTableRect(editor)) {
@@ -65,13 +101,78 @@ function getCellHtml(editor: Editor, cellNode: ProseMirrorNode): string {
   return serializeCellContent(editor.state.schema, cellNode, editor.view.dom.ownerDocument);
 }
 
+function applyIndexColumn(editor: Editor, tableRect: ReturnType<typeof selectedRect>): boolean {
+  const tableMap = TableMap.get(tableRect.table);
+  const tr = editor.state.tr;
+
+  tr.setNodeMarkup(getTablePos(tableRect), undefined, { ...tableRect.table.attrs, [INDEX_COLUMN_ATTR]: true });
+
+  const replacements: Array<{ from: number; to: number; text: string }> = [];
+
+  for (let row = 0; row < tableMap.height; row += 1) {
+    const cellPos = tableMap.positionAt(row, 0, tableRect.table);
+    const cellNode = getTableCellNodeAt(editor, tableRect.tableStart, cellPos);
+    if (!cellNode) continue;
+
+    replacements.push({
+      from: tableRect.tableStart + cellPos + 1,
+      to: tableRect.tableStart + cellPos + cellNode.nodeSize - 1,
+      text: row === 0 ? "" : String(row),
+    });
+  }
+
+  replacements
+    .sort((a, b) => b.from - a.from)
+    .forEach(({ from, to, text }) => {
+      tr.replaceWith(from, to, getParagraphWithText(editor, text));
+    });
+
+  editor.view.dispatch(tr);
+  return true;
+}
+
+function renumberIndexedTable(editor: Editor): boolean {
+  const rect = getTableRect(editor);
+  if (!rect || !isIndexedTable(rect.table)) return false;
+  return applyIndexColumn(editor, rect);
+}
+
+function runWithIndexedTableMaintenance(editor: Editor, command: () => boolean): boolean {
+  const rectBefore = getTableRect(editor);
+  const shouldMaintain = rectBefore ? isIndexedTable(rectBefore.table) : false;
+  const handled = command();
+  if (!handled || !shouldMaintain) return handled;
+  renumberIndexedTable(editor);
+  return true;
+}
+
 export function setTableCellSelection(editor: Editor, cell: HTMLTableCellElement): boolean {
   try {
+    if (editor.isDestroyed) return false;
     const pos = editor.view.posAtDOM(cell, 0);
     return editor.chain().focus().setCellSelection({ anchorCell: pos }).run();
   } catch {
     return false;
   }
+}
+
+export function getCurrentTableDisplayState(editor: Editor): Record<TableDisplayFeature, boolean> | null {
+  const rect = getTableRect(editor);
+  if (!rect) return null;
+
+  return {
+    hideOuterBorder: rect.table.attrs.hideOuterBorder === true,
+    equalWidth: rect.table.attrs.equalWidth === true,
+    headerRow: rect.table.attrs.headerRow === true,
+    headerColumn: rect.table.attrs.headerColumn === true,
+  };
+}
+
+export function toggleTableDisplayFeature(editor: Editor, feature: TableDisplayFeature): boolean {
+  const rect = getTableRect(editor);
+  if (!rect || !isTableDisplayFeature(feature)) return false;
+  const currentValue = rect.table.attrs?.[feature] === true;
+  return updateTableAttrs(editor, rect, { [feature]: !currentValue });
 }
 
 export function copySelectedTableRegion(editor: Editor): TableClipboardPayload | null {
@@ -131,23 +232,6 @@ export async function writeTableToClipboard(editor: Editor): Promise<boolean> {
   }
 }
 
-function fillColumnLabels(editor: Editor, tableRect: ReturnType<typeof selectedRect>) {
-  const tableMap = TableMap.get(tableRect.table);
-  const tr = editor.view.state.tr;
-
-  for (let row = 0; row < tableMap.height; row += 1) {
-    const label = row === 0 ? "序号" : String(row);
-    const cellPos = tableMap.positionAt(row, 0, tableRect.table);
-    const cellNode = getTableCellNodeAt(editor, tableRect.tableStart, cellPos);
-    if (!cellNode) continue;
-    const from = tableRect.tableStart + cellPos + 1;
-    const to = tableRect.tableStart + cellPos + cellNode.nodeSize - 1;
-    tr.replaceWith(from, to, getParagraphWithText(editor, label));
-  }
-
-  editor.view.dispatch(tr);
-}
-
 export function insertIndexColumn(editor: Editor): boolean {
   const rect = getTableRect(editor);
   if (!rect) return false;
@@ -162,8 +246,7 @@ export function insertIndexColumn(editor: Editor): boolean {
 
   const currentRect = getTableRect(editor);
   if (!currentRect) return false;
-  fillColumnLabels(editor, currentRect);
-  return true;
+  return applyIndexColumn(editor, currentRect);
 }
 
 export function clearSelectedTableCells(editor: Editor): boolean {
@@ -191,10 +274,11 @@ export function clearSelectedTableCells(editor: Editor): boolean {
 
 export function deleteSelectedTableCells(editor: Editor, kind: "table" | "row" | "column"): boolean {
   if (!isInTable(editor.state)) return false;
-  const chain = editor.chain().focus();
-  if (kind === "table") return chain.deleteTable().run();
-  if (kind === "row") return chain.deleteRow().run();
-  return chain.deleteColumn().run();
+  if (kind === "table") return editor.chain().focus().deleteTable().run();
+  if (kind === "row") {
+    return runWithIndexedTableMaintenance(editor, () => editor.chain().focus().deleteRow().run());
+  }
+  return editor.chain().focus().deleteColumn().run();
 }
 
 export function mergeSelectedTableCells(editor: Editor): boolean {
@@ -204,8 +288,10 @@ export function mergeSelectedTableCells(editor: Editor): boolean {
 
 export function insertTableRelativeRow(editor: Editor, direction: "before" | "after"): boolean {
   if (!isInTable(editor.state)) return false;
-  const chain = editor.chain().focus();
-  return direction === "before" ? chain.addRowBefore().run() : chain.addRowAfter().run();
+  return runWithIndexedTableMaintenance(editor, () => {
+    const chain = editor.chain().focus();
+    return direction === "before" ? chain.addRowBefore().run() : chain.addRowAfter().run();
+  });
 }
 
 export function insertTableRelativeColumn(editor: Editor, direction: "before" | "after"): boolean {

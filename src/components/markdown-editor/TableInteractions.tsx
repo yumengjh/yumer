@@ -1,10 +1,22 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ClearOutlined, CopyOutlined, DeleteOutlined, InsertRowAboveOutlined, InsertRowBelowOutlined, PlusOutlined } from "@ant-design/icons";
+import { useCallback, useEffect, useState } from "react";
+import {
+  BorderOutlined,
+  CheckSquareOutlined,
+  ClearOutlined,
+  ColumnWidthOutlined,
+  CopyOutlined,
+  DeleteOutlined,
+  InsertRowAboveOutlined,
+  InsertRowBelowOutlined,
+  PlusOutlined,
+  TableOutlined,
+} from "@ant-design/icons";
 import { Menu, message } from "antd";
 import type { MenuProps } from "antd";
 import { useMarkdownEditor } from "./EditorContext";
 import {
   clearSelectedTableCells,
+  getCurrentTableDisplayState,
   deleteSelectedTableCells,
   insertIndexColumn,
   insertTableRelativeColumn,
@@ -12,6 +24,7 @@ import {
   mergeSelectedTableCells,
   pasteTableFromClipboard,
   setTableCellSelection,
+  toggleTableDisplayFeature,
   writeTableToClipboard,
 } from "./table/tableCommands";
 
@@ -31,7 +44,66 @@ type TableMenuKey =
   | "delete-row"
   | "delete-col"
   | "merge"
-  | "clear";
+  | "clear"
+  | "toggle-hide-outer-border"
+  | "toggle-equal-width"
+  | "toggle-header-row"
+  | "toggle-header-column";
+
+type TableDisplayState = {
+  hideOuterBorder: boolean;
+  equalWidth: boolean;
+  headerRow: boolean;
+  headerColumn: boolean;
+};
+
+export const TABLE_CONTEXT_MENU_WIDTH = 232;
+export const TABLE_CONTEXT_MENU_MIN_HEIGHT = 336;
+
+function getToggleLabel(label: string, enabled: boolean) {
+  return `${label} · ${enabled ? "开" : "关"}`;
+}
+
+export function createTableMenuItems(displayState: TableDisplayState): MenuProps["items"] {
+  return [
+    { key: "copy", icon: <CopyOutlined />, label: "复制区域" },
+    { key: "paste", icon: <CopyOutlined />, label: "粘贴表格" },
+    { type: "divider" },
+    { key: "row-before", icon: <InsertRowAboveOutlined />, label: "上方插行" },
+    { key: "row-after", icon: <InsertRowBelowOutlined />, label: "下方插行" },
+    { key: "col-before", icon: <PlusOutlined />, label: "左侧插列" },
+    { key: "col-after", icon: <PlusOutlined />, label: "右侧插列" },
+    { key: "index-col", icon: <PlusOutlined />, label: "插入序号列" },
+    { type: "divider" },
+    {
+      key: "toggle-hide-outer-border",
+      icon: <BorderOutlined />,
+      label: getToggleLabel("隐藏外框", displayState.hideOuterBorder),
+    },
+    {
+      key: "toggle-equal-width",
+      icon: <ColumnWidthOutlined />,
+      label: getToggleLabel("等宽排列", displayState.equalWidth),
+    },
+    {
+      key: "toggle-header-row",
+      icon: <TableOutlined />,
+      label: getToggleLabel("标题行", displayState.headerRow),
+    },
+    {
+      key: "toggle-header-column",
+      icon: <CheckSquareOutlined />,
+      label: getToggleLabel("标题列", displayState.headerColumn),
+    },
+    { type: "divider" },
+    { key: "delete-table", icon: <DeleteOutlined />, danger: true, label: "删除表格" },
+    { key: "delete-row", icon: <DeleteOutlined />, danger: true, label: "删除行" },
+    { key: "delete-col", icon: <DeleteOutlined />, danger: true, label: "删除列" },
+    { type: "divider" },
+    { key: "merge", icon: <ClearOutlined />, label: "合并单元格" },
+    { key: "clear", icon: <ClearOutlined />, label: "清空内容" },
+  ];
+}
 
 export default function TableInteractions({ wrapperRef }: TableInteractionsProps) {
   const editor = useMarkdownEditor();
@@ -50,6 +122,7 @@ export default function TableInteractions({ wrapperRef }: TableInteractionsProps
     if (!wrapper || !editor) return;
 
     const handleContextMenu = (event: MouseEvent) => {
+      if (editor.isDestroyed) return;
       const target = event.target as Node | null;
       const element =
         target instanceof Element
@@ -107,7 +180,7 @@ export default function TableInteractions({ wrapperRef }: TableInteractionsProps
   }, [closeMenu, editor]);
 
   const handleClick = useCallback<NonNullable<MenuProps["onClick"]>>(async ({ key }) => {
-    if (!editor) return;
+    if (!editor || editor.isDestroyed) return;
     const action = key as TableMenuKey;
     let handled = true;
 
@@ -148,6 +221,18 @@ export default function TableInteractions({ wrapperRef }: TableInteractionsProps
       case "clear":
         handled = clearSelectedTableCells(editor);
         break;
+      case "toggle-hide-outer-border":
+        handled = toggleTableDisplayFeature(editor, "hideOuterBorder");
+        break;
+      case "toggle-equal-width":
+        handled = toggleTableDisplayFeature(editor, "equalWidth");
+        break;
+      case "toggle-header-row":
+        handled = toggleTableDisplayFeature(editor, "headerRow");
+        break;
+      case "toggle-header-column":
+        handled = toggleTableDisplayFeature(editor, "headerColumn");
+        break;
       default:
         handled = false;
     }
@@ -158,30 +243,21 @@ export default function TableInteractions({ wrapperRef }: TableInteractionsProps
     closeMenu();
   }, [closeMenu, editor, handleCopy, handlePaste]);
 
-  const items: MenuProps["items"] = useMemo(() => [
-    { key: "copy", icon: <CopyOutlined />, label: "复制表格区域" },
-    { key: "paste", icon: <CopyOutlined />, label: "粘贴表格" },
-    { type: "divider" },
-    { key: "row-before", icon: <InsertRowAboveOutlined />, label: "在上方插入行" },
-    { key: "row-after", icon: <InsertRowBelowOutlined />, label: "在下方插入行" },
-    { key: "col-before", icon: <PlusOutlined />, label: "在左侧插入列" },
-    { key: "col-after", icon: <PlusOutlined />, label: "在右侧插入列" },
-    { key: "index-col", icon: <PlusOutlined />, label: "插入序号列" },
-    { type: "divider" },
-    { key: "delete-table", icon: <DeleteOutlined />, danger: true, label: "删除表格" },
-    { key: "delete-row", icon: <DeleteOutlined />, danger: true, label: "删除行" },
-    { key: "delete-col", icon: <DeleteOutlined />, danger: true, label: "删除列" },
-    { type: "divider" },
-    { key: "merge", icon: <ClearOutlined />, label: "合并单元格" },
-    { key: "clear", icon: <ClearOutlined />, label: "清除内容" },
-  ], []);
+  const displayState: TableDisplayState = getCurrentTableDisplayState(editor) ?? {
+    hideOuterBorder: false,
+    equalWidth: false,
+    headerRow: false,
+    headerColumn: false,
+  };
+
+  const items = createTableMenuItems(displayState);
 
   if (!menuState.open) return null;
 
-  const width = typeof window === "undefined" ? 280 : window.innerWidth;
-  const height = typeof window === "undefined" ? 420 : window.innerHeight;
-  const left = Math.max(8, Math.min(menuState.x, width - 288));
-  const top = Math.max(8, Math.min(menuState.y, height - 420));
+  const width = typeof window === "undefined" ? TABLE_CONTEXT_MENU_WIDTH : window.innerWidth;
+  const height = typeof window === "undefined" ? TABLE_CONTEXT_MENU_MIN_HEIGHT : window.innerHeight;
+  const left = Math.max(8, Math.min(menuState.x, width - (TABLE_CONTEXT_MENU_WIDTH + 8)));
+  const top = Math.max(8, Math.min(menuState.y, height - TABLE_CONTEXT_MENU_MIN_HEIGHT));
 
   return (
     <div
@@ -194,7 +270,13 @@ export default function TableInteractions({ wrapperRef }: TableInteractionsProps
       }}
       onMouseDown={(event) => event.stopPropagation()}
     >
-      <Menu items={items} selectable={false} onClick={handleClick} style={{ width: 280, borderRadius: 8 }} />
+      <Menu
+        className="table-context-menu__panel"
+        items={items}
+        selectable={false}
+        onClick={handleClick}
+        style={{ width: TABLE_CONTEXT_MENU_WIDTH, borderRadius: 8 }}
+      />
     </div>
   );
 }
