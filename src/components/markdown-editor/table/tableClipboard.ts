@@ -111,7 +111,7 @@ export function parseHtmlTableToGrid(html: string): TableClipboardGrid | null {
   const rows = Array.from(table.querySelectorAll("tr")).map((row) =>
     Array.from(row.children)
       .filter((cell): cell is HTMLTableCellElement => cell instanceof HTMLTableCellElement)
-      .map((cell) => ({
+      .map<TableClipboardCell>((cell) => ({
         tag: cell.tagName.toLowerCase() === "th" ? "th" : "td",
         html: cell.innerHTML.trim(),
         text: cell.textContent?.trim() ?? "",

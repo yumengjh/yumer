@@ -47,7 +47,7 @@ export const codeLanguageItems = [
   label: item.label,
 }));
 
-export const codeCleanupItems = [
+export const codeCleanupItems: readonly CodeCleanupMenuItem[] = [
   { key: "removeTrailingBlankLines", label: "删除行尾空行" },
   { key: "removeEmptyCodeBlocks", label: "删除空代码块" },
   { key: "divider-content", type: "divider" },

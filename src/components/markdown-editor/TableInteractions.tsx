@@ -243,12 +243,19 @@ export default function TableInteractions({ wrapperRef }: TableInteractionsProps
     closeMenu();
   }, [closeMenu, editor, handleCopy, handlePaste]);
 
-  const displayState: TableDisplayState = getCurrentTableDisplayState(editor) ?? {
-    hideOuterBorder: false,
-    equalWidth: false,
-    headerRow: false,
-    headerColumn: false,
-  };
+  const displayState: TableDisplayState = editor
+    ? getCurrentTableDisplayState(editor) ?? {
+        hideOuterBorder: false,
+        equalWidth: false,
+        headerRow: false,
+        headerColumn: false,
+      }
+    : {
+        hideOuterBorder: false,
+        equalWidth: false,
+        headerRow: false,
+        headerColumn: false,
+      };
 
   const items = createTableMenuItems(displayState);
 

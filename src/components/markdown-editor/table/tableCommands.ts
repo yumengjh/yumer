@@ -336,7 +336,7 @@ export async function pasteTableFromClipboard(editor: Editor): Promise<boolean> 
   const tableGrid = tableHtml ? parseHtmlTableToGrid(tableHtml) : null;
   const textGrid = !tableHtml && text ? parseTabularPlainText(text) : null;
 
-  if (tableGrid) {
+  if (tableGrid && tableHtml) {
     const rect = getTableRect(editor);
     if (rect) {
       const width = rect.right - rect.left;
