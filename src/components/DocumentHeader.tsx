@@ -26,12 +26,11 @@ import {
 } from "@ant-design/icons";
 import { useDocument, type SaveStatus } from "../contexts/DocumentContext";
 import { VersionDiffModal } from "./VersionDiffModal";
-import { DocumentListModal } from "./DocumentListModal";
-import { CreateDocumentModal } from "./CreateDocumentModal";
-import { DocumentInfoModal } from "./DocumentInfoModal";
+import DocumentSidebar from "./DocumentSidebar";
 import { TagManagementModal } from "./TagManagementModal";
 import { WorkspaceSettingsModal } from "./WorkspaceSettingsModal";
 import { DocumentSearchModal } from "./DocumentSearchModal";
+import { CreateDocumentModal } from "./CreateDocumentModal";
 import { useAuth } from "../contexts/AuthContext";
 import type {
   AppSettings,
@@ -203,7 +202,6 @@ export function DocumentHeader({
   const [diffOpen, setDiffOpen] = useState(false);
   const [listOpen, setListOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
-  const [infoOpen, setInfoOpen] = useState(false);
   const [tagManageOpen, setTagManageOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -214,10 +212,11 @@ export function DocumentHeader({
     refreshDocs().catch(() => {});
   }, [refreshDocs]);
 
-  // Ctrl+K 打开搜索
+  // Ctrl+K / Ctrl+J 打开搜索
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+      const key = e.key.toLowerCase();
+      if ((e.ctrlKey || e.metaKey) && (key === "k" || key === "j")) {
         e.preventDefault();
         setSearchOpen((prev) => !prev);
       }
@@ -433,12 +432,6 @@ export function DocumentHeader({
           onClick: () => setDiffOpen(true),
         },
         {
-          key: "info",
-          icon: <InfoCircleOutlined />,
-          label: "文档信息",
-          onClick: () => setInfoOpen(true),
-        },
-        {
           key: "remember-position",
           icon: <PushpinOutlined />,
           label: "记住当前位置",
@@ -520,16 +513,6 @@ export function DocumentHeader({
                   aria-label="版本历史"
                 >
                   <HistoryOutlined />
-                </button>
-              </Tooltip>
-              <Tooltip title="文档信息">
-                <button
-                  type="button"
-                  className="header-icon-btn"
-                  onClick={() => setInfoOpen(true)}
-                  aria-label="文档信息"
-                >
-                  <InfoCircleOutlined />
                 </button>
               </Tooltip>
             </nav>
@@ -740,16 +723,11 @@ export function DocumentHeader({
           docId={currentDoc.docId}
         />
       )}
-      <DocumentListModal
-        open={listOpen}
-        onClose={() => setListOpen(false)}
+      <DocumentSidebar
+        visible={listOpen}
+        onToggle={() => setListOpen(!listOpen)}
         onSelect={(docId) => {
-          setListOpen(false);
           handleDocChange(docId);
-        }}
-        onCreateNew={() => {
-          setListOpen(false);
-          setCreateOpen(true);
         }}
         currentDocId={currentDoc?.docId}
       />
@@ -770,13 +748,6 @@ export function DocumentHeader({
           setSettingsOpen(false);
         }}
       />
-      {currentDoc && (
-        <DocumentInfoModal
-          open={infoOpen}
-          onClose={() => setInfoOpen(false)}
-          doc={currentDoc}
-        />
-      )}
       <TagManagementModal open={tagManageOpen} onClose={() => setTagManageOpen(false)} />
       <GcDebugModal
         open={gcDebugOpen}

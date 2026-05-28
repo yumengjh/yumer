@@ -1,0 +1,550 @@
+/* ===== 容器 ===== */
+.doc-sidebar-container {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+}
+
+/* ===== Sidebar ===== */
+.doc-sidebar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  padding: 0;
+  overflow: hidden;
+  transition:
+    width 0.32s cubic-bezier(0.4, 0, 0.2, 1),
+    padding 0.32s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.2s ease;
+  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.08);
+}
+
+/* 拖拽中禁用动画 */
+.doc-sidebar--resizing {
+  transition: none !important;
+}
+
+/* 折叠态 */
+.doc-sidebar--collapsed {
+  border-right-color: transparent;
+}
+
+.doc-sidebar__inner {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.doc-sidebar__top {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 12px 8px 12px;
+}
+
+.doc-sidebar__search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 搜索框包装器 */
+.doc-sidebar__search-wrapper {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #f5f5f5;
+  border-radius: 8px;
+  min-width: 0;
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.doc-sidebar__search-wrapper:focus-within {
+  background: #ffffff;
+  border-color: #d9d9d9;
+}
+
+.doc-sidebar__search-icon {
+  color: #8c8c8c;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.doc-sidebar__search-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  font-size: 13px;
+  border: none;
+  box-shadow: none;
+}
+
+.doc-sidebar__search-input:focus {
+  border: none;
+  box-shadow: none;
+}
+
+.doc-sidebar__search-input input {
+  padding: 0;
+  background: transparent;
+  border: none;
+  font-size: 13px;
+}
+
+.doc-sidebar__search-input input:focus {
+  border: none;
+  box-shadow: none;
+}
+
+.doc-sidebar__search-shortcut {
+  font-size: 10px;
+  color: #8c8c8c;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-family: inherit;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.doc-sidebar__add-btn {
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #595959;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+  background: #ffffff !important;
+  transition: all 0.2s ease;
+}
+
+.doc-sidebar__add-btn:hover {
+  background: #f5f5f5 !important;
+  border-color: #d9d9d9 !important;
+  color: #1f1f1f;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* 分割线 */
+.doc-sidebar__divider {
+  height: 1px;
+  background-color: #eaeaea;
+  margin: 0 12px 8px 12px;
+}
+
+/* ===== 筛选区域 ===== */
+.doc-sidebar__filters {
+  padding: 12px;
+  border-bottom: 1px solid #f0f0f0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.doc-sidebar__filter-group {
+  margin-bottom: 10px;
+}
+
+.doc-sidebar__filter-group:last-child {
+  margin-bottom: 0;
+}
+
+.doc-sidebar__filter-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #8c8c8c;
+  margin-bottom: 8px;
+}
+
+.doc-sidebar__filter-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.doc-sidebar__filter-tag {
+  cursor: pointer;
+  margin: 0;
+  transition: all 0.2s;
+  font-size: 12px;
+}
+
+.doc-sidebar__filter-tag:hover {
+  color: #1890ff;
+  border-color: #1890ff;
+}
+
+.doc-sidebar__filter-tag--active {
+  color: #fff;
+  background: #1890ff;
+  border-color: #1890ff;
+}
+
+.doc-sidebar__filter-tag--active:hover {
+  color: #fff;
+  background: #40a9ff;
+  border-color: #40a9ff;
+}
+
+.doc-sidebar__clear-filters {
+  padding: 0;
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+.doc-sidebar__filter-count {
+  font-size: 12px;
+  color: #8c8c8c;
+}
+
+/* ========== 滚动区域 ========== */
+.doc-sidebar__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px 0 12px 0;
+}
+
+.doc-sidebar__scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.doc-sidebar__scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.doc-sidebar__scroll::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+
+.doc-sidebar__scroll::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* ========== 文档列表区域 ========== */
+.doc-sidebar__documents-section {
+  padding: 0 12px;
+  min-width: 0;
+}
+
+.doc-sidebar__documents-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding: 4px 0;
+  min-width: 0;
+  width: 100%;
+}
+
+.doc-sidebar__documents-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.doc-sidebar__documents-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ========== 分区样式 ========== */
+.doc-sidebar__category-group {
+  margin-bottom: 4px;
+}
+
+.doc-sidebar__category-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.15s ease;
+  border-radius: 8px;
+  position: relative;
+}
+
+.doc-sidebar__category-header:hover {
+  background: var(--app-bg-hover, #f5f5f5);
+}
+
+.doc-sidebar__category-arrow {
+  font-size: 10px;
+  color: #8c8c8c;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+}
+
+.doc-sidebar__category-arrow--expanded {
+  transform: rotate(90deg);
+}
+
+.doc-sidebar__category-name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  color: #595959;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.doc-sidebar__category-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  margin-right: 4px;
+}
+
+.doc-sidebar__category-header:hover .doc-sidebar__category-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.doc-sidebar__category-action {
+  padding: 0;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #595959;
+  border: none !important;
+  background: transparent !important;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.doc-sidebar__category-action:hover {
+  background: rgba(0, 0, 0, 0.06) !important;
+  color: #1f1f1f;
+}
+
+.doc-sidebar__category-count {
+  font-size: 11px;
+  color: #8c8c8c;
+  background: #f5f5f5;
+  padding: 1px 6px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.doc-sidebar__category-docs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 20px;
+}
+
+.doc-sidebar__document-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  position: relative;
+  margin: 1px 0;
+}
+
+.doc-sidebar__document-item:hover {
+  background: var(--app-bg-hover, #f5f5f5);
+}
+
+.doc-sidebar__document-item--loading {
+  opacity: 0.7;
+}
+
+.doc-sidebar__document-item--active {
+  background: var(--app-bg-subtle, #f3f4f6);
+}
+
+.doc-sidebar__document-item--active .doc-sidebar__document-title {
+  color: var(--app-text-primary, #1f1f1f);
+  font-weight: 600;
+}
+
+.doc-sidebar__document-icon {
+  font-size: 16px;
+  color: #595959;
+  flex-shrink: 0;
+}
+
+.doc-sidebar__document-item--active .doc-sidebar__document-icon {
+  color: var(--app-text-primary, #1f1f1f);
+}
+
+.doc-sidebar__document-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.doc-sidebar__document-title {
+  display: block;
+  font-size: 14px;
+  color: #262626;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.doc-sidebar__category-tag {
+  font-size: 10px;
+  line-height: 16px;
+  padding: 0 4px;
+  margin: 4px 0 0 0;
+}
+
+.doc-sidebar__document-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.doc-sidebar__tag {
+  font-size: 11px;
+  line-height: 16px;
+  padding: 0 6px;
+  margin: 0;
+  background: #f5f5f5;
+  border-color: #f5f5f5;
+  color: #595959;
+}
+
+.doc-sidebar__document-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  flex-shrink: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.doc-sidebar__document-item:hover .doc-sidebar__document-actions,
+.doc-sidebar__document-item--active .doc-sidebar__document-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.doc-sidebar__document-action {
+  padding: 0;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #595959;
+  border: none !important;
+  background: transparent !important;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.doc-sidebar__document-action:hover {
+  background: rgba(0, 0, 0, 0.06) !important;
+  color: #1f1f1f;
+}
+
+/* ===== Resizer ===== */
+.doc-sidebar__resizer {
+  position: relative;
+  flex: 0 0 14px;
+  width: 14px;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  background-color: #ffffff;
+}
+
+.doc-sidebar__resizer:not(.doc-sidebar__resizer--collapsed) {
+  cursor: col-resize;
+}
+
+.doc-sidebar__resizer--collapsed {
+  cursor: default;
+}
+
+/* 中间贯穿分割线 */
+.doc-sidebar__split {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: #eaeaea;
+}
+
+/* ===== 折叠按钮（胶囊） ===== */
+.doc-sidebar__toggle-btn {
+  position: relative;
+  z-index: 1;
+  width: 26px;
+  height: 56px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid #f5f5f5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.doc-sidebar__toggle-btn:hover {
+  background: #f5f5f5;
+}
+
+.doc-sidebar__toggle-btn:focus-visible {
+  outline: 2px solid rgba(0, 0, 0, 0.15);
+  outline-offset: 2px;
+}
+
+/* ===== 箭头 ===== */
+.doc-sidebar__toggle-icon {
+  color: #262626;
+  transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.doc-sidebar__toggle-icon--collapsed {
+  transform: rotate(180deg);
+}
