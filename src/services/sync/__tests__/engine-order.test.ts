@@ -151,6 +151,40 @@ describe("deriveSyncEntries order handling", () => {
     expect(entries.some((entry) => entry.opType === "move" && entry.blockId === "b_b")).toBe(true);
   });
 
+  it("only emits a move for the dragged block when moving the tail block to the front", () => {
+    const previous: TiptapDoc = {
+      type: "doc",
+      content: [
+        { type: "paragraph", attrs: { clientId: "c_2", blockId: "b_2", sortKey: "001750" } },
+        { type: "paragraph", attrs: { clientId: "c_3", blockId: "b_3", sortKey: "002750" } },
+        { type: "paragraph", attrs: { clientId: "c_4", blockId: "b_4", sortKey: "003750" } },
+        { type: "paragraph", attrs: { clientId: "c_5", blockId: "b_5", sortKey: "004750" } },
+        { type: "paragraph", attrs: { clientId: "c_6", blockId: "b_6", sortKey: "005750" } },
+      ],
+    };
+    const next: TiptapDoc = {
+      type: "doc",
+      content: [
+        { type: "paragraph", attrs: { clientId: "c_6", blockId: "b_6", sortKey: "005750" } },
+        { type: "paragraph", attrs: { clientId: "c_2", blockId: "b_2", sortKey: "001750" } },
+        { type: "paragraph", attrs: { clientId: "c_3", blockId: "b_3", sortKey: "002750" } },
+        { type: "paragraph", attrs: { clientId: "c_4", blockId: "b_4", sortKey: "003750" } },
+        { type: "paragraph", attrs: { clientId: "c_5", blockId: "b_5", sortKey: "004750" } },
+      ],
+    };
+
+    const moves = deriveSyncEntries(previous, next).filter((entry) => entry.opType === "move");
+
+    expect(moves).toEqual([
+      {
+        clientId: "c_6",
+        blockId: "b_6",
+        opType: "move",
+        sortKey: "000875",
+      },
+    ]);
+  });
+
   it("does not emit content updates for sync metadata-only changes", () => {
     const previous: TiptapDoc = {
       type: "doc",
