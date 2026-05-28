@@ -55,6 +55,7 @@ export interface SyncBatchResult {
   success: boolean;
   clientId?: string;
   blockId?: string;
+  sortKey?: string;
   version?: number;
   error?: string;
 }

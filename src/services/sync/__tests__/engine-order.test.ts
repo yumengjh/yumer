@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveSyncEntries } from "../engine";
+import { applyCreateAck, deriveSyncEntries } from "../engine";
 import type { TiptapDoc } from "@/services/tiptap-converter";
 
 describe("deriveSyncEntries order handling", () => {
@@ -126,5 +126,64 @@ describe("deriveSyncEntries order handling", () => {
     const entries = deriveSyncEntries(previous, next);
 
     expect(entries.some((entry) => entry.opType === "move" && entry.blockId === "b_b")).toBe(true);
+  });
+
+  it("does not emit content updates for sync metadata-only changes", () => {
+    const previous: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: {
+            clientId: "c_a",
+            blockId: "b_a",
+            sortKey: "001000",
+            syncCreateId: "sync-create:c_a",
+          },
+          content: [{ type: "text", text: "same text" }],
+        },
+      ],
+    };
+    const next: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: {
+            clientId: "c_a",
+            blockId: "b_a",
+            sortKey: "000984",
+            syncCreateId: "sync-create:c_a",
+            clientBatchId: "batch_1",
+            "data-sort-key": "000984",
+            "data-sync-create-id": "sync-create:c_a",
+          },
+          content: [{ type: "text", text: "same text" }],
+        },
+      ],
+    };
+
+    expect(deriveSyncEntries(previous, next)).toEqual([]);
+  });
+
+  it("patches server sortKey returned by create ack into the local snapshot", () => {
+    const doc: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_new", blockId: null, sortKey: "001000" },
+        },
+      ],
+    };
+
+    const patched = applyCreateAck(doc, [
+      { clientId: "c_new", blockId: "b_new", sortKey: "000984" },
+    ]);
+
+    expect(patched.content[0].attrs?.blockId).toBe("b_new");
+    expect(patched.content[0].attrs?.["data-block-id"]).toBe("b_new");
+    expect(patched.content[0].attrs?.sortKey).toBe("000984");
+    expect(patched.content[0].attrs?.["data-sort-key"]).toBe("000984");
   });
 });

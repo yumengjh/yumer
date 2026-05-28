@@ -41,8 +41,8 @@ describe("markdown editor identity patching", () => {
     expect(patched).toBe(true);
     expect(editor.state.selection.from).toBe(selectionBeforePatch);
     const json = editor.getJSON() as TiptapDoc;
-    expect(json.content[0].attrs.clientId).toMatch(/^cid_/);
-    expect(json.content[1].attrs.clientId).toMatch(/^cid_/);
+    expect(json.content[0]?.attrs?.clientId).toMatch(/^cid_/);
+    expect(json.content[1]?.attrs?.clientId).toMatch(/^cid_/);
 
     editor.destroy();
   });
@@ -100,8 +100,8 @@ describe("markdown editor identity patching", () => {
     expect(patched).toBe(true);
     expect(editor.state.selection.from).toBe(selectionBeforePatch);
     const json = editor.getJSON() as TiptapDoc;
-    expect(json.content[0].attrs.blockId).toBe("server-current");
-    expect(json.content[1].attrs.blockId).toBe("server-empty-next");
+    expect(json.content[0]?.attrs?.blockId).toBe("server-current");
+    expect(json.content[1]?.attrs?.blockId).toBe("server-empty-next");
 
     editor.destroy();
   });
@@ -176,8 +176,8 @@ describe("markdown editor identity patching", () => {
     expect(patched).toBe(true);
     expect(editor.state.selection.from).toBe(selectionBeforePatch);
     const json = editor.getJSON() as TiptapDoc;
-    expect(json.content[0].attrs.blockId).toBe("server-new-blank");
-    expect(json.content[0].attrs.sortKey).toBe("000500");
+    expect(json.content[0]?.attrs?.blockId).toBe("server-new-blank");
+    expect(json.content[0]?.attrs?.sortKey).toBe("000500");
 
     editor.destroy();
   });

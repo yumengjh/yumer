@@ -220,6 +220,7 @@ describe("sync reducer", () => {
         success: true,
         clientId: "client_new",
         blockId: "server_block_new",
+        sortKey: "000984",
       },
     ]);
 
@@ -227,6 +228,13 @@ describe("sync reducer", () => {
     expect(state.syncState).toBe("dirty");
     expect(state.entries.client_new.opType).toBe("update");
     expect(state.entries.client_new.blockId).toBe("server_block_new");
+    expect(state.entries.client_new.sortKey).toBe("000984");
+    expect((state.entries.client_new.payload as { attrs?: Record<string, unknown> }).attrs).toMatchObject({
+      blockId: "server_block_new",
+      "data-block-id": "server_block_new",
+      sortKey: "000984",
+      "data-sort-key": "000984",
+    });
     expect((state.entries.client_new.payload as { content?: Array<{ text?: string }> }).content?.[0]?.text).toBe(
       "typed before create ack",
     );

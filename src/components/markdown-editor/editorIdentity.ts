@@ -87,9 +87,12 @@ function stripIdentityAttrs(value: unknown): unknown {
     delete attrs.blockId;
     delete attrs.clientId;
     delete attrs.sortKey;
+    delete attrs.syncCreateId;
+    delete attrs.clientBatchId;
     delete attrs["data-block-id"];
     delete attrs["data-client-id"];
     delete attrs["data-sort-key"];
+    delete attrs["data-sync-create-id"];
     out.attrs = attrs;
   }
 

@@ -177,7 +177,7 @@ function getAckedClientId(
   return null;
 }
 
-function withServerBlockId(entry: SyncEntry, blockId: string): SyncEntry {
+function withServerBlockId(entry: SyncEntry, blockId: string, sortKey?: string): SyncEntry {
   const payload = entry.payload
     ? {
         ...entry.payload,
@@ -185,6 +185,7 @@ function withServerBlockId(entry: SyncEntry, blockId: string): SyncEntry {
           ...((entry.payload.attrs as Record<string, unknown> | undefined) ?? {}),
           blockId,
           "data-block-id": blockId,
+          ...(sortKey ? { sortKey, "data-sort-key": sortKey } : {}),
         },
       }
     : entry.payload;
@@ -199,6 +200,7 @@ function withServerBlockId(entry: SyncEntry, blockId: string): SyncEntry {
   return {
     ...entry,
     blockId,
+    ...(sortKey ? { sortKey } : {}),
     opType: "update",
     payload,
   };
@@ -244,7 +246,7 @@ export function resolveBatchSuccess(
     }
 
     if (result.operation === "create" && result.blockId) {
-      nextEntries[clientId] = withServerBlockId(currentEntry, result.blockId);
+      nextEntries[clientId] = withServerBlockId(currentEntry, result.blockId, result.sortKey);
     }
   }
 

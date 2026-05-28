@@ -61,8 +61,13 @@ function normalizePayload(value: unknown): unknown {
     const attrs = { ...(out.attrs as Record<string, unknown>) };
     delete attrs.blockId;
     delete attrs.clientId;
+    delete attrs.sortKey;
+    delete attrs.syncCreateId;
+    delete attrs.clientBatchId;
     delete attrs["data-block-id"];
     delete attrs["data-client-id"];
+    delete attrs["data-sort-key"];
+    delete attrs["data-sync-create-id"];
     out.attrs = attrs;
   }
 
@@ -229,28 +234,39 @@ export function deriveSyncEntries(prevDoc: TiptapDoc | null, nextDoc: TiptapDoc)
   return entries;
 }
 
-export function applyCreateAck(doc: TiptapDoc, mappings: Array<{ clientId: string; blockId: string }>): TiptapDoc {
+export function applyCreateAck(
+  doc: TiptapDoc,
+  mappings: Array<{ clientId: string; blockId: string; sortKey?: string }>,
+): TiptapDoc {
   if (!Array.isArray(doc.content) || mappings.length === 0) return doc;
-  const blockIdByClientId = new Map<string, string>();
+  const ackByClientId = new Map<string, { blockId: string; sortKey?: string }>();
   for (const item of mappings) {
-    blockIdByClientId.set(item.clientId, item.blockId);
+    ackByClientId.set(item.clientId, { blockId: item.blockId, sortKey: item.sortKey });
   }
 
   let changed = false;
   const content = doc.content.map((node) => {
     const identity = readIdentityFromAttrs(node.attrs);
     if (!identity.clientId) return node;
-    const blockId = blockIdByClientId.get(identity.clientId);
-    if (!blockId) return node;
-    if (identity.blockId === blockId) return node;
+    const ack = ackByClientId.get(identity.clientId);
+    if (!ack) return node;
+    const nextAttrs = { ...(node.attrs ?? {}) };
+    let nodeChanged = false;
+    if (identity.blockId !== ack.blockId) {
+      nextAttrs.blockId = ack.blockId;
+      nextAttrs["data-block-id"] = ack.blockId;
+      nodeChanged = true;
+    }
+    if (ack.sortKey && node.attrs?.sortKey !== ack.sortKey) {
+      nextAttrs.sortKey = ack.sortKey;
+      nextAttrs["data-sort-key"] = ack.sortKey;
+      nodeChanged = true;
+    }
+    if (!nodeChanged) return node;
     changed = true;
     return {
       ...node,
-      attrs: {
-        ...(node.attrs ?? {}),
-        blockId,
-        "data-block-id": blockId,
-      },
+      attrs: nextAttrs,
     };
   });
 

@@ -157,7 +157,11 @@ export function useDocumentSync({
 
             const createMappings = response.results
               .filter((result) => result.success && result.clientId && result.blockId)
-              .map((result) => ({ clientId: result.clientId!, blockId: result.blockId! }));
+              .map((result) => ({
+                clientId: result.clientId!,
+                blockId: result.blockId!,
+                sortKey: result.sortKey,
+              }));
 
             const currentSnapshot = snapshotRef.current;
             if (currentSnapshot && createMappings.length > 0) {
