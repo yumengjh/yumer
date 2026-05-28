@@ -1160,6 +1160,7 @@ pre.code-block-view {
 }
 
 .tiptap-editor table {
+  position: relative;
   width: 100%;
   border-collapse: collapse;
   margin: 16px 0;
@@ -1170,6 +1171,7 @@ pre.code-block-view {
 
 .tiptap-editor table th,
 .tiptap-editor table td {
+  position: relative;
   padding: 8px 16px;
   text-align: left;
   border: 1px solid var(--app-border-lighter);
@@ -1190,13 +1192,28 @@ pre.code-block-view {
   right: -2px;
   top: 0;
   bottom: 0;
-  width: 4px;
-  background: var(--app-primary-border);
+  width: 8px;
+  opacity: 0;
+  background: linear-gradient(90deg, transparent 0, var(--app-primary-border) 50%, transparent 100%);
   pointer-events: none;
+  transition: opacity 0.16s ease;
+}
+
+.tiptap-editor .tableWrapper:hover .column-resize-handle,
+.tiptap-editor table:hover .column-resize-handle,
+.tiptap-editor table:focus-within .column-resize-handle,
+.tiptap-editor .resize-cursor .column-resize-handle {
+  opacity: 0.85;
 }
 
 .tiptap-editor .resize-cursor {
   cursor: col-resize;
+}
+
+.table-context-menu {
+  min-width: 280px;
+  border-radius: 8px;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
 }
 
 /* ---------- 占位文字 ---------- */

@@ -4,6 +4,7 @@ import { DOMParser as ProseMirrorDOMParser, Slice } from "prosemirror-model";
 import type { EditorView } from "prosemirror-view";
 import { marked } from "marked";
 import type { ImageBlockAttrs } from "./imageBlock";
+import { buildTableHtmlFromTextGrid, parseTabularPlainText } from "../table/tableClipboard";
 
 type CodeBlockSelectionLike = {
   state?: {
@@ -200,6 +201,27 @@ export const createPasteHandlerExtension = (options: PasteHandlerOptions = {}) =
               }
 
               if (text) {
+                const tabularGrid = parseTabularPlainText(text);
+                if (tabularGrid) {
+                  event.preventDefault();
+                  const tableHtml = buildTableHtmlFromTextGrid(tabularGrid);
+
+                  const editorInstance = this.editor;
+                  if (editorInstance) {
+                    editorInstance.commands.insertContent(tableHtml);
+                    return true;
+                  }
+
+                  const parser = ProseMirrorDOMParser.fromSchema(view.state.schema);
+                  const dom = new DOMParser().parseFromString(tableHtml, "text/html");
+                  const fragment = parser.parse(dom.body);
+                  const { from, to } = view.state.selection;
+                  const slice = new Slice(fragment.content, 0, 0);
+                  const transaction = view.state.tr.replace(from, to, slice);
+                  view.dispatch(transaction);
+                  return true;
+                }
+
                 const looksLikeMarkdown =
                   /(^#{1,6}\s)|(\*\*.*\*\*)|(\*.*\*)|(^-\s)|(^\*\s)|(^\d+\.\s)|(^>\s)|(\[.*\]\(.*\))|(```)/m.test(
                     text,

@@ -45,6 +45,7 @@ import TaskItemView from "./TaskItemView";
 import { EditorContextProvider } from "./EditorContext";
 import Toolbar from "./Toolbar";
 import BlockToolbar from "./BlockToolbar";
+import TableInteractions from "./TableInteractions";
 import TableOfContents from "./TableOfContents";
 import AppLoader from "@/components/AppLoader";
 import { uploadImage } from "@/services/images";
@@ -553,10 +554,11 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
               <EditorSkeleton />
             ) : (
               <>
-                <EditorContent editor={editor} />
-                {editable && <BlockToolbar wrapperRef={wrapperRef} />}
-              </>
-            )}
+              <EditorContent editor={editor} />
+              {editable && <TableInteractions wrapperRef={wrapperRef} />}
+              {editable && <BlockToolbar wrapperRef={wrapperRef} />}
+            </>
+          )}
           </div>
           {showTOC && <TableOfContents onClose={() => onTOCToggle?.(false)} />}
         </EditorContextProvider>
