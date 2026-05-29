@@ -47,6 +47,7 @@ import type { PublicDocRevalidationResult } from "@/services/document";
 import { downloadDocumentExport, type DocumentExportFormat } from "@/services/document-export";
 import { getDocumentSyncState } from "@/services/sync/api";
 import { GcDebugModal } from "./GcDebugModal";
+import { ThemeSwitcher } from "./ThemeSwitcher";
 import "./DocumentHeader.css";
 
 const PUBLIC_DOC_REVALIDATE_SECRET_KEY = "publicDocRevalidateSecret";
@@ -665,9 +666,11 @@ export function DocumentHeader({
                 <TagsOutlined />
               </button>
             </Tooltip>
+            <ThemeSwitcher />
           </nav>
 
           <div className="header-end--mobile">
+            <ThemeSwitcher />
             <Button
               size="small"
               icon={<SaveOutlined />}
