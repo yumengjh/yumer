@@ -58,13 +58,13 @@
 
   /* Border */
   --color-border: #d9d9d9;
-  --color-border-secondary: #f0f0f0;
+  --color-border-secondary: #E7E9E8;
   --color-border-hover: #1677ff;
   --color-border-disabled: #d9d9d9;
   --color-border-strong: #b0b0b0;
 
   /* Fill */
-  --color-fill: rgba(0, 0, 0, 0.04);
+  --color-fill: #0000000f;
   --color-fill-secondary: rgba(0, 0, 0, 0.06);
   --color-fill-tertiary: rgba(0, 0, 0, 0.04);
   --color-fill-quaternary: rgba(0, 0, 0, 0.02);
@@ -138,7 +138,7 @@
 
   /* Code Block */
   --code-bg: transparent;
-  --code-border: var(--color-border);
+  --code-border: #E7E9E8;
   --code-text: #24292f;
   --code-keyword: #cf222e;
   --code-string: #0a3069;

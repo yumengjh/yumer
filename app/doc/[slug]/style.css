@@ -1,5 +1,5 @@
 .doc-page {
-  background: #ffffff;
+  background: var(--color-bg);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -25,7 +25,7 @@
 .doc-main-title {
   font-size: 36px;
   font-weight: 700;
-  color: #1f2329;
+  color: var(--color-text);
   margin: 0 0 24px;
   line-height: 1.4;
 }
@@ -49,17 +49,62 @@
  * 取消注释并改数值即可，无需改组件代码。
  */
 
- .doc-content .code-block-view {
-  --code-block-line-height: 1.5;
-  /* 行号本身 */
+/* 文档展示区域代码块样式同步 */
+.doc-content .code-block-view,
+.doc-content pre.code-block-view {
+  --code-block-font-size: 14px;
+  --code-block-line-height: 1.45;
+  --code-block-padding-x: 16px;
+  --code-block-padding-y: 12px;
   --code-block-gutter-padding-left: 18px;
-  --code-block-gutter-min-width: 2.2em;
-  --code-block-gutter-text-align: left;
-  --code-block-line-number-font-size: 12px;
-  --code-block-line-number-color: #9aa0a6;
-  /* 行号与代码之间 */
   --code-block-gutter-padding-right: 15px;
+  --code-block-gutter-min-width: 1.25rem;
+  --code-block-gutter-text-align: left;
   --code-block-code-padding-left: 0;
+  --code-block-code-padding-right: 16px;
+  --code-block-line-number-color: var(--color-text-tertiary);
+  --code-block-line-number-font-size: var(--code-font-size, var(--code-block-font-size));
+  position: relative;
+  margin: 16px 0;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 4px;
+  border: 1px solid var(--code-border);
+  background: var(--code-bg);
+}
+
+/* 代码块 body 添加底部 padding */
+.doc-content .code-block-body {
+  padding-bottom: 12px;
+}
+
+/* 代码块 body 允许选中 */
+.doc-content .code-block-body {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* 行号不可选中 */
+.doc-content .code-block-line-number {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* 代码内容可选中 */
+.doc-content .code-block-content,
+.doc-content .code-block-code,
+.doc-content .code-block-lines,
+.doc-content .code-block-line-content {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* 代码块行高同步 */
+.doc-content .code-block-view,
+.doc-content .code-block-view .code-block-lines,
+.doc-content .code-block-view .code-block-line,
+.doc-content .code-block-view .code-block-line-content {
+  line-height: var(--code-block-line-height, 1.45);
 }
 
 
@@ -91,7 +136,7 @@
   width: 0.9em;
   font-size: 0.85em;
   line-height: 1;
-  color: #0f766e;
+  color: var(--color-accent-teal);
   text-decoration: none;
   opacity: 0;
   transition: opacity 0.16s ease, color 0.16s ease;
@@ -106,13 +151,13 @@
 
 .doc-content .doc-heading-anchor:hover,
 .doc-content .doc-heading-anchor:focus-visible {
-  color: #0d9488;
+  color: var(--color-accent-teal-hover);
 }
 
 .doc-footer {
   margin-top: auto;
   padding-top: 24px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--color-border-secondary);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -123,7 +168,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 24px;
-  color: #8f959e;
+  color: var(--color-text-tertiary);
   font-size: 14px;
 }
 
@@ -138,13 +183,13 @@
 }
 
 .doc-meta-label {
-  color: #bbbfc4;
+  color: var(--color-text-quaternary);
   font-size: 13px;
   flex-shrink: 0;
 }
 
 .doc-meta-value {
-  color: #646a73;
+  color: var(--color-text-secondary);
 }
 
 .doc-tags-list {
@@ -159,8 +204,8 @@
   gap: 6px;
   font-size: 12px;
   padding: 4px 10px;
-  background-color: #f5f6f7;
-  color: #1f2329;
+  background-color: var(--color-bg-hover);
+  color: var(--color-text);
   border-radius: 4px;
 }
 
@@ -187,6 +232,74 @@
   z-index: 50;
 }
 
+/* Todo 列表样式 - 文档展示区域 */
+.doc-content ul[data-type="taskList"],
+.doc-content ul.task-list {
+  list-style: none;
+  padding-left: 4px;
+  margin: 12px 0;
+}
+
+.doc-content li[data-type="taskItem"],
+.doc-content li.task-list-item {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 4px;
+}
+
+.doc-content li[data-type="taskItem"] > label,
+.doc-content li.task-list-item > label {
+  flex: 0 0 auto;
+  margin-right: 12px;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+}
+
+.doc-content li[data-type="taskItem"] > div,
+.doc-content li.task-list-item > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.doc-content li[data-type="taskItem"] input[type="checkbox"],
+.doc-content li.task-list-item input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--color-border);
+  border-radius: 3px;
+  background-color: var(--color-bg-container);
+  cursor: default;
+  position: relative;
+  margin: 0;
+  display: block;
+  transform: translateY(-1px);
+}
+
+.doc-content li[data-type="taskItem"] input[type="checkbox"]:checked,
+.doc-content li.task-list-item input[type="checkbox"]:checked {
+  background-color: #15303d;
+  border-color: #15303d;
+}
+
+.doc-content li[data-type="taskItem"] input[type="checkbox"]:checked::after,
+.doc-content li.task-list-item input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  top: 1px;
+  left: 4.5px;
+  width: 4px;
+  height: 8px;
+  border: 2px solid #fff;
+  border-top: 0;
+  border-left: 0;
+  transform: rotate(45deg);
+}
+
 @media (max-width: 1200px) {
   .doc-page-body {
     display: flex;
@@ -207,7 +320,7 @@
   .doc-page-body {
     padding: 24px 16px;
   }
-  
+
   .doc-main-title {
     font-size: 28px;
     margin-bottom: 16px;

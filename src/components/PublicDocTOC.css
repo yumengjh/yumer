@@ -1,7 +1,7 @@
 .public-toc-panel {
   display: flex;
   flex-direction: column;
-  background: var(--sidebar-bg);
+  background: transparent;
 }
 
 .public-toc-panel .toc-header {
@@ -55,7 +55,7 @@
   left: 3px;
   width: 3px;
   border-radius: 1.5px;
-  background-color: var(--color-primary);
+  background-color: #4a5565;
   transition: top 0.2s ease, height 0.15s ease;
 }
 

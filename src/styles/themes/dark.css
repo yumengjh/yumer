@@ -56,13 +56,13 @@
 
   /* Border */
   --color-border: #424242;
-  --color-border-secondary: #303030;
+  --color-border-secondary: rgba(255, 255, 255, 0.12);
   --color-border-hover: #4096ff;
   --color-border-disabled: #424242;
   --color-border-strong: #5a5a5a;
 
   /* Fill */
-  --color-fill: rgba(255, 255, 255, 0.08);
+  --color-fill: #ffffff14;
   --color-fill-secondary: rgba(255, 255, 255, 0.12);
   --color-fill-tertiary: rgba(255, 255, 255, 0.08);
   --color-fill-quaternary: rgba(255, 255, 255, 0.04);
