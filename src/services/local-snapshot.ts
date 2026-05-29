@@ -66,7 +66,7 @@ async function removeFromLocalStorage(docId: string): Promise<void> {
 }
 
 function openSnapshotDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
+  return new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open("yuediter-local-snapshot", 1);
     request.onerror = () => reject(request.error ?? new Error("无法打开本地快照数据库"));
     request.onupgradeneeded = () => {
@@ -76,18 +76,22 @@ function openSnapshotDb(): Promise<IDBDatabase> {
       }
     };
     request.onsuccess = () => resolve(request.result);
+    // 防止 IndexedDB 连接挂起
+    setTimeout(() => reject(new Error("IndexedDB 连接超时")), 3000);
   });
 }
 
 async function readFromIndexedDB(docId: string): Promise<LocalDocSnapshot | null> {
   const db = await openSnapshotDb();
   try {
-    return await new Promise((resolve, reject) => {
+    return await new Promise<LocalDocSnapshot | null>((resolve, reject) => {
       const tx = db.transaction("snapshots", "readonly");
       const store = tx.objectStore("snapshots");
       const request = store.get(docId);
       request.onerror = () => reject(request.error ?? new Error("读取本地快照失败"));
       request.onsuccess = () => resolve((request.result as LocalDocSnapshot | undefined) ?? null);
+      // 防止 IndexedDB 操作挂起导致状态卡死
+      setTimeout(() => reject(new Error("IndexedDB 读取超时")), 3000);
     });
   } finally {
     db.close();

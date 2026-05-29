@@ -25,6 +25,7 @@ type UseLocalDocumentSnapshotArgs = {
   docId: string | null;
   content: TiptapDoc | null;
   enabled?: boolean;
+  autoSave?: boolean;
 };
 
 const EMPTY_STATE: LocalSnapshotState = {
@@ -40,12 +41,14 @@ export function useLocalDocumentSnapshot({
   docId,
   content,
   enabled = true,
+  autoSave = true,
 }: UseLocalDocumentSnapshotArgs) {
   const store = useMemo<LocalSnapshotStore>(() => createBrowserLocalSnapshotStore(), []);
   const [state, setState] = useState<LocalSnapshotState>(EMPTY_STATE);
   const docIdRef = useRef<string | null>(null);
   const lastObservedHashRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
+  const hasEditedRef = useRef(false);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -121,6 +124,7 @@ export function useLocalDocumentSnapshot({
       void snapshotWriter.flush();
       docIdRef.current = null;
       lastObservedHashRef.current = null;
+      hasEditedRef.current = false;
       setState(EMPTY_STATE);
       return;
     }
@@ -133,6 +137,8 @@ export function useLocalDocumentSnapshot({
     docIdRef.current = docId;
 
     if (isNewDoc) {
+      // \u65b0\u6587\u6863\u52a0\u8f7d\uff1a\u4ec5\u8bfb\u53d6\u5feb\u7167\u505a\u5bf9\u6bd4\uff0c\u4e0d\u81ea\u52a8\u5199\u5165
+      hasEditedRef.current = false;
       lastObservedHashRef.current = currentHash;
       setState((current) => ({
         ...current,
@@ -157,7 +163,6 @@ export function useLocalDocumentSnapshot({
               currentHash,
               error: null,
             });
-            scheduleSnapshotWrite(docId, content);
             return;
           }
 
@@ -189,13 +194,20 @@ export function useLocalDocumentSnapshot({
       };
     }
 
+    // \u5185\u5bb9\u54c8\u5e0c\u672a\u53d8\u5316\uff0c\u8df3\u8fc7
     if (lastObservedHashRef.current === currentHash) {
       return;
     }
 
+    // \u54c8\u5e0c\u53d8\u5316\uff1a\u6807\u8bb0\u4e3a\u5df2\u7f16\u8f91\uff0c\u540e\u7eed\u53d8\u5316\u624d\u81ea\u52a8\u4fdd\u5b58
+    const wasEdited = hasEditedRef.current;
     lastObservedHashRef.current = currentHash;
-    scheduleSnapshotWrite(docId, content);
-  }, [content, docId, enabled, scheduleSnapshotWrite, snapshotWriter, store]);
+    hasEditedRef.current = true;
+
+    if (autoSave && wasEdited) {
+      scheduleSnapshotWrite(docId, content);
+    }
+  }, [content, docId, enabled, autoSave, scheduleSnapshotWrite, snapshotWriter, store]);
 
   const refreshSnapshot = useCallback(async () => {
     if (!docId || !content) return;
@@ -238,6 +250,12 @@ export function useLocalDocumentSnapshot({
     setState(EMPTY_STATE);
   }, [docId, snapshotWriter, store]);
 
+  const manualSave = useCallback(async () => {
+    if (!docId || !content) return;
+    const snapshot = buildLocalDocSnapshot(docId, content);
+    await persistSnapshot(snapshot);
+  }, [content, docId, persistSnapshot]);
+
   const copyStoredSnapshot = useCallback(async () => {
     await snapshotWriter.flush();
     const snapshot = docId ? await store.read(docId) : state.storedSnapshot;
@@ -258,5 +276,6 @@ export function useLocalDocumentSnapshot({
     clearSnapshot,
     copyStoredSnapshot,
     copyCurrentSnapshot,
+    manualSave,
   };
 }

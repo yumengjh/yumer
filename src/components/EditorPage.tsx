@@ -329,6 +329,11 @@ function EditorContent() {
   const [settingsScope, setSettingsScope] = useState<SettingsScope>("user");
   const [settingsSaving, setSettingsSaving] = useState(false);
   const syncEngineEnabled = process.env.NEXT_PUBLIC_SYNC_ENGINE_ENABLED === "true";
+  const [autoSaveSnapshotEnabled, setAutoSaveSnapshotEnabled] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    const stored = localStorage.getItem("yuediter:local-snapshot:auto-save");
+    return stored !== "false";
+  });
   const loadedDocIdRef = useRef<string | null>(null);
   const hydratingSlugRef = useRef<string | null>(null);
   const lastPathnameRef = useRef<string | null>(null);
@@ -356,6 +361,7 @@ function EditorContent() {
     docId: currentDoc?.docId ?? null,
     content: tiptapContent,
     enabled: Boolean(currentDoc?.docId && tiptapContent),
+    autoSave: autoSaveSnapshotEnabled,
   });
   const currentDocumentJson = useMemo(() => {
     if (!tiptapContent) return null;
@@ -954,6 +960,12 @@ function EditorContent() {
             onCopyLocalSnapshot={localSnapshot.copyStoredSnapshot}
             onCopyCurrentSnapshot={localSnapshot.copyCurrentSnapshot}
             onClearLocalSnapshot={localSnapshot.clearSnapshot}
+            onManualSaveSnapshot={localSnapshot.manualSave}
+            autoSaveSnapshotEnabled={autoSaveSnapshotEnabled}
+            onAutoSaveSnapshotChange={(enabled) => {
+              setAutoSaveSnapshotEnabled(enabled);
+              localStorage.setItem("yuediter:local-snapshot:auto-save", String(enabled));
+            }}
             currentDocumentJson={currentDocumentJson}
           />
           <div className="output-card">

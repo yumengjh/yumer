@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, type ReactNode } from "react";
-import { Button, Spin, message, Tooltip, Dropdown, Modal, Input } from "antd";
+import { Button, Spin, Switch, message, Tooltip, Dropdown, Modal, Input } from "antd";
 import type { MenuProps } from "antd";
 import {
   SearchOutlined,
@@ -82,6 +82,9 @@ interface DocumentHeaderProps {
   onCopyLocalSnapshot: () => Promise<boolean>;
   onCopyCurrentSnapshot: () => Promise<boolean>;
   onClearLocalSnapshot: () => Promise<void>;
+  onManualSaveSnapshot: () => Promise<void>;
+  autoSaveSnapshotEnabled: boolean;
+  onAutoSaveSnapshotChange: (enabled: boolean) => void;
   currentDocumentJson: string | null;
 }
 
@@ -234,6 +237,9 @@ export function DocumentHeader({
   onCopyLocalSnapshot,
   onCopyCurrentSnapshot,
   onClearLocalSnapshot,
+  onManualSaveSnapshot,
+  autoSaveSnapshotEnabled,
+  onAutoSaveSnapshotChange,
   currentDocumentJson,
 }: DocumentHeaderProps) {
   const {
@@ -261,6 +267,7 @@ export function DocumentHeader({
   const [syncDebugOpen, setSyncDebugOpen] = useState(false);
   const [localSnapshotOpen, setLocalSnapshotOpen] = useState(false);
   const [localSnapshotCompareOpen, setLocalSnapshotCompareOpen] = useState(false);
+  const [manualSnapshotSaving, setManualSnapshotSaving] = useState(false);
 
   useEffect(() => {
     refreshDocs().catch(() => {});
@@ -840,6 +847,15 @@ export function DocumentHeader({
       >
         <div className="header-local-snapshot-modal">
           <div className="header-local-snapshot-modal__row">
+            <span>自动保存</span>
+            <Switch
+              checked={autoSaveSnapshotEnabled}
+              onChange={onAutoSaveSnapshotChange}
+              checkedChildren="开"
+              unCheckedChildren="关"
+            />
+          </div>
+          <div className="header-local-snapshot-modal__row">
             <span>文档ID</span>
             <strong>{currentDoc?.docId ?? "-"}</strong>
           </div>
@@ -877,6 +893,19 @@ export function DocumentHeader({
             disabled={!localSnapshotState.storedSnapshot || !currentDocumentJson}
           >
             一键对比
+          </Button>
+          <Button
+            loading={manualSnapshotSaving}
+            onClick={async () => {
+              setManualSnapshotSaving(true);
+              try {
+                await onManualSaveSnapshot();
+              } finally {
+                setManualSnapshotSaving(false);
+              }
+            }}
+          >
+            手动保存快照
           </Button>
           <Button onClick={() => void onRefreshLocalSnapshot()}>重新校验</Button>
           <Button onClick={() => void onCopyLocalSnapshot()} disabled={!localSnapshotState.storedSnapshot}>
