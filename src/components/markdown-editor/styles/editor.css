@@ -71,7 +71,7 @@
 /* ---------- 编辑区包裹层（语雀：全白、无纸张阴影）---------- */
 .tiptap-editor-wrapper {
   margin: 0 auto;
-  padding: 48px 24px 120px;
+  padding: 24px 24px 120px;
   background: var(--editor-bg);
   width: 100%;
   max-width: var(--app-editor-content-width, 750px);
@@ -82,17 +82,42 @@
   box-sizing: border-box;
 }
 
+/* ---------- 文档标题（内联于编辑区顶部）---------- */
+.doc-title-input {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--color-text);
+  margin: 0 0 16px;
+  padding: 0;
+  outline: none;
+  border: none;
+  width: 100%;
+  background: transparent;
+  word-break: break-word;
+}
+
+.doc-title-input:empty::before {
+  content: "未命名文档";
+  color: var(--color-text-quaternary);
+  pointer-events: none;
+}
+
 @media (max-width: 900px) {
   .tiptap-editor-wrapper {
-    padding: 32px 20px 80px;
+    padding: 20px 20px 80px;
     max-width: 100%;
   }
 }
 
 @media (max-width: 768px) {
   .tiptap-editor-wrapper {
-    padding: 24px 16px 64px;
+    padding: 16px 16px 64px;
     min-height: calc(100vh - 88px);
+  }
+
+  .doc-title-input {
+    font-size: 24px;
   }
 
   .tiptap-editor {

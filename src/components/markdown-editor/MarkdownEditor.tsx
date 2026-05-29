@@ -115,6 +115,10 @@ export interface MarkdownEditorProps {
   contentWidth?: number;
   /** 当前工作空间，用于图片上传 */
   workspaceId?: string | null;
+  /** 文档标题 */
+  title?: string;
+  /** 标题变化回调（失焦时触发） */
+  onTitleChange?: (title: string) => void;
 }
 
 function EditorSkeleton() {
@@ -240,12 +244,26 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
   defaultFontSize = 15,
   contentWidth = 750,
   workspaceId = null,
+  title = "",
+  onTitleChange,
 }, ref) {
   const [systemThemeMode, setSystemThemeMode] = useState<CodeThemeMode>("light");
   const themeMode = themeProp ?? systemThemeMode;
   const [shikiHighlighter, setShikiHighlighter] = useState<ShikiHighlighter | null>(null);
   const [shikiReady, setShikiReady] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const titleSavedRef = useRef(title);
+
+  const handleTitleBlur = useCallback(() => {
+    const el = titleRef.current;
+    if (!el) return;
+    const next = el.textContent?.trim() ?? "";
+    if (next !== titleSavedRef.current) {
+      titleSavedRef.current = next;
+      onTitleChange?.(next);
+    }
+  }, [onTitleChange]);
 
   // 主题检测
   useEffect(() => {
@@ -453,6 +471,23 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
     [codeBlockExtension, handleUploadImageFile],
   );
 
+  const handleTitleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        editor?.commands.focus("start");
+      }
+    },
+    [editor],
+  );
+
+  useEffect(() => {
+    titleSavedRef.current = title;
+    if (titleRef.current && titleRef.current.textContent !== title) {
+      titleRef.current.textContent = title;
+    }
+  }, [title]);
+
   // 同步 themeMode 到代码高亮
   useEffect(() => {
     if (!editor || !shikiHighlighter) return;
@@ -551,6 +586,17 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
               maxWidth: `${contentWidth}px`,
             }}
           >
+            {!loading && editable && (
+              <h1
+                ref={titleRef}
+                className="doc-title-input"
+                contentEditable
+                suppressContentEditableWarning
+                onBlur={handleTitleBlur}
+                onKeyDown={handleTitleKeyDown}
+                dangerouslySetInnerHTML={{ __html: title }}
+              />
+            )}
             {loading ? (
               <EditorSkeleton />
             ) : (

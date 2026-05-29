@@ -302,6 +302,7 @@ function EditorContent() {
     lastEditPosition,
     loadContent,
     selectDoc,
+    updateDoc,
     workspaceId,
     setWorkspace,
     setSaveStatus,
@@ -590,6 +591,15 @@ function EditorContent() {
       void queueEditorPosition("selection", false);
     }
   }, [currentDoc, loadingDoc, queueEditorPosition, setHasUnsavedChanges, setSaveStatus]);
+
+  const handleTitleChange = useCallback(async (newTitle: string) => {
+    if (!currentDoc) return;
+    try {
+      await updateDoc(currentDoc.docId, { title: newTitle });
+    } catch {
+      message.error("标题保存失败");
+    }
+  }, [currentDoc, updateDoc, message]);
 
   const handleRememberPosition = useCallback(async () => {
     if (!currentDoc || rememberingPosition) return;
@@ -938,6 +948,8 @@ function EditorContent() {
               defaultFontSize={activeSettingsState.effectiveSettings.editor.fontSize}
               contentWidth={activeSettingsState.effectiveSettings.editor.contentWidth}
               workspaceId={workspaceId}
+              title={currentDoc?.title ?? ""}
+              onTitleChange={handleTitleChange}
               style={
                 {
                   "--app-editor-font-size": `${activeSettingsState.effectiveSettings.editor.fontSize}px`,
