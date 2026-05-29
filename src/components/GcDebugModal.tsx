@@ -1,18 +1,24 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Button, Checkbox, Empty, Input, Modal, Spin, Table, Tag, Typography, message } from "antd";
+import { Alert, Button, Checkbox, Descriptions, Divider, Drawer, Empty, Input, Modal, Spin, Table, Tag, Tooltip, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import {
   createBlockVersionGcRun,
   getBlockVersionGcCandidates,
   getBlockVersionGcHealth,
   getBlockVersionGcRun,
+  getRunScannedBlocks,
   listBlockVersionGcRuns,
   type BlockVersionGcCandidate,
   type BlockVersionGcHealth,
   type BlockVersionGcPolicySnapshot,
   type BlockVersionGcRun,
+  type CandidateClass,
+  type GcScannedBlock,
+  type PlannedAction,
+  type Readiness,
+  type RequiredCheck,
 } from "@/services/gc";
 import "./GcDebugModal.css";
 
@@ -123,6 +129,47 @@ function formatPolicySummary(policy?: BlockVersionGcPolicySnapshot) {
   ].join(" / ");
 }
 
+const CANDIDATE_CLASS_LABELS: Record<CandidateClass, { label: string; color: string }> = {
+  unreferenced_block_version: { label: "未引用旧版本", color: "blue" },
+  deleted_tombstone_map_entry: { label: "可压缩 tombstone", color: "purple" },
+};
+
+const PLANNED_ACTION_LABELS: Record<PlannedAction, string> = {
+  candidate_block_version: "候选旧版本",
+  compact_map_entry: "可压缩 tombstone 引用",
+};
+
+const READINESS_LABELS: Record<Readiness, { label: string; color: string }> = {
+  ready_for_manual_review: { label: "可人工复核", color: "green" },
+  needs_more_validation: { label: "仍需补验证", color: "orange" },
+};
+
+const REQUIRED_CHECK_LABELS: Record<RequiredCheck, string> = {
+  verify_root_stability: "复查 root 是否稳定",
+  verify_source_consistency: "复查多来源 root 是否一致",
+  verify_policy_overlap: "复查是否仍命中保留策略",
+  verify_no_recent_write_dependency: "复查最近写入依赖",
+  verify_content_read_paths: "复查内容读取链路",
+};
+
+function getRiskColor(level?: string) {
+  switch (level) {
+    case "low":
+      return "green";
+    case "medium":
+      return "orange";
+    case "high":
+      return "red";
+    default:
+      return "default";
+  }
+}
+
+function formatAge(ms?: number) {
+  if (typeof ms !== "number" || !Number.isFinite(ms)) return "--";
+  return formatDuration(ms);
+}
+
 export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: GcDebugModalProps) {
   const [token, setToken] = useState("");
   const [operatorId, setOperatorId] = useState("");
@@ -135,6 +182,9 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
   const [candidates, setCandidates] = useState<BlockVersionGcCandidate[]>([]);
   const [candidatesTotal, setCandidatesTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [selectedCandidate, setSelectedCandidate] = useState<BlockVersionGcCandidate | null>(null);
+  const [scannedBlocks, setScannedBlocks] = useState<GcScannedBlock[]>([]);
+  const [scannedBlocksTotal, setScannedBlocksTotal] = useState(0);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -183,12 +233,29 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
 
       setSelectedRun(fullRun);
 
+      const tasks: Promise<void>[] = [];
+
       if (fullRun.candidateDetailsStored) {
-        await loadCandidatesForRun(activeToken, fullRun.runId, activeOperatorId);
+        tasks.push(loadCandidatesForRun(activeToken, fullRun.runId, activeOperatorId));
       } else {
         setCandidates([]);
         setCandidatesTotal(0);
       }
+
+      tasks.push(
+        getRunScannedBlocks({
+          token: activeToken,
+          operatorId: activeOperatorId || undefined,
+          runId: fullRun.runId,
+          page: 1,
+          pageSize: 20,
+        }).then((result) => {
+          setScannedBlocks(result.items);
+          setScannedBlocksTotal(result.total);
+        }),
+      );
+
+      await Promise.all(tasks);
     },
     [loadCandidatesForRun],
   );
@@ -232,6 +299,8 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
           setSelectedRun(null);
           setCandidates([]);
           setCandidatesTotal(0);
+          setScannedBlocks([]);
+          setScannedBlocksTotal(0);
         }
       } catch (nextError) {
         setError(nextError instanceof Error ? nextError.message : "GC 调试信息加载失败");
@@ -313,6 +382,12 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
         render: (_, record) => formatCount(record.summary?.blockVersionsScanned),
       },
       {
+        title: "块数",
+        key: "blocksScanned",
+        width: 80,
+        render: (_, record) => formatCount(record.summary?.blocksScanned),
+      },
+      {
         title: "普通候选",
         key: "candidateBlockVersions",
         width: 96,
@@ -344,40 +419,92 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
         render: (value: string) => <code>{value}</code>,
       },
       {
-        title: "原因",
-        dataIndex: "reasonCode",
-        key: "reasonCode",
-        width: 240,
+        title: "候选类别",
+        key: "candidateClass",
+        width: 150,
+        render: (_, record) => {
+          if (record.candidateClass) {
+            const { label, color } = CANDIDATE_CLASS_LABELS[record.candidateClass];
+            return <Tag color={color}>{label}</Tag>;
+          }
+          return <Tag>{record.reasonCode}</Tag>;
+        },
       },
       {
-        title: "动作",
-        key: "action",
-        width: 160,
-        render: (_, record) => String(record.reasonDetail?.action ?? "--"),
+        title: "判定原因",
+        key: "decisionReasons",
+        render: (_, record) => {
+          if (record.decisionReasons && record.decisionReasons.length > 0) {
+            return (
+              <span className="gc-debug__decision-reasons">
+                {record.decisionReasons.map((reason, idx) => (
+                  <Tag key={idx} className="gc-debug__decision-tag">{reason}</Tag>
+                ))}
+              </span>
+            );
+          }
+          return String(record.reasonDetail?.decisionPath ?? record.reasonCode ?? "--");
+        },
       },
       {
-        title: "风险",
-        dataIndex: "riskLevel",
-        key: "riskLevel",
+        title: "Root Kind",
+        key: "rootKind",
+        width: 120,
+        render: (_, record) => String(record.reasonDetail?.rootKind ?? "--"),
+      },
+      {
+        title: "Age",
+        key: "age",
+        width: 120,
+        render: (_, record) => {
+          const bucket = record.reasonDetail?.ageBucket;
+          const ms = record.reasonDetail?.ageMs;
+          if (bucket) return <Tag>{bucket}</Tag>;
+          return formatAge(typeof ms === "number" ? ms : undefined);
+        },
+      },
+    ],
+    [],
+  );
+
+  const scannedBlockColumns = useMemo<ColumnsType<GcScannedBlock>>(
+    () => [
+      {
+        title: "Block ID",
+        dataIndex: "blockId",
+        key: "blockId",
+        render: (value: string) => <code>{value}</code>,
+      },
+      {
+        title: "Latest Ver",
+        dataIndex: "latestVer",
+        key: "latestVer",
         width: 100,
-        render: (value?: string) => (
-          <Tag color={value === "high" ? "red" : value === "low" ? "green" : "orange"}>
-            {value || "medium"}
-          </Tag>
-        ),
       },
       {
-        title: "版本时间",
-        dataIndex: "versionCreatedAt",
-        key: "versionCreatedAt",
-        width: 180,
-        render: (value?: number) => formatTime(value),
+        title: "扫描版本数",
+        dataIndex: "scannedVersionCount",
+        key: "scannedVersionCount",
+        width: 100,
+      },
+      {
+        title: "最早版本",
+        key: "oldestVersionCreatedAt",
+        width: 160,
+        render: (_, record) => formatTime(record.oldestVersionCreatedAt),
+      },
+      {
+        title: "最新版本",
+        key: "newestVersionCreatedAt",
+        width: 160,
+        render: (_, record) => formatTime(record.newestVersionCreatedAt),
       },
     ],
     [],
   );
 
   return (
+    <>
     <Modal
       open={open}
       onCancel={onClose}
@@ -557,10 +684,204 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
               dataSource={candidates}
               pagination={false}
               locale={{ emptyText: "当前没有候选明细" }}
+              onRow={(record) => ({
+                onClick: () => setSelectedCandidate(record),
+                style: { cursor: "pointer" },
+              })}
+            />
+          </section>
+
+          <section className="gc-debug__card gc-debug__card--table">
+            <div className="gc-debug__card-head">
+              <h3>Scanned Blocks</h3>
+              <Typography.Text type="secondary">
+                {selectedRun?.runId ? `run ${selectedRun.runId}` : "未选中 run"} / {formatCount(scannedBlocksTotal)} 块
+              </Typography.Text>
+            </div>
+            <Table
+              size="small"
+              rowKey="blockId"
+              columns={scannedBlockColumns}
+              dataSource={scannedBlocks}
+              pagination={false}
+              locale={{ emptyText: "暂无扫描块数据" }}
             />
           </section>
         </Spin>
       </div>
     </Modal>
+
+    <Drawer
+      open={!!selectedCandidate}
+      title={selectedCandidate ? `候选详情 · ${selectedCandidate.resourceKey}` : "候选详情"}
+      width={560}
+      onClose={() => setSelectedCandidate(null)}
+      destroyOnClose
+    >
+      {selectedCandidate && (
+        <div className="gc-debug__candidate-detail">
+          {/* Section 1: 基本信息 */}
+          <Descriptions column={2} bordered size="small" title="基本信息">
+            <Descriptions.Item label="resourceKey" span={2}>
+              <code>{selectedCandidate.resourceKey}</code>
+            </Descriptions.Item>
+            <Descriptions.Item label="blockId">
+              <code>{selectedCandidate.blockId ?? "--"}</code>
+            </Descriptions.Item>
+            <Descriptions.Item label="blockVer">
+              {selectedCandidate.blockVer ?? "--"}
+            </Descriptions.Item>
+            <Descriptions.Item label="版本创建时间" span={2}>
+              {formatTime(selectedCandidate.versionCreatedAt)}
+            </Descriptions.Item>
+            <Descriptions.Item label="decision">
+              {selectedCandidate.decision ?? "--"}
+            </Descriptions.Item>
+            <Descriptions.Item label="candidateClass">
+              {selectedCandidate.candidateClass ? (
+                (() => {
+                  const { label, color } = CANDIDATE_CLASS_LABELS[selectedCandidate.candidateClass];
+                  return <Tag color={color}>{label}</Tag>;
+                })()
+              ) : "--"}
+            </Descriptions.Item>
+          </Descriptions>
+
+          <Divider />
+
+          {/* Section 2: 判定原因 */}
+          <div className="gc-debug__subsection">
+            <h4>判定原因</h4>
+            {selectedCandidate.decisionReasons && selectedCandidate.decisionReasons.length > 0 ? (
+              <div className="gc-debug__decision-reasons-block">
+                {selectedCandidate.decisionReasons.map((reason, idx) => (
+                  <div key={idx} className="gc-debug__decision-reason-item">{reason}</div>
+                ))}
+              </div>
+            ) : (
+              <Typography.Text type="secondary">无判定原因文案，回退到 reasonCode：<Tag>{selectedCandidate.reasonCode}</Tag></Typography.Text>
+            )}
+          </div>
+
+          <Descriptions column={2} bordered size="small">
+            <Descriptions.Item label="reasonCode" span={2}>
+              <Tag>{selectedCandidate.reasonCode}</Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label="rootKind">
+              {String(selectedCandidate.reasonDetail?.rootKind ?? "--")}
+            </Descriptions.Item>
+            <Descriptions.Item label="deleted">
+              {selectedCandidate.reasonDetail?.deleted != null
+                ? String(selectedCandidate.reasonDetail.deleted)
+                : "--"}
+            </Descriptions.Item>
+            <Descriptions.Item label="source">
+              {String(selectedCandidate.reasonDetail?.source ?? "--")}
+            </Descriptions.Item>
+            <Descriptions.Item label="ageMs">
+              {formatAge(selectedCandidate.reasonDetail?.ageMs as number | undefined)}
+            </Descriptions.Item>
+            <Descriptions.Item label="ageBucket">
+              {String(selectedCandidate.reasonDetail?.ageBucket ?? "--")}
+            </Descriptions.Item>
+            <Descriptions.Item label="distanceFromLatestVer">
+              {selectedCandidate.reasonDetail?.distanceFromLatestVer != null
+                ? String(selectedCandidate.reasonDetail.distanceFromLatestVer)
+                : "--"}
+            </Descriptions.Item>
+          </Descriptions>
+
+          <Divider />
+
+          {/* Section 3: 兼容字段 (downgraded) */}
+          <details className="gc-debug__compat-section">
+            <summary>兼容字段（旧版风险/动作/检查）</summary>
+            <div className="gc-debug__compat-inner">
+              {selectedCandidate.riskAssessment && (
+                <div className="gc-debug__risk-assessment">
+                  <div className="gc-debug__risk-header">
+                    <Tag color={getRiskColor(selectedCandidate.riskAssessment.level)}>
+                      {selectedCandidate.riskAssessment.level}
+                    </Tag>
+                    <span>风险分：<strong>{selectedCandidate.riskAssessment.score}</strong></span>
+                  </div>
+                  {selectedCandidate.riskAssessment.reasons.length > 0 && (
+                    <div className="gc-debug__risk-reasons">
+                      {selectedCandidate.riskAssessment.reasons.map((reason, idx) => (
+                        <div key={idx} className="gc-debug__risk-reason-item">{reason}</div>
+                      ))}
+                    </div>
+                  )}
+                  {selectedCandidate.riskAssessment.factors.length > 0 && (
+                    <div className="gc-debug__risk-factors">
+                      <Typography.Text type="secondary">风险因子</Typography.Text>
+                      {selectedCandidate.riskAssessment.factors.map((factor, idx) => (
+                        <Tooltip key={idx} title={factor.detail ? JSON.stringify(factor.detail, null, 2) : undefined}>
+                          <Tag className="gc-debug__factor-tag">
+                            {factor.code}
+                            <span className="gc-debug__factor-weight">
+                              {factor.weight > 0 ? "+" : ""}{factor.weight}
+                            </span>
+                          </Tag>
+                        </Tooltip>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <Descriptions column={1} bordered size="small" style={{ marginTop: 12 }}>
+                <Descriptions.Item label="plannedAction">
+                  {selectedCandidate.plannedAction ? (
+                    <Tag>{PLANNED_ACTION_LABELS[selectedCandidate.plannedAction] ?? selectedCandidate.plannedAction}</Tag>
+                  ) : "--"}
+                </Descriptions.Item>
+                <Descriptions.Item label="readiness">
+                  {selectedCandidate.readiness ? (
+                    <Tag color={READINESS_LABELS[selectedCandidate.readiness].color}>
+                      {READINESS_LABELS[selectedCandidate.readiness].label}
+                    </Tag>
+                  ) : "--"}
+                </Descriptions.Item>
+                <Descriptions.Item label="requiredChecks">
+                  {selectedCandidate.requiredChecks && selectedCandidate.requiredChecks.length > 0 ? (
+                    <div className="gc-debug__checks-list">
+                      {selectedCandidate.requiredChecks.map((check) => (
+                        <Tag key={check} className="gc-debug__check-tag">
+                          {REQUIRED_CHECK_LABELS[check] ?? check}
+                        </Tag>
+                      ))}
+                    </div>
+                  ) : "--"}
+                </Descriptions.Item>
+                <Descriptions.Item label="riskLevel">
+                  <Tag color={getRiskColor(selectedCandidate.riskLevel)}>{selectedCandidate.riskLevel ?? "medium"}</Tag>
+                </Descriptions.Item>
+              </Descriptions>
+            </div>
+          </details>
+
+          <Divider />
+
+          {/* Section 4: 扫描范围 */}
+          <Descriptions column={1} bordered size="small" title="扫描范围">
+            <Descriptions.Item label="docId">
+              <code>{selectedCandidate.docId ?? "--"}</code>
+            </Descriptions.Item>
+            <Descriptions.Item label="workspaceId">
+              <code>{selectedCandidate.workspaceId ?? "--"}</code>
+            </Descriptions.Item>
+          </Descriptions>
+
+          <Divider />
+
+          <details className="gc-debug__raw-detail">
+            <summary>原始 reasonDetail JSON</summary>
+            <pre className="gc-debug__json">{JSON.stringify(selectedCandidate.reasonDetail, null, 2)}</pre>
+          </details>
+        </div>
+      )}
+    </Drawer>
+    </>
   );
 }

@@ -16,6 +16,7 @@ export interface BlockVersionGcHealth {
 
 export interface BlockVersionGcRunSummary {
   blockVersionsScanned: number;
+  blocksScanned?: number;
   hardRootedBlockVersions: number;
   liveRootedBlockVersions?: number;
   tombstoneRootedBlockVersions?: number;
@@ -59,6 +60,50 @@ export interface BlockVersionGcRun {
   createdAt?: string;
 }
 
+export interface RiskFactor {
+  code: string;
+  weight: number;
+  detail?: Record<string, unknown>;
+}
+
+export interface RiskAssessment {
+  level: "low" | "medium" | "high";
+  score: number;
+  reasons: string[];
+  factors: RiskFactor[];
+}
+
+export type PlannedAction = "candidate_block_version" | "compact_map_entry";
+
+export type RequiredCheck =
+  | "verify_root_stability"
+  | "verify_source_consistency"
+  | "verify_policy_overlap"
+  | "verify_no_recent_write_dependency"
+  | "verify_content_read_paths";
+
+export type Readiness = "ready_for_manual_review" | "needs_more_validation";
+
+export interface CandidateReasonDetail {
+  rootKind?: string;
+  deleted?: boolean;
+  source?: string;
+  action?: string;
+  hardRooted?: boolean;
+  retainedByPolicy?: boolean;
+  gracePeriodMs?: number;
+  tombstoneGracePeriodMs?: number;
+  keepLatestPerBlock?: number;
+  ageMs?: number;
+  ageBucket?: string;
+  rootSourceCount?: number;
+  distanceFromLatestVer?: number;
+  decisionPath?: string;
+  [key: string]: unknown;
+}
+
+export type CandidateClass = "unreferenced_block_version" | "deleted_tombstone_map_entry";
+
 export interface BlockVersionGcCandidate {
   id?: number;
   runId?: string;
@@ -71,8 +116,15 @@ export interface BlockVersionGcCandidate {
   blockVer?: number;
   versionCreatedAt?: number;
   reasonCode: string;
-  reasonDetail?: Record<string, unknown>;
+  reasonDetail?: CandidateReasonDetail;
+  decision?: string;
+  candidateClass?: CandidateClass;
+  decisionReasons?: string[];
   riskLevel?: "low" | "medium" | "high";
+  riskAssessment?: RiskAssessment;
+  plannedAction?: PlannedAction;
+  requiredChecks?: RequiredCheck[];
+  readiness?: Readiness;
   createdAt?: string;
 }
 
@@ -81,6 +133,16 @@ export interface PaginatedGcResult<T> {
   total: number;
   page: number;
   pageSize: number;
+}
+
+export interface GcScannedBlock {
+  blockId: string;
+  docId?: string | null;
+  workspaceId?: string | null;
+  latestVer?: number;
+  scannedVersionCount?: number;
+  oldestVersionCreatedAt?: number;
+  newestVersionCreatedAt?: number;
 }
 
 type AdminRequestOptions = {
@@ -228,6 +290,28 @@ export async function getBlockVersionGcCandidates(
 
   return requestGc<PaginatedGcResult<BlockVersionGcCandidate>>(
     `/admin/gc/block-versions/runs/${input.runId}/candidates${query}`,
+    {
+      token: input.token,
+      operatorId: input.operatorId,
+      method: "GET",
+    },
+  );
+}
+
+export async function getRunScannedBlocks(
+  input: AdminRequestOptions & {
+    runId: string;
+    page?: number;
+    pageSize?: number;
+  },
+): Promise<PaginatedGcResult<GcScannedBlock>> {
+  const query = buildQuery({
+    page: input.page ?? 1,
+    pageSize: input.pageSize ?? 20,
+  });
+
+  return requestGc<PaginatedGcResult<GcScannedBlock>>(
+    `/admin/gc/block-versions/runs/${input.runId}/scanned-blocks${query}`,
     {
       token: input.token,
       operatorId: input.operatorId,
