@@ -51,6 +51,39 @@ describe("sync reducer", () => {
     expect(state.entries.client_b).toBeUndefined();
   });
 
+  it("lets a later update restore an entry after a transient delete", () => {
+    let state = createInitialSyncState("doc_1", "root_1", 3);
+    state = enqueueChange(state, {
+      clientId: "client_restore",
+      blockId: "b_restore",
+      opType: "update",
+      payload: {
+        type: "paragraph",
+        content: [{ type: "text", text: "first line" }],
+      },
+    });
+    state = enqueueChange(state, {
+      clientId: "client_restore",
+      blockId: "b_restore",
+      opType: "delete",
+    });
+    state = enqueueChange(state, {
+      clientId: "client_restore",
+      blockId: "b_restore",
+      opType: "update",
+      payload: {
+        type: "paragraph",
+        content: [{ type: "text", text: "first line recovered" }],
+      },
+    });
+
+    expect(state.dirtyOrder).toEqual(["client_restore"]);
+    expect(state.entries.client_restore.opType).toBe("update");
+    expect((state.entries.client_restore.payload as { content?: Array<{ text?: string }> }).content?.[0]?.text).toBe(
+      "first line recovered",
+    );
+  });
+
   it("keeps pending commit marker while inflight batch is resolving", () => {
     let state = createInitialSyncState("doc_1", "root_1", 3);
     state = enqueueChange(state, {

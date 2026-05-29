@@ -88,10 +88,6 @@ export function enqueueChange(state: SyncReducerState, incoming: SyncEntry): Syn
     });
   }
 
-  if (current?.opType === "delete" && incoming.opType === "update") {
-    return state;
-  }
-
   if (current && incoming.opType === "move") {
     return upsertEntry(state, normalizeCreatePayload({
       ...current,
