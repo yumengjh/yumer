@@ -1,5 +1,6 @@
 import { apiGet, apiPost } from "@/services/api-client";
 import { createSortKeyBetween } from "./order";
+import { SyncDebugLog } from "./debug-log";
 import type { SyncEntry, SyncBatchResult } from "./types";
 
 export interface SyncBatchResponse {
@@ -178,14 +179,48 @@ export async function postSyncBatch(input: {
     };
   }
 
-  return apiPost<SyncBatchResponse>("/blocks/batch", {
+  const requestBody = {
     docId: input.docId,
     baseVersion: input.baseVersion,
     clientBatchId: input.clientBatchId,
     source: input.source,
     createVersion: false,
     operations: bodyOperations,
-  });
+  };
+
+  const startTime = Date.now();
+  try {
+    const response = await apiPost<SyncBatchResponse>("/blocks/batch", requestBody);
+    SyncDebugLog.add({
+      id: input.clientBatchId,
+      timestamp: startTime,
+      source: input.source,
+      docId: input.docId,
+      baseVersion: input.baseVersion,
+      clientBatchId: input.clientBatchId,
+      operationCount: bodyOperations.length,
+      requestBody,
+      responseBody: response,
+      duration: Date.now() - startTime,
+      success: true,
+    });
+    return response;
+  } catch (error) {
+    SyncDebugLog.add({
+      id: input.clientBatchId,
+      timestamp: startTime,
+      source: input.source,
+      docId: input.docId,
+      baseVersion: input.baseVersion,
+      clientBatchId: input.clientBatchId,
+      operationCount: bodyOperations.length,
+      requestBody,
+      error: error instanceof Error ? error.message : "未知错误",
+      duration: Date.now() - startTime,
+      success: false,
+    });
+    throw error;
+  }
 }
 
 export async function getDocumentSyncState(docId: string): Promise<DocumentSyncState> {

@@ -47,6 +47,7 @@ import type { PublicDocRevalidationResult } from "@/services/document";
 import { downloadDocumentExport, type DocumentExportFormat } from "@/services/document-export";
 import { getDocumentSyncState } from "@/services/sync/api";
 import { GcDebugModal } from "./GcDebugModal";
+import { SyncDebugModal } from "./SyncDebugModal";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 import "./DocumentHeader.css";
 
@@ -208,6 +209,7 @@ export function DocumentHeader({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [exportingFormat, setExportingFormat] = useState<DocumentExportFormat | null>(null);
   const [gcDebugOpen, setGcDebugOpen] = useState(false);
+  const [syncDebugOpen, setSyncDebugOpen] = useState(false);
 
   useEffect(() => {
     refreshDocs().catch(() => {});
@@ -559,6 +561,19 @@ export function DocumentHeader({
           </Tooltip>
         )}
 
+        {currentDoc && (
+          <Tooltip title="同步调试">
+            <button
+              type="button"
+              className="header-icon-btn"
+              onClick={() => setSyncDebugOpen(true)}
+              aria-label="同步调试"
+            >
+              <CodeOutlined />
+            </button>
+          </Tooltip>
+        )}
+
         {currentDoc && visibleSaveStatus && (
           <div className="header-start__live">
             <SyncStatus status={visibleSaveStatus} lastSavedAt={lastSavedAt} />
@@ -758,6 +773,10 @@ export function DocumentHeader({
         workspaceId={currentDoc?.workspaceId}
         docId={currentDoc?.docId}
         docTitle={currentDoc?.title}
+      />
+      <SyncDebugModal
+        open={syncDebugOpen}
+        onClose={() => setSyncDebugOpen(false)}
       />
     </header>
   );
