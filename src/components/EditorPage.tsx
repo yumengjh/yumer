@@ -21,6 +21,7 @@ import {
 } from "@/components/editorLastEditPosition";
 import { DocumentHeader } from "@/components/DocumentHeader";
 import { useAutoSave } from "@/hooks/useAutoSave";
+import { useLocalDocumentSnapshot } from "@/hooks/useLocalDocumentSnapshot";
 import {
   commitVersion,
   discardDraft as discardDraftRequest,
@@ -351,6 +352,19 @@ function EditorContent() {
     content: syncEngineEnabled ? tiptapContent : null,
     onContentPatched: (doc) => setContent(doc),
   });
+  const localSnapshot = useLocalDocumentSnapshot({
+    docId: currentDoc?.docId ?? null,
+    content: tiptapContent,
+    enabled: Boolean(currentDoc?.docId && tiptapContent),
+  });
+  const currentDocumentJson = useMemo(() => {
+    if (!tiptapContent) return null;
+    try {
+      return JSON.stringify(tiptapContent, null, 2);
+    } catch {
+      return null;
+    }
+  }, [tiptapContent]);
 
   useEffect(() => {
     contentRef.current = content;
@@ -496,7 +510,7 @@ function EditorContent() {
         }
       }, 200);
     });
-  }, [currentDoc?.docId]);
+  }, []);
 
   // 搜索结果滚动定位
   useEffect(() => {
@@ -935,13 +949,19 @@ function EditorContent() {
                 setSettingsSaving(false);
               }
             }}
+            localSnapshotState={localSnapshot.state}
+            onRefreshLocalSnapshot={localSnapshot.refreshSnapshot}
+            onCopyLocalSnapshot={localSnapshot.copyStoredSnapshot}
+            onCopyCurrentSnapshot={localSnapshot.copyCurrentSnapshot}
+            onClearLocalSnapshot={localSnapshot.clearSnapshot}
+            currentDocumentJson={currentDocumentJson}
           />
           <div className="output-card">
             <MarkdownEditor
               ref={editorRef}
               content={content}
               onChange={handleEditorChange}
-              placeholder="开始记录你的知识吧…"
+              placeholder="不用完美，先留下痕迹"
               showTOC={showTOC}
               onTOCToggle={setShowTOC}
               loading={loadingDoc}

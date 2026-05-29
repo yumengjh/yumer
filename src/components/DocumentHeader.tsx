@@ -11,7 +11,6 @@ import {
   UnorderedListOutlined,
   SendOutlined,
   HistoryOutlined,
-  InfoCircleOutlined,
   MenuOutlined,
   TagsOutlined,
   MoreOutlined,
@@ -23,6 +22,7 @@ import {
   FilePdfOutlined,
   BugOutlined,
   PushpinOutlined,
+  DatabaseOutlined,
 } from "@ant-design/icons";
 import { useDocument, type SaveStatus } from "../contexts/DocumentContext";
 import { VersionDiffModal } from "./VersionDiffModal";
@@ -32,6 +32,7 @@ import { WorkspaceSettingsModal } from "./WorkspaceSettingsModal";
 import { DocumentSearchModal } from "./DocumentSearchModal";
 import { CreateDocumentModal } from "./CreateDocumentModal";
 import { useAuth } from "../contexts/AuthContext";
+import type { LocalSnapshotState } from "@/hooks/useLocalDocumentSnapshot";
 import type {
   AppSettings,
   SettingsPriority,
@@ -76,6 +77,12 @@ interface DocumentHeaderProps {
     scope: SettingsScope,
     settings: UserSettings | WorkspaceSettings,
   ) => Promise<void>;
+  localSnapshotState: LocalSnapshotState;
+  onRefreshLocalSnapshot: () => Promise<void>;
+  onCopyLocalSnapshot: () => Promise<boolean>;
+  onCopyCurrentSnapshot: () => Promise<boolean>;
+  onClearLocalSnapshot: () => Promise<void>;
+  currentDocumentJson: string | null;
 }
 
 type VisibleSaveStatus = Exclude<SaveStatus, "idle">;
@@ -119,6 +126,42 @@ function SyncStatus({
       <span className="header-sync__icon">{item.icon}</span>
       <span className="header-sync__text">{item.text}</span>
     </span>
+  );
+}
+
+function LocalSnapshotStatus({
+  state,
+  onClick,
+}: {
+  state: LocalSnapshotState;
+  onClick: () => void;
+}) {
+  const timeLabel = state.lastSavedAt
+    ? new Date(state.lastSavedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : null;
+
+  const map: Record<LocalSnapshotState["status"], { text: string; mod: string }> = {
+    idle: { text: "本地快照", mod: "idle" },
+    checking: { text: "本地快照校验中", mod: "checking" },
+    missing: { text: "本地快照：缺失", mod: "missing" },
+    saved: { text: timeLabel ? `本地快照：${timeLabel}` : "本地快照：已保存", mod: "saved" },
+    mismatch: { text: "本地快照：不一致", mod: "mismatch" },
+    saving: { text: "本地快照：写入中", mod: "saving" },
+    error: { text: "本地快照：失败", mod: "error" },
+  };
+
+  const item = map[state.status];
+
+  return (
+    <button
+      type="button"
+      className={`header-local-snapshot header-local-snapshot--${item.mod}`}
+      onClick={onClick}
+      title={state.error ?? item.text}
+    >
+      <DatabaseOutlined className="header-local-snapshot__icon" />
+      <span className="header-local-snapshot__text">{item.text}</span>
+    </button>
   );
 }
 
@@ -186,6 +229,12 @@ export function DocumentHeader({
   onSettingsScopeChange,
   onSettingsPriorityChange,
   onSaveSettings,
+  localSnapshotState,
+  onRefreshLocalSnapshot,
+  onCopyLocalSnapshot,
+  onCopyCurrentSnapshot,
+  onClearLocalSnapshot,
+  currentDocumentJson,
 }: DocumentHeaderProps) {
   const {
     currentDoc,
@@ -210,6 +259,8 @@ export function DocumentHeader({
   const [exportingFormat, setExportingFormat] = useState<DocumentExportFormat | null>(null);
   const [gcDebugOpen, setGcDebugOpen] = useState(false);
   const [syncDebugOpen, setSyncDebugOpen] = useState(false);
+  const [localSnapshotOpen, setLocalSnapshotOpen] = useState(false);
+  const [localSnapshotCompareOpen, setLocalSnapshotCompareOpen] = useState(false);
 
   useEffect(() => {
     refreshDocs().catch(() => {});
@@ -577,6 +628,7 @@ export function DocumentHeader({
         {currentDoc && visibleSaveStatus && (
           <div className="header-start__live">
             <SyncStatus status={visibleSaveStatus} lastSavedAt={lastSavedAt} />
+            <LocalSnapshotStatus state={localSnapshotState} onClick={() => setLocalSnapshotOpen(true)} />
           </div>
         )}
       </div>
@@ -778,6 +830,97 @@ export function DocumentHeader({
         open={syncDebugOpen}
         onClose={() => setSyncDebugOpen(false)}
       />
+      <Modal
+        open={localSnapshotOpen}
+        title="本地数据快照"
+        onCancel={() => setLocalSnapshotOpen(false)}
+        footer={null}
+        width={640}
+        destroyOnClose
+      >
+        <div className="header-local-snapshot-modal">
+          <div className="header-local-snapshot-modal__row">
+            <span>文档ID</span>
+            <strong>{currentDoc?.docId ?? "-"}</strong>
+          </div>
+          <div className="header-local-snapshot-modal__row">
+            <span>状态</span>
+            <strong>{localSnapshotState.error ?? localSnapshotState.status}</strong>
+          </div>
+          <div className="header-local-snapshot-modal__row">
+            <span>上次校验</span>
+            <strong>
+              {localSnapshotState.lastCheckedAt ? new Date(localSnapshotState.lastCheckedAt).toLocaleString() : "-"}
+            </strong>
+          </div>
+          <div className="header-local-snapshot-modal__row">
+            <span>上次保存</span>
+            <strong>
+              {localSnapshotState.lastSavedAt ? new Date(localSnapshotState.lastSavedAt).toLocaleString() : "-"}
+            </strong>
+          </div>
+          <div className="header-local-snapshot-modal__row">
+            <span>当前哈希</span>
+            <strong className="header-local-snapshot-modal__mono">{localSnapshotState.currentHash ?? "-"}</strong>
+          </div>
+          <div className="header-local-snapshot-modal__row">
+            <span>快照哈希</span>
+            <strong className="header-local-snapshot-modal__mono">
+              {localSnapshotState.storedSnapshot?.hash ?? "-"}
+            </strong>
+          </div>
+        </div>
+        <div className="header-local-snapshot-modal__actions">
+          <Button
+            type="primary"
+            onClick={() => setLocalSnapshotCompareOpen(true)}
+            disabled={!localSnapshotState.storedSnapshot || !currentDocumentJson}
+          >
+            一键对比
+          </Button>
+          <Button onClick={() => void onRefreshLocalSnapshot()}>重新校验</Button>
+          <Button onClick={() => void onCopyLocalSnapshot()} disabled={!localSnapshotState.storedSnapshot}>
+            复制本地快照
+          </Button>
+          <Button onClick={() => void onCopyCurrentSnapshot()} disabled={!currentDoc}>
+            复制当前内容
+          </Button>
+          <Button danger onClick={() => void onClearLocalSnapshot()}>
+            清空快照
+          </Button>
+        </div>
+      </Modal>
+      <Modal
+        open={localSnapshotCompareOpen}
+        title="本地快照 vs 当前文档"
+        onCancel={() => setLocalSnapshotCompareOpen(false)}
+        footer={null}
+        width={960}
+        destroyOnClose
+      >
+        <div className="header-local-snapshot-compare">
+          <div className="header-local-snapshot-compare__summary">
+            <span>是否一致</span>
+            <strong>{localSnapshotState.storedSnapshot?.hash === localSnapshotState.currentHash ? "一致" : "不一致"}</strong>
+          </div>
+          <div className="header-local-snapshot-compare__grid">
+            <section className="header-local-snapshot-compare__pane">
+              <h4>本地快照</h4>
+              <pre className="header-local-snapshot-compare__code">
+                {localSnapshotState.storedSnapshot
+                  ? JSON.stringify(localSnapshotState.storedSnapshot.content, null, 2)
+                  : "无本地快照"}
+              </pre>
+            </section>
+            <section className="header-local-snapshot-compare__pane">
+              <h4>当前文档</h4>
+              <pre className="header-local-snapshot-compare__code">
+                {currentDocumentJson ?? "无当前文档内容"}
+              </pre>
+            </section>
+          </div>
+        </div>
+      </Modal>
     </header>
   );
 }
