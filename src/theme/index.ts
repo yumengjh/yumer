@@ -1,79 +1,90 @@
+export { ThemeProvider, useTheme } from "./ThemeContext";
+export type { ThemeMode } from "./ThemeContext";
+export { lightTheme, darkTheme } from "./themes";
+
 import type { ThemeConfig } from "antd";
 
 export const COLORS = {
-  primary: "#1890ff",
-  primaryHover: "#40a9ff",
-  primaryActive: "#096dd9",
-  primaryLight: "#bae0ff",
-  primaryBorder: "#4096ff",
-  primaryBg: "#eff6ff",
-  primaryText: "#1d4ed8",
-  primaryUnderline: "#3b82f6",
-  primaryGlow: "rgba(24, 144, 255, 0.2)",
+  primary: "var(--color-primary)",
+  primaryHover: "var(--color-primary-hover)",
+  primaryActive: "var(--color-primary-active)",
+  primaryBg: "var(--color-primary-bg)",
+  primaryBorder: "var(--color-primary-border)",
+  primaryText: "var(--color-primary-text)",
 
-  accentGreen: "#1fb46a",
-  accentYellow: "#ffe58f",
+  success: "var(--color-success)",
+  warning: "var(--color-warning)",
+  error: "var(--color-error)",
 
-  // Toolbar colors (黑白灰极简)
-  toolbarBg: "#ffffff",
-  toolbarBorder: "#e5e7eb",
-  toolbarText: "#333333",
-  toolbarTextMuted: "#999999",
-  toolbarIcon: "#666666",
-  toolbarIconHover: "#333333",
-  toolbarHoverBg: "#f5f5f5",
-  toolbarActiveBg: "#f0f0f0",
-  toolbarActiveText: "#111111",
+  text: "var(--color-text)",
+  textSecondary: "var(--color-text-secondary)",
+  textTertiary: "var(--color-text-tertiary)",
+
+  bg: "var(--color-bg)",
+  bgLayout: "var(--color-bg-layout)",
+  bgElevated: "var(--color-bg-elevated)",
+  bgContainer: "var(--color-bg-container)",
+
+  border: "var(--color-border)",
+  borderSecondary: "var(--color-border-secondary)",
+
+  toolbarBg: "var(--toolbar-bg)",
+  toolbarBorder: "var(--toolbar-border)",
+  toolbarText: "var(--toolbar-text)",
+  toolbarTextMuted: "var(--toolbar-text-muted)",
+  toolbarIcon: "var(--toolbar-icon)",
+  toolbarIconHover: "var(--toolbar-icon-hover)",
+  toolbarHoverBg: "var(--toolbar-hover-bg)",
+  toolbarActiveBg: "var(--toolbar-active-bg)",
+  toolbarActiveText: "var(--toolbar-active-text)",
 } as const;
 
 export const editorTheme: ThemeConfig = {
   token: {
     colorPrimary: COLORS.primary,
-    colorLink: COLORS.primaryActive,
-    colorSuccess: COLORS.accentGreen,
-    colorWarning: "#faad14",
-    colorError: "#ff4d4f",
+    colorLink: COLORS.primaryText,
+    colorSuccess: COLORS.success,
+    colorWarning: COLORS.warning,
+    colorError: COLORS.error,
 
-    colorBgContainer: "#ffffff",
-    colorBgLayout: "#f9fafb",
-    colorBgElevated: "#ffffff",
-    colorBorder: "#d9d9d9",
-    colorBorderSecondary: "#e5e7eb",
-    colorText: "#262626",
-    colorTextSecondary: "#595959",
-    colorTextTertiary: "#8c8c8c",
-    colorTextQuaternary: "#bfbfbf",
+    colorBgContainer: COLORS.bgContainer,
+    colorBgLayout: COLORS.bgLayout,
+    colorBgElevated: COLORS.bgElevated,
+    colorBorder: COLORS.border,
+    colorBorderSecondary: COLORS.borderSecondary,
+    colorText: COLORS.text,
+    colorTextSecondary: COLORS.textSecondary,
+    colorTextTertiary: COLORS.textTertiary,
 
     borderRadius: 6,
-    fontFamily: `-apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", "Helvetica Neue", Arial, sans-serif`,
+    fontFamily: "var(--font-family)",
   },
   components: {
     Dropdown: {
-      colorBgElevated: "#ffffff",
-      controlItemBgHover: "#f5f5f5",
-      controlItemBgActive: "#f0f0f0",
-      colorText: "#333333",
-      colorTextSecondary: "#666666",
+      colorBgElevated: "var(--dropdown-bg)",
+      controlItemBgHover: "var(--dropdown-item-hover-bg)",
+      controlItemBgActive: "var(--dropdown-item-active-bg)",
+      colorText: COLORS.text,
+      colorTextSecondary: COLORS.textSecondary,
     },
     Tooltip: {
-      colorBgSpotlight: "#333333",
-      colorTextLightSolid: "#ffffff",
+      colorBgSpotlight: "var(--color-bg-spotlight)",
+      colorTextLightSolid: "var(--color-text-inverse)",
     },
   },
 };
 
-// Toolbar-specific theme for components inside toolbar
 export const toolbarTheme: ThemeConfig = {
   token: {
-    colorPrimary: "#333333",
-    colorLink: "#333333",
-    colorBgContainer: "#ffffff",
-    colorBgElevated: "#ffffff",
-    colorBorder: "#e5e7eb",
-    colorText: "#333333",
-    colorTextSecondary: "#666666",
-    colorTextTertiary: "#999999",
-    controlItemBgHover: "#f5f5f5",
-    controlItemBgActive: "#f0f0f0",
+    colorPrimary: "var(--toolbar-active-text)",
+    colorLink: "var(--toolbar-active-text)",
+    colorBgContainer: "var(--toolbar-bg)",
+    colorBgElevated: "var(--toolbar-bg)",
+    colorBorder: "var(--toolbar-border)",
+    colorText: "var(--toolbar-text)",
+    colorTextSecondary: "var(--toolbar-text-muted)",
+    colorTextTertiary: "var(--toolbar-text-muted)",
+    controlItemBgHover: "var(--toolbar-hover-bg)",
+    controlItemBgActive: "var(--toolbar-active-bg)",
   },
 };

@@ -1,7 +1,8 @@
 import type { Metadata, Viewport } from "next";
-import { ConfigProvider } from "antd";
 import { AntdRegistry } from "@ant-design/nextjs-registry";
-import { editorTheme } from "@/theme";
+import { ThemeProvider } from "@/theme";
+import { ThemeSwitcher } from "@/components/ThemeSwitcher";
+import { AntdThemeProvider } from "@/components/AntdThemeProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -20,13 +21,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="zh-CN">
+    <html lang="zh-CN" suppressHydrationWarning>
       <body>
-        <AntdRegistry>
-          <ConfigProvider theme={editorTheme}>
-            {children}
-          </ConfigProvider>
-        </AntdRegistry>
+        <ThemeProvider>
+          <AntdRegistry>
+            <AntdThemeProvider>
+              {children}
+              <ThemeSwitcher />
+            </AntdThemeProvider>
+          </AntdRegistry>
+        </ThemeProvider>
       </body>
     </html>
   );

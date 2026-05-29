@@ -21,7 +21,7 @@
 }
 
 .app-loader-word-row {
-  color: #667085;
+  color: var(--color-text-secondary, #667085);
   font-family: "Poppins", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-weight: 500;
   font-size: 25px;
@@ -56,7 +56,7 @@
   height: 100%;
   line-height: 40px;
   padding-left: 6px;
-  color: #956afa;
+  color: var(--color-primary, #956afa);
   animation: app-loader-word-spin 4s infinite;
 }
 

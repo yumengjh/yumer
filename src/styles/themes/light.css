@@ -1,10 +1,4 @@
-@import "./themes/light.css";
-@import "./themes/dark.css";
-
-:root {
-  /* 默认浅色主题 */
-  color-scheme: light;
-
+[data-theme="light"] {
   /* ========== Primary Colors ========== */
   --color-primary: #1677ff;
   --color-primary-hover: #4096ff;
