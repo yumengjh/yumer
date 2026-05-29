@@ -1,7 +1,8 @@
 "use client";
 
 import { ConfigProvider } from "antd";
-import { useTheme, lightTheme, darkTheme } from "@/theme";
+import { useTheme } from "@/theme/ThemeContext";
+import { lightTheme, darkTheme } from "@/theme/themes";
 
 export function AntdThemeProvider({ children }: { children: React.ReactNode }) {
   const { resolvedTheme } = useTheme();

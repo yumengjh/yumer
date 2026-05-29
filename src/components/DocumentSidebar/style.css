@@ -15,14 +15,14 @@
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  background: #ffffff;
+  background: var(--sidebar-bg);
   padding: 0;
   overflow: hidden;
   transition:
     width 0.32s cubic-bezier(0.4, 0, 0.2, 1),
     padding 0.32s cubic-bezier(0.4, 0, 0.2, 1),
     opacity 0.2s ease;
-  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.08);
+  box-shadow: 2px 0 12px var(--shadow-sm);
 }
 
 /* 拖拽中禁用动画 */
@@ -61,7 +61,7 @@
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  background: #f5f5f5;
+  background: var(--color-bg-hover);
   border-radius: 8px;
   min-width: 0;
   border: 1px solid transparent;
@@ -69,12 +69,12 @@
 }
 
 .doc-sidebar__search-wrapper:focus-within {
-  background: #ffffff;
-  border-color: #d9d9d9;
+  background: var(--sidebar-bg);
+  border-color: var(--color-border);
 }
 
 .doc-sidebar__search-icon {
-  color: #8c8c8c;
+  color: var(--sidebar-text-muted);
   font-size: 14px;
   flex-shrink: 0;
 }
@@ -108,9 +108,9 @@
 
 .doc-sidebar__search-shortcut {
   font-size: 10px;
-  color: #8c8c8c;
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
+  color: var(--sidebar-text-muted);
+  background: var(--sidebar-bg);
+  border: 1px solid var(--sidebar-border);
   padding: 1px 4px;
   border-radius: 4px;
   font-family: inherit;
@@ -126,32 +126,32 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #595959;
+  color: var(--sidebar-text);
   border-radius: 8px;
-  border: 1px solid #e5e7eb !important;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
-  background: #ffffff !important;
+  border: 1px solid var(--sidebar-border) !important;
+  box-shadow: var(--shadow-xs) !important;
+  background: var(--sidebar-bg) !important;
   transition: all 0.2s ease;
 }
 
 .doc-sidebar__add-btn:hover {
-  background: #f5f5f5 !important;
-  border-color: #d9d9d9 !important;
-  color: #1f1f1f;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08) !important;
+  background: var(--sidebar-hover-bg) !important;
+  border-color: var(--color-border) !important;
+  color: var(--sidebar-text);
+  box-shadow: var(--shadow-sm) !important;
 }
 
 /* 分割线 */
 .doc-sidebar__divider {
   height: 1px;
-  background-color: #eaeaea;
+  background-color: var(--sidebar-border);
   margin: 0 12px 8px 12px;
 }
 
 /* ===== 筛选区域 ===== */
 .doc-sidebar__filters {
   padding: 12px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--sidebar-border);
   max-height: 200px;
   overflow-y: auto;
 }
@@ -169,7 +169,7 @@
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--sidebar-text-muted);
   margin-bottom: 8px;
 }
 
@@ -187,20 +187,20 @@
 }
 
 .doc-sidebar__filter-tag:hover {
-  color: #1890ff;
-  border-color: #1890ff;
+  color: var(--color-primary);
+  border-color: var(--color-primary);
 }
 
 .doc-sidebar__filter-tag--active {
-  color: #fff;
-  background: #1890ff;
-  border-color: #1890ff;
+  color: var(--color-text-inverse);
+  background: var(--color-primary);
+  border-color: var(--color-primary);
 }
 
 .doc-sidebar__filter-tag--active:hover {
-  color: #fff;
-  background: #40a9ff;
-  border-color: #40a9ff;
+  color: var(--color-text-inverse);
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
 }
 
 .doc-sidebar__clear-filters {
@@ -211,7 +211,7 @@
 
 .doc-sidebar__filter-count {
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--sidebar-text-muted);
 }
 
 /* ========== 滚动区域 ========== */
@@ -232,12 +232,12 @@
 }
 
 .doc-sidebar__scroll::-webkit-scrollbar-thumb {
-  background: #d1d5db;
+  background: var(--scrollbar-thumb);
   border-radius: 3px;
 }
 
 .doc-sidebar__scroll::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
+  background: var(--scrollbar-thumb-hover);
 }
 
 /* ========== 文档列表区域 ========== */
@@ -259,7 +259,7 @@
 .doc-sidebar__documents-title {
   font-size: 13px;
   font-weight: 600;
-  color: #6b7280;
+  color: var(--sidebar-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   flex: 1;
@@ -293,12 +293,12 @@
 }
 
 .doc-sidebar__category-header:hover {
-  background: var(--app-bg-hover, #f5f5f5);
+  background: var(--color-bg-hover, #f5f5f5);
 }
 
 .doc-sidebar__category-arrow {
   font-size: 10px;
-  color: #8c8c8c;
+  color: var(--sidebar-text-muted);
   transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   flex-shrink: 0;
 }
@@ -311,7 +311,7 @@
   flex: 1;
   font-size: 13px;
   font-weight: 500;
-  color: #595959;
+  color: var(--sidebar-text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -339,7 +339,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #595959;
+  color: var(--sidebar-text-muted);
   border: none !important;
   background: transparent !important;
   border-radius: 4px;
@@ -347,14 +347,14 @@
 }
 
 .doc-sidebar__category-action:hover {
-  background: rgba(0, 0, 0, 0.06) !important;
-  color: #1f1f1f;
+  background: var(--color-bg-active) !important;
+  color: var(--sidebar-text);
 }
 
 .doc-sidebar__category-count {
   font-size: 11px;
-  color: #8c8c8c;
-  background: #f5f5f5;
+  color: var(--sidebar-text-muted);
+  background: var(--color-bg-hover);
   padding: 1px 6px;
   border-radius: 10px;
   flex-shrink: 0;
@@ -380,7 +380,7 @@
 }
 
 .doc-sidebar__document-item:hover {
-  background: var(--app-bg-hover, #f5f5f5);
+  background: var(--color-bg-hover, #f5f5f5);
 }
 
 .doc-sidebar__document-item--loading {
@@ -388,22 +388,22 @@
 }
 
 .doc-sidebar__document-item--active {
-  background: var(--app-bg-subtle, #f3f4f6);
+  background: var(--color-bg-subtle, #f3f4f6);
 }
 
 .doc-sidebar__document-item--active .doc-sidebar__document-title {
-  color: var(--app-text-primary, #1f1f1f);
+  color: var(--color-text, #1f1f1f);
   font-weight: 600;
 }
 
 .doc-sidebar__document-icon {
   font-size: 16px;
-  color: #595959;
+  color: var(--sidebar-text-muted);
   flex-shrink: 0;
 }
 
 .doc-sidebar__document-item--active .doc-sidebar__document-icon {
-  color: var(--app-text-primary, #1f1f1f);
+  color: var(--color-text, #1f1f1f);
 }
 
 .doc-sidebar__document-info {
@@ -414,7 +414,7 @@
 .doc-sidebar__document-title {
   display: block;
   font-size: 14px;
-  color: #262626;
+  color: var(--sidebar-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -440,9 +440,9 @@
   line-height: 16px;
   padding: 0 6px;
   margin: 0;
-  background: #f5f5f5;
-  border-color: #f5f5f5;
-  color: #595959;
+  background: var(--color-bg-hover);
+  border-color: var(--color-bg-hover);
+  color: var(--sidebar-text-muted);
 }
 
 .doc-sidebar__document-actions {
@@ -469,7 +469,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #595959;
+  color: var(--sidebar-text-muted);
   border: none !important;
   background: transparent !important;
   border-radius: 4px;
@@ -477,8 +477,8 @@
 }
 
 .doc-sidebar__document-action:hover {
-  background: rgba(0, 0, 0, 0.06) !important;
-  color: #1f1f1f;
+  background: var(--color-bg-active) !important;
+  color: var(--sidebar-text);
 }
 
 /* ===== Resizer ===== */
@@ -491,7 +491,7 @@
   align-items: center;
   justify-content: center;
   user-select: none;
-  background-color: #ffffff;
+  background-color: var(--sidebar-bg);
 }
 
 .doc-sidebar__resizer:not(.doc-sidebar__resizer--collapsed) {
@@ -510,7 +510,7 @@
   left: 50%;
   width: 1px;
   transform: translateX(-50%);
-  background: #eaeaea;
+  background: var(--sidebar-border);
 }
 
 /* ===== 折叠按钮（胶囊） ===== */
@@ -520,28 +520,28 @@
   width: 26px;
   height: 56px;
   border-radius: 999px;
-  background: #ffffff;
-  border: 1px solid #f5f5f5;
+  background: var(--sidebar-bg);
+  border: 1px solid var(--sidebar-border);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
   cursor: pointer;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--shadow-xs);
 }
 
 .doc-sidebar__toggle-btn:hover {
-  background: #f5f5f5;
+  background: var(--sidebar-hover-bg);
 }
 
 .doc-sidebar__toggle-btn:focus-visible {
-  outline: 2px solid rgba(0, 0, 0, 0.15);
+  outline: 2px solid var(--color-border);
   outline-offset: 2px;
 }
 
 /* ===== 箭头 ===== */
 .doc-sidebar__toggle-icon {
-  color: #262626;
+  color: var(--sidebar-text);
   transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1);
 }
 

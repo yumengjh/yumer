@@ -9,7 +9,7 @@
   padding: 0;
   box-sizing: border-box;
   position: relative;
-  background: var(--editor-bg, #ffffff);
+  background: var(--editor-bg);
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -21,7 +21,7 @@
   display: flex;
   flex-direction: column;
   flex: 1;
-  background: var(--editor-bg, #ffffff);
+  background: var(--editor-bg);
 }
 
 /* ---------- 旧工具栏（未使用，保留兼容）---------- */
@@ -33,8 +33,8 @@
   padding: 6px 10px;
   margin-bottom: 8px;
   border-radius: 999px;
-  background: var(--app-bg-page);
-  border: 1px solid var(--app-border);
+  background: var(--color-bg-layout);
+  border: 1px solid var(--color-border);
 }
 
 .toolbar-btn {
@@ -44,16 +44,16 @@
   padding: 4px 8px;
   border-radius: 999px;
   cursor: pointer;
-  color: var(--app-text-secondary);
+  color: var(--color-text-secondary);
 }
 
 .toolbar-btn:hover {
-  background: var(--app-border);
+  background: var(--color-border);
 }
 
 .toolbar-btn.is-active {
-  background: var(--app-accent-active-bg);
-  color: var(--app-bg-page);
+  background: var(--color-bg-active);
+  color: var(--color-bg-layout);
 }
 
 .toolbar-btn:disabled {
@@ -64,7 +64,7 @@
 .toolbar-divider {
   width: 1px;
   height: 18px;
-  background: var(--app-border);
+  background: var(--color-border);
   margin: 0 2px;
 }
 
@@ -72,7 +72,7 @@
 .tiptap-editor-wrapper {
   margin: 0 auto;
   padding: 48px 24px 120px;
-  background: var(--editor-bg, #ffffff);
+  background: var(--editor-bg);
   width: 100%;
   max-width: var(--app-editor-content-width, 750px);
   min-height: calc(100vh - 96px);
@@ -132,7 +132,7 @@
     "Segoe UI";
   font-size: var(--app-editor-font-size, 15px);
   line-height: 1.74;
-  color: var(--app-text);
+  color: var(--color-text);
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   word-break: break-word;
@@ -148,7 +148,7 @@
 .tiptap-editor :where(h1, h2, h3, h4, h5, h6) {
   margin: 20px 0 8px;
   font-weight: 700;
-  color: var(--app-text);
+  color: var(--color-text);
   line-height: 1.35;
   letter-spacing: 0;
 }
@@ -191,7 +191,7 @@
   font-weight: 700;
   margin-top: 16px;
   margin-bottom: 4px;
-  color: var(--app-text-muted);
+  color: var(--color-text-tertiary);
 }
 
 /* ---------- 列表 ---------- */
@@ -242,9 +242,9 @@
     monospace !important;
   font-size: 13px;
   line-height: 1.6;
-  border: 1px solid var(--code-border, var(--app-border-lighter));
-  background: var(--code-bg, #f6f8fa);
-  color: var(--code-text, var(--app-text));
+  border: 1px solid var(--color-border-secondary);
+  background: #f6f8fa;
+  color: var(--color-text);
   tab-size: 2;
 }
 
@@ -255,7 +255,7 @@
   top: 8px;
   right: 12px;
   font-size: 11px;
-  color: var(--app-text-disabled);
+  color: var(--color-text-disabled);
   letter-spacing: 0.03em;
   text-transform: uppercase;
   font-family: inherit;
@@ -342,7 +342,7 @@
   --code-block-code-padding-right: 16px;
 
   /* 行号样式 */
-  --code-block-line-number-color: var(--app-text-muted);
+  --code-block-line-number-color: var(--color-text-tertiary);
   --code-block-line-number-font-size: var(--code-font-size, var(--code-block-font-size));
 
   /* 展示页 table 行：行号格 / 代码格垂直对齐（top | middle | baseline） */
@@ -367,8 +367,8 @@ pre.code-block-view {
   max-width: 100%;
   overflow: hidden;
   border-radius: 4px;
-  border: 1px solid var(--app-border-lighter);
-  background: #fff;
+  border: 1px solid var(--code-border);
+  background: var(--code-bg);
 }
 
 pre.code-block-view {
@@ -382,14 +382,14 @@ pre.code-block-view {
 }
 
 .tiptap-editor .code-block-view.is-selected {
-  border-color: var(--app-primary-border);
+  border-color: var(--color-primary-border);
 }
 
 .tiptap-card[data-code-theme="dark"] .tiptap-editor .code-block-view,
 .tiptap-editor .code-block-view[data-code-theme="github-dark"] {
-  border-color: var(--app-code-dark-border);
-  background: #0d1117;
-  color: var(--app-code-dark-text);
+  border-color: var(--code-border);
+  background: var(--code-bg);
+  color: var(--code-text);
 }
 
 .code-block-status-shell {
@@ -418,9 +418,9 @@ pre.code-block-view {
   min-height: 36px;
   max-height: 36px;
   padding: 0 10px 0 8px;
-  border-bottom: 1px solid var(--app-border-lighter);
-  background: #f7f7f7;
-  color: var(--app-text-secondary);
+  border-bottom: 1px solid var(--code-border);
+  background: var(--code-bg);
+  color: var(--color-text-secondary);
   overflow: hidden;
   opacity: 1;
   pointer-events: auto;
@@ -541,12 +541,12 @@ pre.code-block-view {
   height: 24px;
   min-width: 24px;
   padding: 0;
-  color: #5f6368;
+  color: var(--color-text-tertiary);
 }
 
 .code-block-icon-button.ant-btn:hover {
-  color: #202124;
-  background: rgba(0, 0, 0, 0.05);
+  color: var(--color-text);
+  background: var(--color-bg-hover);
 }
 
 .code-block-title-display {
@@ -607,10 +607,10 @@ pre.code-block-view {
 .code-block-more-panel {
   width: 220px;
   padding: 10px;
-  border: 1px solid var(--app-border-lighter);
+  border: 1px solid var(--dropdown-border);
   border-radius: 6px;
-  background: #fff;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+  background: var(--dropdown-bg);
+  box-shadow: var(--shadow-xl);
 }
 
 .code-block-menu-row {
@@ -619,7 +619,7 @@ pre.code-block-view {
   justify-content: space-between;
   gap: 12px;
   min-height: 34px;
-  color: var(--app-text-secondary);
+  color: var(--color-text-secondary);
   font-size: 13px;
 }
 
@@ -630,7 +630,7 @@ pre.code-block-view {
 .code-block-menu-divider {
   height: 1px;
   margin: 8px 0;
-  background: var(--app-border-lighter);
+  background: var(--color-border-secondary);
 }
 
 .code-block-more-panel .ant-btn + .ant-btn {
@@ -642,7 +642,7 @@ pre.code-block-view {
   min-width: 0;
   max-width: 100%;
   padding: 0;
-  background: #fff;
+  background: var(--code-bg);
   border-radius: 0 0 6px 6px;
   user-select: none;
   -webkit-user-select: none;
@@ -674,7 +674,7 @@ pre.code-block-view {
 .code-block-view.code-block-placeholder .code-block-public-chrome .code-block-status-bar {
   justify-content: space-between;
   gap: 16px;
-  color: var(--app-text-secondary);
+  color: var(--color-text-secondary);
 }
 
 .code-block-public-fold {
@@ -1100,7 +1100,7 @@ pre.code-block-view {
 .tiptap-editor code:not(pre code):not(.shiki code):not(.shiki):not(.code-block-line-content):not(
     .code-block-code
   ) {
-  background-color: rgba(27, 31, 35, 0.05);
+  background-color: var(--color-fill);
   color: inherit;
   word-break: break-all;
   font-family:
@@ -1137,8 +1137,8 @@ pre.code-block-view {
 .tiptap-editor blockquote {
   margin: 8px 0 12px;
   padding: 4px 0 4px 12px;
-  border-left: 3px solid var(--app-border-strong);
-  color: var(--app-text-tertiary);
+  border-left: 3px solid var(--color-border-strong);
+  color: var(--color-text-tertiary);
   background: transparent;
   border-radius: 0;
 }
@@ -1151,7 +1151,7 @@ pre.code-block-view {
 .tiptap-editor hr {
   margin: 24px 0;
   border: none;
-  border-top: 1px solid var(--app-border-lighter);
+  border-top: 1px solid var(--color-border-secondary);
 }
 
 /* ---------- 表格 — 语雀：细线分割 ---------- */
@@ -1167,7 +1167,7 @@ pre.code-block-view {
   font-family: inherit;
   font-size: inherit;
   line-height: inherit;
-  border: 1px solid var(--app-border-lighter);
+  border: 1px solid var(--color-border-secondary);
 }
 
 .tiptap-editor table th,
@@ -1175,7 +1175,7 @@ pre.code-block-view {
   position: relative;
   padding: 8px 16px;
   text-align: left;
-  border: 1px solid var(--app-border-lighter);
+  border: 1px solid var(--color-border-secondary);
 }
 
 .tiptap-editor table th {
@@ -1194,7 +1194,7 @@ pre.code-block-view {
 .tiptap-editor table[data-header-column="true"] tr > td:first-child {
   background: #fafafa;
   font-weight: 600;
-  color: var(--app-text);
+  color: var(--color-text);
 }
 
 .tiptap-editor table[data-hide-outer-border="true"] {
@@ -1227,7 +1227,7 @@ pre.code-block-view {
 }
 
 .tiptap-editor .selectedCell {
-  background: var(--app-primary-light);
+  background: var(--color-primary-bg-hover);
 }
 
 .tiptap-editor .column-resize-handle {
@@ -1237,7 +1237,7 @@ pre.code-block-view {
   bottom: 0;
   width: 8px;
   opacity: 0;
-  background: linear-gradient(90deg, transparent 0, var(--app-primary-border) 50%, transparent 100%);
+  background: linear-gradient(90deg, transparent 0, var(--color-primary-border) 50%, transparent 100%);
   pointer-events: none;
   transition: opacity 0.16s ease;
 }
@@ -1256,7 +1256,7 @@ pre.code-block-view {
 .table-context-menu {
   min-width: 232px;
   border-radius: 8px;
-  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+  box-shadow: var(--shadow-2xl);
 }
 
 .table-context-menu .table-context-menu__panel.ant-menu {
@@ -1285,7 +1285,7 @@ pre.code-block-view {
 
 /* ---------- 占位文字 ---------- */
 .tiptap-editor .is-editor-empty:first-child::before {
-  color: var(--app-text-placeholder);
+  color: var(--color-text-quaternary);
   content: attr(data-placeholder);
   float: left;
   height: 0;
@@ -1294,13 +1294,13 @@ pre.code-block-view {
 
 /* ---------- 链接 ---------- */
 .tiptap-editor a.tiptap-link {
-  color: var(--app-primary-active);
+  color: var(--color-primary-active);
   text-decoration: none;
   cursor: pointer;
 }
 
 .tiptap-editor a.tiptap-link:hover {
-  color: var(--app-primary);
+  color: var(--color-primary);
   text-decoration: underline;
 }
 
@@ -1348,9 +1348,9 @@ pre.code-block-view {
   appearance: none;
   width: 16px;
   height: 16px;
-  border: 1px solid #d9d9d9;
+  border: 1px solid var(--color-border);
   border-radius: 2px;
-  background-color: #fff;
+  background-color: var(--color-bg-container);
   cursor: pointer;
   position: relative;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -1360,12 +1360,12 @@ pre.code-block-view {
 }
 
 .tiptap-editor :where(li[data-type="taskItem"]) input[type="checkbox"]:not(.ant-checkbox-input):hover {
-  border-color: #1677ff;
+  border-color: var(--color-border-strong);
 }
 
 .tiptap-editor :where(li[data-type="taskItem"]) input[type="checkbox"]:not(.ant-checkbox-input):checked {
-  background-color: #1677ff;
-  border-color: #1677ff;
+  background-color: var(--color-text);
+  border-color: var(--color-text);
 }
 
 .tiptap-editor :where(li[data-type="taskItem"]) input[type="checkbox"]:not(.ant-checkbox-input):checked::after {
@@ -1375,7 +1375,7 @@ pre.code-block-view {
   left: 4.5px;
   width: 4px;
   height: 8px;
-  border: 2px solid #fff;
+  border: 2px solid var(--color-bg-container);
   border-top: 0;
   border-left: 0;
   transform: rotate(45deg);
@@ -1397,7 +1397,7 @@ pre.code-block-view {
   padding: 12px 16px;
   margin: 16px 0;
   position: relative;
-  border: 1px solid var(--app-border-lighter);
+  border: 1px solid var(--color-border-secondary);
 }
 
 .highlight-block-view .highlight-block-color-bar {
@@ -1410,7 +1410,7 @@ pre.code-block-view {
   gap: 4px;
   padding: 4px 8px;
   background: #ffffff;
-  border: 1px solid var(--app-border-lighter);
+  border: 1px solid var(--color-border-secondary);
   border-radius: 4px;
   box-shadow: none;
   z-index: 10;
@@ -1512,11 +1512,11 @@ pre.code-block-view {
 }
 
 .tiptap-editor figure[data-image-block] .image-crop-window--shadow {
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.22);
+  box-shadow: var(--shadow-2xl);
 }
 
 .tiptap-editor figure[data-image-block] .image-crop-window--border {
-  border: 1px solid rgba(15, 23, 42, 0.18);
+  border: 1px solid var(--color-border);
 }
 
 .tiptap-editor figure[data-image-block] .image-crop-window--rounded {

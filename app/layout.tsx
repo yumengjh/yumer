@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { AntdRegistry } from "@ant-design/nextjs-registry";
 import { ThemeProvider } from "@/theme";
-import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { AntdThemeProvider } from "@/components/AntdThemeProvider";
 import "./globals.css";
 
@@ -15,6 +14,21 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
+// 防止主题闪烁的脚本
+const themeScript = `
+  (function() {
+    try {
+      var theme = localStorage.getItem('theme') || 'system';
+      var resolved = theme;
+      if (theme === 'system') {
+        resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      }
+      document.documentElement.setAttribute('data-theme', resolved);
+      document.documentElement.style.colorScheme = resolved;
+    } catch (e) {}
+  })()
+`;
+
 export default function RootLayout({
   children,
 }: {
@@ -22,15 +36,17 @@ export default function RootLayout({
 }) {
   return (
     <html lang="zh-CN" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body>
-        <ThemeProvider>
-          <AntdRegistry>
+        <AntdRegistry>
+          <ThemeProvider>
             <AntdThemeProvider>
               {children}
-              <ThemeSwitcher />
             </AntdThemeProvider>
-          </AntdRegistry>
-        </ThemeProvider>
+          </ThemeProvider>
+        </AntdRegistry>
       </body>
     </html>
   );

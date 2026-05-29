@@ -1,5 +1,104 @@
 @import "../src/styles/tokens.css";
 
+/* ===== 全局按钮样式统一 ===== */
+
+/* 次要按钮 - 黑白配色 */
+.ant-btn-default {
+  color: var(--color-text) !important;
+  border-color: var(--color-border) !important;
+  background: var(--color-bg-container) !important;
+}
+
+.ant-btn-default:hover {
+  color: var(--color-text) !important;
+  border-color: var(--color-border-strong) !important;
+  background: var(--color-bg-hover) !important;
+}
+
+.ant-btn-default:active {
+  color: var(--color-text) !important;
+  border-color: var(--color-border-strong) !important;
+  background: var(--color-bg-active) !important;
+}
+
+/* 主要按钮 - 绿色 */
+.ant-btn-primary {
+  color: #fff !important;
+  border-color: #52c41a !important;
+  background: #52c41a !important;
+}
+
+.ant-btn-primary:hover {
+  color: #fff !important;
+  border-color: #73d13d !important;
+  background: #73d13d !important;
+}
+
+.ant-btn-primary:active {
+  color: #fff !important;
+  border-color: #389e0d !important;
+  background: #389e0d !important;
+}
+
+/* 危险按钮 */
+.ant-btn-dangerous {
+  color: var(--color-error) !important;
+  border-color: var(--color-error) !important;
+}
+
+.ant-btn-dangerous:hover {
+  color: var(--color-error) !important;
+  border-color: var(--color-error-border) !important;
+  background: var(--color-error-bg) !important;
+}
+
+/* 链接按钮 */
+.ant-btn-link {
+  color: var(--color-primary) !important;
+  border-color: transparent !important;
+}
+
+.ant-btn-link:hover {
+  color: var(--color-primary-hover) !important;
+  border-color: transparent !important;
+}
+
+/* 文本按钮 */
+.ant-btn-text {
+  color: var(--color-text) !important;
+  border-color: transparent !important;
+}
+
+.ant-btn-text:hover {
+  color: var(--color-text) !important;
+  background: var(--color-bg-hover) !important;
+}
+
+/* ===== 全局 antd Dropdown 样式统一 ===== */
+.ant-dropdown-menu {
+  border: 1px solid var(--color-border-secondary) !important;
+  border-radius: 6px !important;
+  padding: 4px !important;
+}
+
+.ant-dropdown-menu-item {
+  border-radius: 4px !important;
+  transition: background-color 0.15s ease !important;
+}
+
+.ant-dropdown-menu-item:hover {
+  background: var(--color-bg-hover) !important;
+}
+
+.ant-dropdown-menu-item-selected {
+  background: var(--color-selected-bg) !important;
+  color: var(--color-text) !important;
+}
+
+.ant-dropdown-menu-item-selected:hover {
+  background: var(--color-selected-bg-hover) !important;
+}
+
 /* === Global Reset === */
 * {
   margin: 0;
@@ -16,25 +115,6 @@ body {
 }
 
 /* === App Layout === */
-.counter {
-  font-size: 16px;
-  padding: 5px 10px;
-  border-radius: 5px;
-  color: var(--color-primary);
-  background: var(--color-primary-bg);
-  border: 2px solid transparent;
-  transition: border-color var(--transition-normal);
-  margin-bottom: 24px;
-
-  &:hover {
-    border-color: var(--color-primary-border);
-  }
-  &:focus-visible {
-    outline: 2px solid var(--color-primary);
-    outline-offset: 2px;
-  }
-}
-
 .app-container {
   width: 100%;
   min-height: 100vh;
@@ -47,14 +127,14 @@ body {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: var(--color-bg-container);
+  background: var(--color-bg);
   overflow: visible;
 }
 
 .output-tab-bar {
   display: flex;
   align-items: center;
-  border-bottom: 1px solid var(--color-border-secondary);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .output-tab {
@@ -62,7 +142,7 @@ body {
   font-size: 13px;
   border: none;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: all 0.15s;
 }
 
 .output-tab--active {
@@ -74,7 +154,7 @@ body {
 
 .output-tab--inactive {
   font-weight: 400;
-  color: var(--color-text-secondary);
+  color: var(--color-text-tertiary);
   background: transparent;
   border-bottom: 2px solid transparent;
 }
@@ -84,9 +164,9 @@ body {
   padding: 6px 14px;
   font-size: 12px;
   color: var(--color-text-secondary);
-  background: var(--color-fill-secondary);
+  background: var(--color-bg-hover);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: 6px;
   cursor: pointer;
 }
 
@@ -115,13 +195,13 @@ body {
   color: var(--color-text-secondary);
   font-size: 13px;
   cursor: pointer;
-  transition: all var(--transition-normal) cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 100;
   box-shadow: var(--shadow-sm);
 }
 
 .output-trigger-btn:hover {
-  background: var(--color-fill-secondary);
+  background: var(--color-bg-hover);
   color: var(--color-text);
   border-color: var(--color-primary-border);
 }
@@ -147,7 +227,7 @@ body {
 
 .output-modal {
   background: var(--color-bg-container);
-  border-radius: var(--radius-sm);
+  border-radius: 4px;
   width: 720px;
   max-width: 90vw;
   max-height: 80vh;
@@ -161,7 +241,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid var(--color-border-secondary);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .output-modal-header .output-tab-bar {
@@ -183,14 +263,14 @@ body {
   justify-content: center;
   background: transparent;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: 4px;
   color: var(--color-text-secondary);
   font-size: 18px;
   cursor: pointer;
 }
 
 .output-modal-close:hover {
-  background: var(--color-fill-secondary);
+  background: var(--color-bg-hover);
   color: var(--color-text);
 }
 
@@ -199,7 +279,7 @@ body {
   max-width: 750px;
   margin: 0 auto;
   padding: 48px 24px 120px;
-  background: var(--color-bg-container);
+  background: var(--color-bg);
   border-radius: 0;
   box-shadow: none;
   animation: skeleton-fade-in 0.4s ease-out;
@@ -209,7 +289,7 @@ body {
   height: 20px;
   background: linear-gradient(90deg, var(--color-fill) 25%, var(--color-fill-secondary) 37%, var(--color-fill) 63%);
   background-size: 400% 100%;
-  border-radius: var(--radius-sm);
+  border-radius: 4px;
   margin-bottom: 24px;
   animation: skeleton-loading 1.4s ease infinite;
 }
@@ -272,27 +352,40 @@ body {
   to { transform: rotate(360deg); }
 }
 
-/* Scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+/* 主题切换器样式 */
+.theme-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: var(--color-bg-hover);
+  border-radius: 8px;
 }
 
-::-webkit-scrollbar-track {
-  background: var(--scrollbar-track);
+.theme-switcher__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
 }
 
-::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb);
-  border-radius: 4px;
+.theme-switcher__btn:hover {
+  background: var(--color-bg-active);
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: var(--scrollbar-thumb-hover);
+.theme-switcher__btn.is-active {
+  background: var(--color-bg);
+  box-shadow: var(--shadow-xs);
 }
 
-/* Selection */
-::selection {
-  background: var(--color-primary-bg);
-  color: var(--color-primary-text);
+.theme-switcher__icon {
+  font-size: 14px;
+  line-height: 1;
 }

@@ -261,7 +261,7 @@
 
 .heading-menu-shortcut {
   font-size: 12px;
-  color: var(--app-text-disabled);
+  color: var(--color-text-disabled);
   white-space: nowrap;
 }
 
@@ -290,31 +290,6 @@
 .ant-dropdown .ant-dropdown-menu {
   overflow-y: auto;
   min-width: 108px;
-}
-
-/* Antd Dropdown 菜单样式覆盖 */
-.toolbar .ant-dropdown-menu {
-  border-radius: 4px;
-  box-shadow: none;
-  border: 1px solid var(--app-border);
-}
-
-.toolbar .ant-dropdown-menu-item {
-  color: var(--toolbar-text);
-}
-
-.toolbar .ant-dropdown-menu-item:hover {
-  background: var(--toolbar-hover-bg);
-}
-
-.toolbar .ant-dropdown-menu-item-selected {
-  background: var(--toolbar-active-bg);
-  color: var(--toolbar-active-text);
-}
-
-.toolbar .ant-dropdown-menu-item-active {
-  background: var(--toolbar-hover-bg);
-  color: var(--toolbar-icon-hover);
 }
 
 /* Antd Tooltip 样式覆盖 */
@@ -354,26 +329,21 @@
   border-color: var(--toolbar-icon-hover);
 }
 
-/* 工具栏下拉菜单样式 */
-.toolbar-color-dropdown .ant-dropdown-menu,
-.toolbar-table-dropdown .ant-dropdown-menu {
-  border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-}
+/* 工具栏下拉菜单样式 - 已统一到上方 */
 
 /* 链接选择器弹出框 */
 .link-picker-popup {
   width: 300px;
   padding: 12px;
-  background: var(--app-bg-card);
+  background: var(--color-bg-container);
   border-radius: 4px;
   box-shadow: none;
-  border: 1px solid var(--app-border);
+  border: 1px solid var(--color-border);
   box-sizing: border-box;
 }
 
 .link-picker-title {
-  color: var(--app-primary);
+  color: var(--color-primary);
   font-size: 14px;
   font-weight: 600;
   margin-bottom: 12px;
@@ -390,7 +360,7 @@
 .link-picker-label {
   display: block;
   font-size: 12px;
-  color: var(--app-text-secondary);
+  color: var(--color-text-secondary);
   margin-bottom: 4px;
 }
 
@@ -402,22 +372,6 @@
   display: flex;
   justify-content: flex-end;
   margin-top: 12px;
-}
-
-.toolbar-color-dropdown .ant-dropdown-menu-item,
-.toolbar-table-dropdown .ant-dropdown-menu-item {
-  color: var(--toolbar-text);
-}
-
-.toolbar-color-dropdown .ant-dropdown-menu-item:hover,
-.toolbar-table-dropdown .ant-dropdown-menu-item:hover {
-  background: var(--toolbar-hover-bg);
-}
-
-.toolbar-color-dropdown .ant-dropdown-menu-item-selected,
-.toolbar-table-dropdown .ant-dropdown-menu-item-selected {
-  background: var(--toolbar-active-bg);
-  color: var(--toolbar-active-text);
 }
 
 /* 工具栏中 antd 组件的选中状态 */
@@ -459,7 +413,7 @@
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: var(--app-accent-green);
+  background: var(--color-success);
   color: #fff;
   font-weight: 700;
   font-size: 14px;
@@ -675,10 +629,10 @@
   width: 260px;
   max-height: 480px;
   padding: 8px;
-  background: var(--app-bg-card);
+  background: var(--color-bg-container);
   border-radius: 4px;
   box-shadow: none;
-  border: 1px solid var(--app-border);
+  border: 1px solid var(--color-border);
   overflow-y: auto;
   overflow-x: hidden;
   box-sizing: border-box;
@@ -733,7 +687,7 @@
   min-height: 22px;
   border-radius: 3px;
   cursor: pointer;
-  border: 1px solid var(--app-border-light);
+  border: 1px solid var(--color-border-secondary);
   position: relative;
   display: flex;
   align-items: center;
@@ -744,7 +698,7 @@
 }
 
 .color-swatch:has(.color-checkmark) {
-  border: 2px solid var(--app-primary);
+  border: 2px solid var(--color-primary);
 }
 
 .color-swatch:hover {
@@ -753,7 +707,7 @@
 }
 
 .color-swatch.selected {
-  border: 2px solid var(--app-primary);
+  border: 2px solid var(--color-primary);
 }
 
 .color-checkmark {
@@ -774,7 +728,7 @@
   height: 22px;
   border-radius: 3px;
   cursor: pointer;
-  border: 1px solid var(--app-border-light);
+  border: 1px solid var(--color-border-secondary);
   transition: transform 0.15s ease;
   flex-shrink: 0;
 }
@@ -786,7 +740,7 @@
 
 .color-picker-empty {
   font-size: 12px;
-  color: var(--app-text-muted);
+  color: var(--color-text-tertiary);
   padding: 4px 0;
 }
 

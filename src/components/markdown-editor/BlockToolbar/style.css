@@ -22,7 +22,7 @@
   padding: 0;
   border: none;
   background: transparent;
-  color: var(--app-text-muted, #999);
+  color: var(--color-text-tertiary, #999);
   cursor: grab;
   border-radius: 4px;
   transition: background 0.15s, color 0.15s;
@@ -33,8 +33,8 @@
 }
 
 .block-handle__btn:hover {
-  background: var(--app-bg-hover, #f0f0f0);
-  color: var(--app-text-primary, #333);
+  background: var(--color-bg-hover, #f0f0f0);
+  color: var(--color-text, #333);
 }
 
 /* ---- 菜单锚点 + 动画 ---- */
@@ -77,10 +77,10 @@
 /* ---- 菜单面板 ---- */
 .block-menu-popover {
   min-width: 160px;
-  background: #fff;
-  border: 1px solid var(--app-border, #e5e7eb);
+  background: var(--dropdown-bg);
+  border: 1px solid var(--dropdown-border);
   border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--dropdown-shadow);
   overflow: hidden;
 }
 
@@ -99,12 +99,10 @@
   position: fixed;
   z-index: 10000;
   pointer-events: none;
-  background: #fff;
+  background: var(--dropdown-bg);
   border-radius: 8px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.06),
-    0 8px 24px rgba(0, 0, 0, 0.12);
+  border: 1px solid var(--dropdown-border);
+  box-shadow: var(--dropdown-shadow);
   opacity: 0.75;
   will-change: left, top;
   overflow: hidden;
