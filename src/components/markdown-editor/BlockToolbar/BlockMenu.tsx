@@ -7,6 +7,7 @@ import { useMarkdownEditor } from '../EditorContext';
 import { getTableElementFromToolbarTarget } from './blockTarget';
 import { createBlockMenuItems, getHeadingAnchorIdFromBlock } from './blockMenuItems';
 import { buildAnchorUrl } from '../utils/anchorId';
+import { planExplicitMoveSortKey, withExplicitMoveSortKeyAttrs } from './sortKeyReorder';
 
 interface BlockMenuProps {
   onClose: () => void;
@@ -243,6 +244,15 @@ export function BlockMenu({ onClose, hoveredBlock, hoveredTableCell, onWillDelet
       const hoveredRange = getBlockRange(topLevel, view);
       const targetRange = getBlockRange(targetTop, view);
       if (!hoveredRange || !targetRange) return;
+      const topLevelNodes = Array.from({ length: doc.childCount }, (_, index) => doc.child(index));
+      const topLevelElements = Array.from(view.dom.children) as HTMLElement[];
+      const sourceIndex = topLevelElements.indexOf(topLevel);
+      const targetIndex = topLevelElements.indexOf(targetTop);
+      const plannedSortKey = planExplicitMoveSortKey(
+        topLevelNodes,
+        sourceIndex,
+        direction === 'up' ? targetIndex : targetIndex + 1,
+      );
 
       const [startA, , startB, endB] = hoveredRange.from < targetRange.from
         ? [hoveredRange.from, hoveredRange.to, targetRange.from, targetRange.to]
@@ -251,7 +261,19 @@ export function BlockMenu({ onClose, hoveredBlock, hoveredTableCell, onWillDelet
       const nodeA = doc.nodeAt(startA);
       const nodeB = doc.nodeAt(startB);
       if (nodeA && nodeB) {
-        view.dispatch(state.tr.replaceWith(startA, endB, [nodeB, nodeA]));
+        const sourceIsFirst = hoveredRange.from < targetRange.from;
+        const sourceNode = sourceIsFirst ? nodeA : nodeB;
+        const movedSourceNode = plannedSortKey
+          ? sourceNode.type.create(
+              withExplicitMoveSortKeyAttrs(sourceNode.attrs, plannedSortKey),
+              sourceNode.content,
+              sourceNode.marks,
+            )
+          : sourceNode;
+        const replacement = sourceIsFirst
+          ? [nodeB, movedSourceNode]
+          : [movedSourceNode, nodeA];
+        view.dispatch(state.tr.replaceWith(startA, endB, replacement));
       }
     } catch (err) {
       console.error('[BlockMenu] move top-level block failed:', err);

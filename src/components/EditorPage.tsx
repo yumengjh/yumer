@@ -263,6 +263,46 @@ function contentToHtml(content: EditorContent): string {
   return "";
 }
 
+function mergeAckAttrsIntoCurrentEditorDoc(current: TiptapDoc, ackDoc: TiptapDoc): TiptapDoc {
+  if (!Array.isArray(current.content) || !Array.isArray(ackDoc.content)) return current;
+
+  const ackByClientId = new Map<string, Record<string, unknown>>();
+  for (const node of ackDoc.content) {
+    const attrs = node.attrs as Record<string, unknown> | undefined;
+    const clientId = attrs?.clientId;
+    if (typeof clientId === "string") {
+      ackByClientId.set(clientId, attrs ?? {});
+    }
+  }
+
+  let changed = false;
+  const content = current.content.map((node) => {
+    const attrs = node.attrs as Record<string, unknown> | undefined;
+    const clientId = attrs?.clientId;
+    if (typeof clientId !== "string") return node;
+
+    const ackAttrs = ackByClientId.get(clientId);
+    if (!ackAttrs) return node;
+
+    const nextAttrs = { ...(attrs ?? {}) };
+    let nodeChanged = false;
+
+    for (const key of ["blockId", "data-block-id", "sortKey", "data-sort-key", "syncCreateId", "data-sync-create-id", "clientBatchId"]) {
+      const value = ackAttrs[key];
+      if (value !== undefined && nextAttrs[key] !== value) {
+        nextAttrs[key] = value;
+        nodeChanged = true;
+      }
+    }
+
+    if (!nodeChanged) return node;
+    changed = true;
+    return { ...node, attrs: nextAttrs };
+  });
+
+  return changed ? { ...current, content } : current;
+}
+
 type OutputTab = "html" | "markdown" | "json";
 
 const DEFAULT_CONTENT: TiptapDoc = {
@@ -355,7 +395,15 @@ function EditorContent() {
     rootBlockId: syncEngineEnabled ? currentDoc?.rootBlockId ?? null : null,
     baseVersion: syncEngineEnabled ? currentDocVersion : null,
     content: syncEngineEnabled ? tiptapContent : null,
-    onContentPatched: (doc) => setContent(doc),
+    onContentPatched: (doc) => {
+      const latestEditorContent = editorRef.current?.getJSON() as TiptapDoc | undefined;
+      if (latestEditorContent?.type === "doc") {
+        // 不要在 create ack 到达时 setContent：高频编辑中 ack 对应的是旧 snapshot，
+        // 回灌到 React/editor 会覆盖用户当前视觉顺序。只把 ack 合并进 sync snapshot。
+        return mergeAckAttrsIntoCurrentEditorDoc(latestEditorContent, doc);
+      }
+      return doc;
+    },
   });
   const localSnapshot = useLocalDocumentSnapshot({
     docId: currentDoc?.docId ?? null,

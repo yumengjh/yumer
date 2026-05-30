@@ -3,6 +3,7 @@ import { useMarkdownEditor } from '../EditorContext';
 import { BlockHandle } from './BlockHandle';
 import { BlockMenu } from './BlockMenu';
 import { resolveBlockToolbarTarget, type BlockToolbarTarget } from './blockTarget';
+import { planExplicitMoveSortKey, withExplicitMoveSortKeyAttrs } from './sortKeyReorder';
 import './style.css';
 
 interface BlockToolbarProps {
@@ -326,6 +327,19 @@ const updatePosition = useCallback((block: HTMLElement) => {
       const sourceEnd = $source.after(1);
       const sourceNode = doc.nodeAt(sourceStart);
       if (!sourceNode) return;
+      const topLevelNodes = Array.from({ length: doc.childCount }, (_, index) => doc.child(index));
+      const plannedSortKey = planExplicitMoveSortKey(
+        topLevelNodes,
+        sourceIdx,
+        targetGapIndex,
+      );
+      const nodeToInsert = plannedSortKey
+        ? sourceNode.type.create(
+            withExplicitMoveSortKeyAttrs(sourceNode.attrs, plannedSortKey),
+            sourceNode.content,
+            sourceNode.marks,
+          )
+        : sourceNode;
 
       // 计算插入位置：在目标 gap 位置之前
       let insertPos: number;
@@ -344,7 +358,7 @@ const updatePosition = useCallback((block: HTMLElement) => {
       const tr = view.state.tr;
       tr.delete(sourceStart, sourceEnd);
       const mappedPos = tr.mapping.map(insertPos);
-      tr.insert(mappedPos, sourceNode);
+      tr.insert(mappedPos, nodeToInsert);
       view.dispatch(tr);
     } catch (err) {
       console.error('[BlockToolbar] 移动块失�?', err);

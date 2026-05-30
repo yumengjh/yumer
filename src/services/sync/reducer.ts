@@ -20,7 +20,10 @@ function normalizeCreatePayload(entry: SyncEntry): SyncEntry {
   };
 }
 
-function isDeleteNotFound(entry: SyncEntry | undefined, result: SyncBatchResult): boolean {
+function isDeleteNotFound(
+  entry: SyncEntry | undefined,
+  result: SyncBatchResult,
+): boolean {
   if (!entry || entry.opType !== "delete") return false;
   if (result.success) return false;
   const message = (result.error ?? "").toString().toLowerCase();
@@ -45,10 +48,15 @@ export function createInitialSyncState(
     inflightEntryRevisions: {},
     pendingCommit: false,
     lastError: null,
+    hasCorruptedSortKeys: false,
+    sortKeyCorruptionReport: null,
   };
 }
 
-export function enqueueChange(state: SyncReducerState, incoming: SyncEntry): SyncReducerState {
+export function enqueueChange(
+  state: SyncReducerState,
+  incoming: SyncEntry,
+): SyncReducerState {
   const current = state.entries[incoming.clientId];
 
   if (current?.opType === "create" && incoming.opType === "update") {
@@ -89,27 +97,36 @@ export function enqueueChange(state: SyncReducerState, incoming: SyncEntry): Syn
   }
 
   if (current && incoming.opType === "move") {
-    return upsertEntry(state, normalizeCreatePayload({
-      ...current,
-      opType: current.opType === "create" ? "create" : current.opType,
-      parentId: incoming.parentId ?? current.parentId,
-      sortKey: incoming.sortKey ?? current.sortKey,
-    }));
+    return upsertEntry(
+      state,
+      normalizeCreatePayload({
+        ...current,
+        opType: current.opType === "create" ? "create" : current.opType,
+        parentId: incoming.parentId ?? current.parentId,
+        sortKey: incoming.sortKey ?? current.sortKey,
+      }),
+    );
   }
 
   if (current) {
-    return upsertEntry(state, normalizeCreatePayload({
-      ...current,
-      ...incoming,
-      payload: incoming.payload ?? current.payload,
-      sortKey: incoming.sortKey ?? current.sortKey,
-    }));
+    return upsertEntry(
+      state,
+      normalizeCreatePayload({
+        ...current,
+        ...incoming,
+        payload: incoming.payload ?? current.payload,
+        sortKey: incoming.sortKey ?? current.sortKey,
+      }),
+    );
   }
 
   return upsertEntry(state, normalizeCreatePayload(incoming));
 }
 
-function upsertEntry(state: SyncReducerState, entry: SyncEntry): SyncReducerState {
+function upsertEntry(
+  state: SyncReducerState,
+  entry: SyncEntry,
+): SyncReducerState {
   const nextRevision = state.localRevision + 1;
   return {
     ...state,
@@ -166,19 +183,26 @@ function getAckedClientId(
   }
 
   if (result.blockId) {
-    const matched = inflightEntries.find((entry) => entry.blockId === result.blockId);
+    const matched = inflightEntries.find(
+      (entry) => entry.blockId === result.blockId,
+    );
     if (matched) return matched.clientId;
   }
 
   return null;
 }
 
-function withServerBlockId(entry: SyncEntry, blockId: string, sortKey?: string): SyncEntry {
+function withServerBlockId(
+  entry: SyncEntry,
+  blockId: string,
+  sortKey?: string,
+): SyncEntry {
   const payload = entry.payload
     ? {
         ...entry.payload,
         attrs: {
-          ...((entry.payload.attrs as Record<string, unknown> | undefined) ?? {}),
+          ...((entry.payload.attrs as Record<string, unknown> | undefined) ??
+            {}),
           blockId,
           "data-block-id": blockId,
           ...(sortKey ? { sortKey, "data-sort-key": sortKey } : {}),
@@ -217,7 +241,10 @@ export function resolveBatchSuccess(
 
   if (results.length === 0) {
     for (const entry of inflightEntries) {
-      if (nextEntries[entry.clientId]?.revision === state.inflightEntryRevisions[entry.clientId]) {
+      if (
+        nextEntries[entry.clientId]?.revision ===
+        state.inflightEntryRevisions[entry.clientId]
+      ) {
         delete nextEntries[entry.clientId];
       }
     }
@@ -226,7 +253,8 @@ export function resolveBatchSuccess(
   for (let index = 0; index < results.length; index += 1) {
     const result = results[index];
     const byIndex = inflightEntries[index];
-    const shouldTreatAsSuccess = result.success || isDeleteNotFound(byIndex, result);
+    const shouldTreatAsSuccess =
+      result.success || isDeleteNotFound(byIndex, result);
     if (!shouldTreatAsSuccess) continue;
 
     const clientId = getAckedClientId(result, byIndex, inflightEntries);
@@ -242,7 +270,11 @@ export function resolveBatchSuccess(
     }
 
     if (result.operation === "create" && result.blockId) {
-      nextEntries[clientId] = withServerBlockId(currentEntry, result.blockId, result.sortKey);
+      nextEntries[clientId] = withServerBlockId(
+        currentEntry,
+        result.blockId,
+        result.sortKey,
+      );
     }
   }
 
@@ -254,7 +286,8 @@ export function resolveBatchSuccess(
     inflightBatchId: null,
     inflightEntryIds: [],
     inflightEntryRevisions: {},
-    baseVersion: typeof serverHead === "number" ? serverHead : state.baseVersion,
+    baseVersion:
+      typeof serverHead === "number" ? serverHead : state.baseVersion,
     syncState: nextDirty.length > 0 ? "dirty" : "idle",
     lastError: null,
   };

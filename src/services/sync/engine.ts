@@ -2,7 +2,7 @@ import type { TiptapDoc, TiptapNode } from "@/services/tiptap-converter";
 import { extractPlainText } from "@/services/tiptap-converter";
 import { ensureDocumentIdentity, readIdentityFromAttrs } from "./identity";
 import { createSortKeyBetween, createSortKeysBetween } from "./order";
-import type { SyncEntry } from "./types";
+import type { SortKeyCorruptionReport, SyncEntry } from "./types";
 
 const TIPTAP_TO_BLOCK_TYPE: Record<string, string> = {
   heading: "heading",
@@ -110,11 +110,61 @@ function indexTopLevel(doc: TiptapDoc): Record<string, IndexedNode> {
   return indexed;
 }
 
+export function analyzeSortKeyIntegrity(
+  doc: TiptapDoc | null,
+): SortKeyCorruptionReport {
+  const duplicates = new Map<string, string[]>();
+  const nonMonotonic: SortKeyCorruptionReport["nonMonotonic"] = [];
+  const nodes = Array.isArray(doc?.content) ? doc.content : [];
+  let previous: { clientId: string; sortKey: string; parsed: number } | null =
+    null;
+
+  for (const node of nodes) {
+    const identity = readIdentityFromAttrs(node.attrs);
+    if (!identity.clientId) continue;
+    const sortKey =
+      typeof node.attrs?.sortKey === "string" &&
+      node.attrs.sortKey.trim() !== ""
+        ? node.attrs.sortKey
+        : null;
+    if (!sortKey) continue;
+
+    const clients = duplicates.get(sortKey) ?? [];
+    clients.push(identity.clientId);
+    duplicates.set(sortKey, clients);
+
+    const parsed = parseSortKey(sortKey);
+    if (parsed == null) continue;
+    if (previous && previous.parsed >= parsed) {
+      nonMonotonic.push({
+        previousClientId: previous.clientId,
+        previousSortKey: previous.sortKey,
+        clientId: identity.clientId,
+        sortKey,
+      });
+    }
+    previous = { clientId: identity.clientId, sortKey, parsed };
+  }
+
+  return {
+    duplicates: [...duplicates.entries()]
+      .filter(([, clientIds]) => clientIds.length > 1)
+      .map(([sortKey, clientIds]) => ({ sortKey, clientIds })),
+    nonMonotonic,
+  };
+}
+
+export function hasCorruptedSortKeys(report: SortKeyCorruptionReport): boolean {
+  return report.duplicates.length > 0 || report.nonMonotonic.length > 0;
+}
+
 function sortKeyForPosition(nextNodes: IndexedNode[], index: number): string {
   const previousExisting = [...nextNodes.slice(0, index)]
     .reverse()
     .find((item) => item.blockId || item.sortKey);
-  const nextExisting = nextNodes.slice(index + 1).find((item) => item.blockId || item.sortKey);
+  const nextExisting = nextNodes
+    .slice(index + 1)
+    .find((item) => item.blockId || item.sortKey);
 
   return createSortKeyBetween(
     previousExisting?.sortKey ?? null,
@@ -163,7 +213,10 @@ function longestIncreasingSubsequence(values: number[]): number[] {
   return indices;
 }
 
-function withCreateIdentity(node: TiptapNode, clientId: string): Record<string, unknown> {
+function withCreateIdentity(
+  node: TiptapNode,
+  clientId: string,
+): Record<string, unknown> {
   const syncCreateId = createSyncCreateId(clientId);
   return {
     ...node,
@@ -194,17 +247,24 @@ function allocateCreateSortKeys(
 
     const runStart = index;
     const run: IndexedNode[] = [];
-    while (index < orderedNextNodes.length && !prevIndexed[orderedNextNodes[index].clientId]) {
+    while (
+      index < orderedNextNodes.length &&
+      !prevIndexed[orderedNextNodes[index].clientId]
+    ) {
       run.push(orderedNextNodes[index]);
       index += 1;
     }
 
     const previousExisting = [...orderedNextNodes.slice(0, runStart)]
       .reverse()
-      .find((item) => item.blockId || prevIndexed[item.clientId] || item.sortKey);
+      .find(
+        (item) => item.blockId || prevIndexed[item.clientId] || item.sortKey,
+      );
     const nextExisting = orderedNextNodes
       .slice(index)
-      .find((item) => item.blockId || prevIndexed[item.clientId] || item.sortKey);
+      .find(
+        (item) => item.blockId || prevIndexed[item.clientId] || item.sortKey,
+      );
     const allocated = createSortKeysBetween(
       previousExisting?.sortKey ?? null,
       nextExisting?.sortKey ?? null,
@@ -224,10 +284,16 @@ function planDesiredSortKeys(
   prevIndexed: Record<string, IndexedNode>,
 ): Map<string, string> {
   const desiredSortKeys = new Map<string, string>();
-  const existingNodes = orderedNextNodes.filter((node) => Boolean(prevIndexed[node.clientId]));
-  const existingValues = existingNodes.map((node) => parseSortKey(prevIndexed[node.clientId].sortKey) ?? 0);
+  const existingNodes = orderedNextNodes.filter((node) =>
+    Boolean(prevIndexed[node.clientId]),
+  );
+  const existingValues = existingNodes.map(
+    (node) => parseSortKey(prevIndexed[node.clientId].sortKey) ?? 0,
+  );
   const stableAnchorIds = new Set(
-    longestIncreasingSubsequence(existingValues).map((index) => existingNodes[index].clientId),
+    longestIncreasingSubsequence(existingValues).map(
+      (index) => existingNodes[index].clientId,
+    ),
   );
 
   let index = 0;
@@ -252,13 +318,19 @@ function planDesiredSortKeys(
     }
 
     const run = orderedNextNodes.slice(runStart, index);
-    const previousDesiredKey = runStart > 0
-      ? desiredSortKeys.get(orderedNextNodes[runStart - 1].clientId) ?? null
-      : null;
-    const nextAnchorKey = index < orderedNextNodes.length
-      ? prevIndexed[orderedNextNodes[index].clientId]?.sortKey ?? null
-      : null;
-    const allocatedKeys = createSortKeysBetween(previousDesiredKey, nextAnchorKey, run.length);
+    const previousDesiredKey =
+      runStart > 0
+        ? (desiredSortKeys.get(orderedNextNodes[runStart - 1].clientId) ?? null)
+        : null;
+    const nextAnchorKey =
+      index < orderedNextNodes.length
+        ? (prevIndexed[orderedNextNodes[index].clientId]?.sortKey ?? null)
+        : null;
+    const allocatedKeys = createSortKeysBetween(
+      previousDesiredKey,
+      nextAnchorKey,
+      run.length,
+    );
 
     run.forEach((node, offset) => {
       desiredSortKeys.set(node.clientId, allocatedKeys[offset]);
@@ -268,13 +340,28 @@ function planDesiredSortKeys(
   return desiredSortKeys;
 }
 
-export function deriveSyncEntries(prevDoc: TiptapDoc | null, nextDoc: TiptapDoc): SyncEntry[] {
+export function deriveSyncEntries(
+  prevDoc: TiptapDoc | null,
+  nextDoc: TiptapDoc,
+): SyncEntry[] {
   const nextIndexed = indexTopLevel(nextDoc);
   const prevIndexed = prevDoc ? indexTopLevel(prevDoc) : {};
   const entries: SyncEntry[] = [];
-  const orderedNextNodes = Object.values(nextIndexed).sort((a, b) => a.index - b.index);
+  const orderedNextNodes = Object.values(nextIndexed).sort(
+    (a, b) => a.index - b.index,
+  );
   const createSortKeys = allocateCreateSortKeys(orderedNextNodes, prevIndexed);
-  const desiredSortKeys = planDesiredSortKeys(orderedNextNodes, prevIndexed);
+  const previousSortKeysAreCorrupted = hasCorruptedSortKeys(
+    analyzeSortKeyIntegrity(prevDoc),
+  );
+  const nextSortKeysAreCorrupted = hasCorruptedSortKeys(
+    analyzeSortKeyIntegrity(nextDoc),
+  );
+  const shouldSuppressExistingMoves =
+    previousSortKeysAreCorrupted || nextSortKeysAreCorrupted;
+  const desiredSortKeys = shouldSuppressExistingMoves
+    ? new Map<string, string>()
+    : planDesiredSortKeys(orderedNextNodes, prevIndexed);
 
   for (const nextNode of orderedNextNodes) {
     const prevNode = prevIndexed[nextNode.clientId];
@@ -287,13 +374,18 @@ export function deriveSyncEntries(prevDoc: TiptapDoc | null, nextDoc: TiptapDoc)
         syncCreateId,
         blockType: toBlockType(nextNode.node.type),
         payload: withCreateIdentity(nextNode.node, nextNode.clientId),
-        sortKey: createSortKeys.get(nextNode.clientId) ?? desiredSortKeys.get(nextNode.clientId) ?? sortKeyForPosition(orderedNextNodes, nextNode.index),
+        sortKey:
+          createSortKeys.get(nextNode.clientId) ??
+          desiredSortKeys.get(nextNode.clientId) ??
+          sortKeyForPosition(orderedNextNodes, nextNode.index),
       });
       continue;
     }
 
-    const nextSortKey = desiredSortKeys.get(nextNode.clientId) ?? sortKeyForPosition(orderedNextNodes, nextNode.index);
-    if (nextSortKey !== prevNode.sortKey) {
+    const nextSortKey =
+      desiredSortKeys.get(nextNode.clientId) ??
+      sortKeyForPosition(orderedNextNodes, nextNode.index);
+    if (!shouldSuppressExistingMoves && nextSortKey !== prevNode.sortKey) {
       entries.push({
         clientId: nextNode.clientId,
         blockId: prevNode.blockId,
@@ -302,7 +394,8 @@ export function deriveSyncEntries(prevDoc: TiptapDoc | null, nextDoc: TiptapDoc)
       });
     }
 
-    const changedPayload = payloadFingerprint(prevNode.node) !== payloadFingerprint(nextNode.node);
+    const changedPayload =
+      payloadFingerprint(prevNode.node) !== payloadFingerprint(nextNode.node);
     if (changedPayload) {
       entries.push({
         clientId: nextNode.clientId,
@@ -332,9 +425,15 @@ export function applyCreateAck(
   mappings: Array<{ clientId: string; blockId: string; sortKey?: string }>,
 ): TiptapDoc {
   if (!Array.isArray(doc.content) || mappings.length === 0) return doc;
-  const ackByClientId = new Map<string, { blockId: string; sortKey?: string }>();
+  const ackByClientId = new Map<
+    string,
+    { blockId: string; sortKey?: string }
+  >();
   for (const item of mappings) {
-    ackByClientId.set(item.clientId, { blockId: item.blockId, sortKey: item.sortKey });
+    ackByClientId.set(item.clientId, {
+      blockId: item.blockId,
+      sortKey: item.sortKey,
+    });
   }
 
   let changed = false;

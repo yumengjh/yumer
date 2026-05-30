@@ -1,17 +1,25 @@
 import type { TiptapDoc } from "@/services/tiptap-converter";
 import {
+  analyzeSortKeyIntegrity,
   deriveSyncEntries,
+  hasCorruptedSortKeys,
   normalizeEditorDoc,
 } from "@/services/sync/engine";
 import { enqueueChange } from "@/services/sync/reducer";
 import type { SyncReducerState } from "@/services/sync/types";
 
-function applyLocalSortKeys(snapshot: TiptapDoc, state: SyncReducerState): TiptapDoc {
+function applyLocalSortKeys(
+  snapshot: TiptapDoc,
+  state: SyncReducerState,
+): TiptapDoc {
   if (!Array.isArray(snapshot.content)) return snapshot;
 
   let changed = false;
   const content = snapshot.content.map((node) => {
-    const clientId = typeof node.attrs?.clientId === "string" ? node.attrs.clientId : undefined;
+    const clientId =
+      typeof node.attrs?.clientId === "string"
+        ? node.attrs.clientId
+        : undefined;
     if (!clientId) return node;
 
     const entry = state.entries[clientId];
@@ -38,7 +46,15 @@ export function advanceSyncSnapshot(
 ): { state: SyncReducerState; snapshot: TiptapDoc } {
   const normalizedSnapshot = normalizeEditorDoc(content);
   if (!previousSnapshot) {
-    return { state, snapshot: normalizedSnapshot };
+    const report = analyzeSortKeyIntegrity(normalizedSnapshot);
+    return {
+      state: {
+        ...state,
+        hasCorruptedSortKeys: hasCorruptedSortKeys(report),
+        sortKeyCorruptionReport: hasCorruptedSortKeys(report) ? report : null,
+      },
+      snapshot: normalizedSnapshot,
+    };
   }
 
   const entries = deriveSyncEntries(previousSnapshot, normalizedSnapshot);
@@ -47,5 +63,15 @@ export function advanceSyncSnapshot(
     nextState = enqueueChange(nextState, entry);
   }
 
-  return { state: nextState, snapshot: applyLocalSortKeys(normalizedSnapshot, nextState) };
+  const snapshot = applyLocalSortKeys(normalizedSnapshot, nextState);
+  const report = analyzeSortKeyIntegrity(snapshot);
+  const corrupted = hasCorruptedSortKeys(report);
+  return {
+    state: {
+      ...nextState,
+      hasCorruptedSortKeys: corrupted,
+      sortKeyCorruptionReport: corrupted ? report : null,
+    },
+    snapshot,
+  };
 }

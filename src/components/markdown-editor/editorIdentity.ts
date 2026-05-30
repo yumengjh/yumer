@@ -1,6 +1,10 @@
 import type { Editor } from "@tiptap/core";
 import type { TiptapDoc, TiptapNode } from "@/services/tiptap-converter";
-import { BLOCK_IDENTITY_NODE_TYPES, createClientId, readIdentityFromAttrs } from "@/services/sync/identity";
+import {
+  BLOCK_IDENTITY_NODE_TYPES,
+  createClientId,
+  readIdentityFromAttrs,
+} from "@/services/sync/identity";
 
 export const BLOCK_IDENTITY_PATCH_META = "markdownEditor:blockIdentityPatch";
 
@@ -27,12 +31,14 @@ export function patchEditorDocumentIdentity(editor: EditorLike): boolean {
     const identity = readIdentityFromAttrs(node.attrs);
     const attrs = { ...node.attrs };
     let changed = false;
+    let freshIdentity = false;
 
     let clientId = identity.clientId;
     if (!clientId || seenClientIds.has(clientId)) {
       clientId = createClientId();
       attrs.clientId = clientId;
       changed = true;
+      freshIdentity = true;
     } else if (attrs.clientId !== clientId) {
       attrs.clientId = clientId;
       changed = true;
@@ -46,6 +52,7 @@ export function patchEditorDocumentIdentity(editor: EditorLike): boolean {
           attrs.blockId = null;
           delete attrs["data-block-id"];
           changed = true;
+          freshIdentity = true;
         }
       } else {
         seenBlockIds.add(blockId);
@@ -53,6 +60,17 @@ export function patchEditorDocumentIdentity(editor: EditorLike): boolean {
           attrs.blockId = blockId;
           changed = true;
         }
+      }
+    }
+
+    if (freshIdentity) {
+      if (attrs.sortKey !== null) {
+        attrs.sortKey = null;
+        changed = true;
+      }
+      if (attrs["data-sort-key"] !== undefined) {
+        delete attrs["data-sort-key"];
+        changed = true;
       }
     }
 
@@ -71,7 +89,8 @@ export function patchEditorDocumentIdentity(editor: EditorLike): boolean {
 }
 
 function stripIdentityAttrs(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map((item) => stripIdentityAttrs(item));
+  if (Array.isArray(value))
+    return value.map((item) => stripIdentityAttrs(item));
   if (!value || typeof value !== "object") return value;
 
   const raw = value as Record<string, unknown>;
@@ -100,7 +119,78 @@ function stripIdentityAttrs(value: unknown): unknown {
 }
 
 function sameNodeWithoutIdentity(left: TiptapNode, right: TiptapNode): boolean {
-  return JSON.stringify(stripIdentityAttrs(left)) === JSON.stringify(stripIdentityAttrs(right));
+  return (
+    JSON.stringify(stripIdentityAttrs(left)) ===
+    JSON.stringify(stripIdentityAttrs(right))
+  );
+}
+
+function patchEditorBlockIdentityByClientIdFromDoc(
+  editor: EditorLike,
+  nextNodes: TiptapNode[],
+): boolean {
+  const nextByClientId = new Map<string, TiptapNode>();
+  for (const node of nextNodes) {
+    const identity = readIdentityFromAttrs(node.attrs);
+    if (identity.clientId) nextByClientId.set(identity.clientId, node);
+  }
+  if (nextByClientId.size === 0) return false;
+
+  const tr = editor.state.tr;
+  let matched = 0;
+
+  editor.state.doc.forEach((currentNode, offset) => {
+    const currentIdentity = readIdentityFromAttrs(currentNode.attrs);
+    if (!currentIdentity.clientId) return;
+    const nextNode = nextByClientId.get(currentIdentity.clientId);
+    if (!nextNode) return;
+    if (currentNode.type.name !== nextNode.type) return;
+
+    const currentJson = currentNode.toJSON() as TiptapNode;
+    if (!sameNodeWithoutIdentity(currentJson, nextNode)) return;
+
+    matched += 1;
+    const nextIdentity = readIdentityFromAttrs(nextNode.attrs);
+    const currentBlockId = currentIdentity.blockId ?? null;
+    const nextBlockId = nextIdentity.blockId ?? null;
+    const nextSortKey =
+      typeof nextNode.attrs?.sortKey === "string"
+        ? nextNode.attrs.sortKey
+        : null;
+    const nextAttrs = { ...currentNode.attrs };
+    let changed = false;
+
+    if (nextBlockId && currentBlockId !== nextBlockId) {
+      nextAttrs.blockId = nextBlockId;
+      nextAttrs["data-block-id"] = nextBlockId;
+      changed = true;
+    }
+
+    if (
+      !currentBlockId &&
+      nextBlockId &&
+      nextSortKey &&
+      (currentNode.attrs.sortKey ?? null) !== nextSortKey
+    ) {
+      nextAttrs.sortKey = nextSortKey;
+      nextAttrs["data-sort-key"] = nextSortKey;
+      changed = true;
+    }
+
+    if (changed) {
+      tr.setNodeMarkup(offset, undefined, nextAttrs, currentNode.marks);
+    }
+  });
+
+  if (tr.docChanged) {
+    tr.setMeta(BLOCK_IDENTITY_PATCH_META, true);
+    tr.setMeta("addToHistory", false);
+    tr.setSelection(editor.state.selection.map(tr.doc, tr.mapping));
+    editor.view.dispatch(tr);
+    return true;
+  }
+
+  return matched > 0;
 }
 
 /**
@@ -109,19 +199,28 @@ function sameNodeWithoutIdentity(left: TiptapNode, right: TiptapNode): boolean {
  * 自动同步 create ack 只会补齐 blockId。如果直接让 React 外部 content 触发
  * editor.commands.setContent，会重建文档并把光标推到后续空块；这里用事务只更新 attrs。
  */
-export function patchEditorBlockIdentityFromDoc(editor: EditorLike, nextDoc: TiptapDoc): boolean {
+export function patchEditorBlockIdentityFromDoc(
+  editor: EditorLike,
+  nextDoc: TiptapDoc,
+): boolean {
   const nextNodes = Array.isArray(nextDoc.content) ? nextDoc.content : [];
-  if (editor.state.doc.childCount !== nextNodes.length) return false;
+  if (editor.state.doc.childCount !== nextNodes.length) {
+    return patchEditorBlockIdentityByClientIdFromDoc(editor, nextNodes);
+  }
 
   const tr = editor.state.tr;
 
   for (let index = 0; index < nextNodes.length; index += 1) {
     const currentNode = editor.state.doc.child(index);
     const nextNode = nextNodes[index];
-    if (currentNode.type.name !== nextNode.type) return false;
+    if (currentNode.type.name !== nextNode.type) {
+      return patchEditorBlockIdentityByClientIdFromDoc(editor, nextNodes);
+    }
 
     const currentJson = currentNode.toJSON() as TiptapNode;
-    if (!sameNodeWithoutIdentity(currentJson, nextNode)) return false;
+    if (!sameNodeWithoutIdentity(currentJson, nextNode)) {
+      return patchEditorBlockIdentityByClientIdFromDoc(editor, nextNodes);
+    }
 
     const currentIdentity = readIdentityFromAttrs(currentNode.attrs);
     const nextIdentity = readIdentityFromAttrs(nextNode.attrs);
@@ -131,31 +230,53 @@ export function patchEditorBlockIdentityFromDoc(editor: EditorLike, nextDoc: Tip
       nextIdentity.clientId &&
       currentIdentity.clientId !== nextIdentity.clientId
     ) {
-      return false;
+      return patchEditorBlockIdentityByClientIdFromDoc(editor, nextNodes);
     }
 
     const nextAttrs = { ...currentNode.attrs };
     let changed = false;
+    const currentBlockId = currentIdentity.blockId ?? null;
 
-    if (nextIdentity.clientId && currentNode.attrs.clientId !== nextIdentity.clientId) {
+    if (
+      nextIdentity.clientId &&
+      currentNode.attrs.clientId !== nextIdentity.clientId
+    ) {
       nextAttrs.clientId = nextIdentity.clientId;
       changed = true;
     }
 
     const nextBlockId = nextIdentity.blockId ?? null;
-    if ((currentNode.attrs.blockId ?? null) !== nextBlockId) {
+    if (currentBlockId !== nextBlockId) {
       nextAttrs.blockId = nextBlockId;
+      if (nextBlockId) {
+        nextAttrs["data-block-id"] = nextBlockId;
+      } else {
+        delete nextAttrs["data-block-id"];
+      }
       changed = true;
     }
 
-    const nextSortKey = typeof nextNode.attrs?.sortKey === "string" ? nextNode.attrs.sortKey : null;
-    if ((currentNode.attrs.sortKey ?? null) !== nextSortKey) {
+    const nextSortKey =
+      typeof nextNode.attrs?.sortKey === "string"
+        ? nextNode.attrs.sortKey
+        : null;
+    const canPatchCreateAckSortKey = !currentBlockId && Boolean(nextBlockId);
+    if (
+      canPatchCreateAckSortKey &&
+      (currentNode.attrs.sortKey ?? null) !== nextSortKey
+    ) {
       nextAttrs.sortKey = nextSortKey;
+      nextAttrs["data-sort-key"] = nextSortKey;
       changed = true;
     }
 
     if (changed) {
-      tr.setNodeMarkup(tr.doc.resolve(0).posAtIndex(index, 0), undefined, nextAttrs, currentNode.marks);
+      tr.setNodeMarkup(
+        tr.doc.resolve(0).posAtIndex(index, 0),
+        undefined,
+        nextAttrs,
+        currentNode.marks,
+      );
     }
   }
 

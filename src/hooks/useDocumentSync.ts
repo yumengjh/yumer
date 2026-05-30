@@ -12,7 +12,8 @@ import {
   resolveBatchSuccess,
 } from "@/services/sync/reducer";
 import { advanceSyncSnapshot } from "@/services/sync/snapshot";
-import type { SyncReducerState } from "@/services/sync/types";
+import { createSortKeysBetween } from "@/services/sync/order";
+import type { SyncEntry, SyncReducerState } from "@/services/sync/types";
 
 type SyncSource = "autosync" | "manual-save";
 
@@ -21,7 +22,7 @@ type UseDocumentSyncArgs = {
   rootBlockId: string | null;
   baseVersion: number | null;
   content: TiptapDoc | null;
-  onContentPatched?: (doc: TiptapDoc) => void;
+  onContentPatched?: (doc: TiptapDoc) => TiptapDoc | void;
 };
 
 function createBatchId(): string {
@@ -31,6 +32,108 @@ function createBatchId(): string {
 function logSyncEvent(event: string, details: Record<string, unknown>) {
   if (process.env.NODE_ENV === "production") return;
   console.debug(`[sync] ${event}`, details);
+}
+
+function readClientId(node: TiptapDoc["content"][number]): string | null {
+  const value = node.attrs?.clientId ?? node.attrs?.["data-client-id"];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function readBlockId(node: TiptapDoc["content"][number]): string | null {
+  const value = node.attrs?.blockId ?? node.attrs?.["data-block-id"];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function readSortKey(node: TiptapDoc["content"][number]): string | null {
+  const value = node.attrs?.sortKey ?? node.attrs?.["data-sort-key"];
+  return typeof value === "string" && value.trim() !== "" ? value : null;
+}
+
+function withEntrySortKey(entry: SyncEntry, sortKey: string): SyncEntry {
+  return {
+    ...entry,
+    sortKey,
+    payload: entry.payload
+      ? {
+          ...entry.payload,
+          attrs: {
+            ...((entry.payload.attrs as Record<string, unknown> | undefined) ?? {}),
+            sortKey,
+            "data-sort-key": sortKey,
+          },
+        }
+      : entry.payload,
+  };
+}
+
+function rebasePendingCreatesToSnapshotOrder(
+  state: SyncReducerState,
+  snapshot: TiptapDoc | null,
+): SyncReducerState {
+  if (!snapshot?.content?.length) return state;
+
+  const entries = { ...state.entries };
+  let changed = false;
+  let index = 0;
+
+  while (index < snapshot.content.length) {
+    const node = snapshot.content[index];
+    const clientId = readClientId(node);
+    const entry = clientId ? entries[clientId] : undefined;
+    if (entry?.opType !== "create") {
+      index += 1;
+      continue;
+    }
+
+    const runStart = index;
+    const run: Array<{ clientId: string; entry: SyncEntry }> = [];
+    while (index < snapshot.content.length) {
+      const runNode = snapshot.content[index];
+      const runClientId = readClientId(runNode);
+      const runEntry = runClientId ? entries[runClientId] : undefined;
+      if (runEntry?.opType !== "create") break;
+      run.push({ clientId: runClientId!, entry: runEntry });
+      index += 1;
+    }
+
+    const previousExisting = [...snapshot.content.slice(0, runStart)]
+      .reverse()
+      .find((item) => readBlockId(item) && readSortKey(item));
+    const nextExisting = snapshot.content
+      .slice(index)
+      .find((item) => readBlockId(item) && readSortKey(item));
+    const sortKeys = createSortKeysBetween(
+      previousExisting ? readSortKey(previousExisting) : null,
+      nextExisting ? readSortKey(nextExisting) : null,
+      run.length,
+    );
+
+    run.forEach((item, offset) => {
+      const sortKey = sortKeys[offset];
+      if (item.entry.sortKey !== sortKey) {
+        entries[item.clientId] = withEntrySortKey(item.entry, sortKey);
+        changed = true;
+      }
+    });
+  }
+
+  if (!changed) return state;
+
+  const visualOrder = new Map<string, number>();
+  snapshot.content.forEach((node, order) => {
+    const clientId = readClientId(node);
+    if (clientId) visualOrder.set(clientId, order);
+  });
+
+  return {
+    ...state,
+    entries,
+    dirtyOrder: [...state.dirtyOrder].sort(
+      (left, right) =>
+        (visualOrder.get(left) ?? Number.MAX_SAFE_INTEGER) -
+        (visualOrder.get(right) ?? Number.MAX_SAFE_INTEGER),
+    ),
+  };
 }
 
 export function useDocumentSync({
@@ -52,7 +155,9 @@ export function useDocumentSync({
   }, []);
 
   const updateSyncState = useCallback(
-    (updater: (current: SyncReducerState | null) => SyncReducerState | null) => {
+    (
+      updater: (current: SyncReducerState | null) => SyncReducerState | null,
+    ) => {
       return replaceSyncState(updater(stateRef.current));
     },
     [replaceSyncState],
@@ -63,8 +168,18 @@ export function useDocumentSync({
       const current = stateRef.current;
       if (!current || !nextContent) return current;
 
-      const advanced = advanceSyncSnapshot(current, snapshotRef.current, nextContent);
+      const advanced = advanceSyncSnapshot(
+        current,
+        snapshotRef.current,
+        nextContent,
+      );
       snapshotRef.current = advanced.snapshot;
+      if (advanced.state.hasCorruptedSortKeys) {
+        logSyncEvent("snapshot:sort-key-corruption", {
+          docId: current.docId,
+          report: advanced.state.sortKeyCorruptionReport,
+        });
+      }
       if (advanced.state !== current) {
         replaceSyncState(advanced.state);
       }
@@ -106,7 +221,18 @@ export function useDocumentSync({
           if (current.inflightBatchId) return;
           if (current.dirtyOrder.length === 0) return;
 
-          const operations = selectSyncBatchOperations(current.dirtyOrder, current.entries);
+          const rebased = rebasePendingCreatesToSnapshotOrder(
+            current,
+            snapshotRef.current,
+          );
+          if (rebased !== current) {
+            replaceSyncState(rebased);
+          }
+
+          const operations = selectSyncBatchOperations(
+            rebased.dirtyOrder,
+            rebased.entries,
+          );
 
           if (operations.length === 0) {
             return;
@@ -114,30 +240,38 @@ export function useDocumentSync({
 
           const clientBatchId = createBatchId();
           logSyncEvent("flush:dispatch", {
-            docId: current.docId,
+            docId: rebased.docId,
             clientBatchId,
-            baseVersion: current.baseVersion,
+            baseVersion: rebased.baseVersion,
             operationCount: operations.length,
-            createCount: operations.filter((op) => op.opType === "create").length,
-            updateCount: operations.filter((op) => op.opType === "update").length,
-            deleteCount: operations.filter((op) => op.opType === "delete").length,
+            createCount: operations.filter((op) => op.opType === "create")
+              .length,
+            updateCount: operations.filter((op) => op.opType === "update")
+              .length,
+            deleteCount: operations.filter((op) => op.opType === "delete")
+              .length,
             moveCount: operations.filter((op) => op.opType === "move").length,
           });
           replaceSyncState(
-            markBatchInflight(current, clientBatchId, operations.map((op) => op.clientId), source === "manual-save"),
+            markBatchInflight(
+              rebased,
+              clientBatchId,
+              operations.map((op) => op.clientId),
+              source === "manual-save",
+            ),
           );
 
           try {
             const response = await postSyncBatch({
-              docId: current.docId,
-              rootBlockId: current.rootBlockId,
-              baseVersion: current.baseVersion,
+              docId: rebased.docId,
+              rootBlockId: rebased.rootBlockId,
+              baseVersion: rebased.baseVersion,
               clientBatchId,
               source,
               operations,
             });
             logSyncEvent("flush:response", {
-              docId: current.docId,
+              docId: rebased.docId,
               acceptedBatchId: response.acceptedBatchId,
               serverHead: response.serverHead,
               needsReload: response.needsReload,
@@ -146,17 +280,33 @@ export function useDocumentSync({
 
             if (response.needsReload) {
               updateSyncState((prev) =>
-                prev ? resolveBatchFailure(prev, clientBatchId, "检测到版本冲突，请刷新后重试", true) : prev,
+                prev
+                  ? resolveBatchFailure(
+                      prev,
+                      clientBatchId,
+                      "检测到版本冲突，请刷新后重试",
+                      true,
+                    )
+                  : prev,
               );
               return;
             }
 
             updateSyncState((prev) =>
-              prev ? resolveBatchSuccess(prev, clientBatchId, response.results, response.serverHead) : prev,
+              prev
+                ? resolveBatchSuccess(
+                    prev,
+                    clientBatchId,
+                    response.results,
+                    response.serverHead,
+                  )
+                : prev,
             );
 
             const createMappings = response.results
-              .filter((result) => result.success && result.clientId && result.blockId)
+              .filter(
+                (result) => result.success && result.clientId && result.blockId,
+              )
               .map((result) => ({
                 clientId: result.clientId!,
                 blockId: result.blockId!,
@@ -166,15 +316,20 @@ export function useDocumentSync({
             const currentSnapshot = snapshotRef.current;
             if (currentSnapshot && createMappings.length > 0) {
               const patched = applyCreateAck(currentSnapshot, createMappings);
-              snapshotRef.current = patched;
               if (onContentPatched && patched !== currentSnapshot) {
-                onContentPatched(patched);
+                const applied = onContentPatched(patched);
+                snapshotRef.current =
+                  applied && applied.type === "doc" ? applied : patched;
+              } else {
+                snapshotRef.current = patched;
               }
             }
           } catch (error) {
             const message = error instanceof Error ? error.message : "同步失败";
             updateSyncState((prev) =>
-              prev ? resolveBatchFailure(prev, clientBatchId, message, false) : prev,
+              prev
+                ? resolveBatchFailure(prev, clientBatchId, message, false)
+                : prev,
             );
             return;
           }
@@ -186,30 +341,37 @@ export function useDocumentSync({
     [onContentPatched, replaceSyncState, updateSyncState],
   );
 
-  const flushAndCommitBarrier = useCallback(async (latestContent?: TiptapDoc | null): Promise<boolean> => {
-    if (latestContent) {
-      captureContentSnapshot(latestContent);
-    }
-
-    updateSyncState((prev) => (prev ? markPendingCommit(prev) : prev));
-    try {
-      await flush("manual-save");
-      const current = stateRef.current;
-      if (!current) return false;
-      if (current.syncState === "conflicted" || current.syncState === "error") {
-        return false;
+  const flushAndCommitBarrier = useCallback(
+    async (latestContent?: TiptapDoc | null): Promise<boolean> => {
+      if (latestContent) {
+        captureContentSnapshot(latestContent);
       }
-      return current.dirtyOrder.length === 0;
-    } finally {
-      updateSyncState((prev) => (prev ? clearPendingCommit(prev) : prev));
-    }
-  }, [captureContentSnapshot, flush, updateSyncState]);
+
+      updateSyncState((prev) => (prev ? markPendingCommit(prev) : prev));
+      try {
+        await flush("manual-save");
+        const current = stateRef.current;
+        if (!current) return false;
+        if (
+          current.syncState === "conflicted" ||
+          current.syncState === "error"
+        ) {
+          return false;
+        }
+        return current.dirtyOrder.length === 0;
+      } finally {
+        updateSyncState((prev) => (prev ? clearPendingCommit(prev) : prev));
+      }
+    },
+    [captureContentSnapshot, flush, updateSyncState],
+  );
 
   const uiSaveStatus = useMemo(() => {
     if (!syncState) return "idle" as const;
     if (syncState.syncState === "flushing") return "flushing" as const;
     if (syncState.syncState === "dirty") return "dirty" as const;
-    if (syncState.syncState === "error" || syncState.syncState === "conflicted") return "error" as const;
+    if (syncState.syncState === "error" || syncState.syncState === "conflicted")
+      return "error" as const;
     return "saved" as const;
   }, [syncState]);
 

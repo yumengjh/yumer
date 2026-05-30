@@ -7,16 +7,32 @@ describe("deriveSyncEntries order handling", () => {
     const previous: TiptapDoc = {
       type: "doc",
       content: [
-        { type: "paragraph", attrs: { clientId: "c_a", blockId: "b_a", sortKey: "001000" } },
-        { type: "paragraph", attrs: { clientId: "c_b", blockId: "b_b", sortKey: "002000" } },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: "001000" },
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_b", blockId: "b_b", sortKey: "002000" },
+        },
       ],
     };
     const next: TiptapDoc = {
       type: "doc",
       content: [
-        { type: "paragraph", attrs: { clientId: "c_a", blockId: "b_a", sortKey: "001000" } },
-        { type: "paragraph", attrs: { clientId: "c_x" }, content: [{ type: "text", text: "inserted" }] },
-        { type: "paragraph", attrs: { clientId: "c_b", blockId: "b_b", sortKey: "002000" } },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: "001000" },
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_x" },
+          content: [{ type: "text", text: "inserted" }],
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_b", blockId: "b_b", sortKey: "002000" },
+        },
       ],
     };
 
@@ -27,49 +43,196 @@ describe("deriveSyncEntries order handling", () => {
     expect(create?.sortKey).toBe("001500");
   });
 
-  it("allocates unique sortKeys when multiple top-level blocks are created in sequence", () => {
+  it("does not move unchanged existing blocks when inserting into a document with duplicated sortKeys", () => {
     const previous: TiptapDoc = {
       type: "doc",
       content: [
-        { type: "paragraph", attrs: { clientId: "c_a", blockId: "b_a", sortKey: "001000" } },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: "001000" },
+          content: [{ type: "text", text: "A" }],
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_b", blockId: "b_b", sortKey: "001000" },
+          content: [{ type: "text", text: "B" }],
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_c", blockId: "b_c", sortKey: "002000" },
+          content: [{ type: "text", text: "C" }],
+        },
       ],
     };
     const next: TiptapDoc = {
       type: "doc",
       content: [
-        { type: "paragraph", attrs: { clientId: "c_a", blockId: "b_a", sortKey: "001000" } },
-        { type: "paragraph", attrs: { clientId: "c_empty_1" } },
-        { type: "paragraph", attrs: { clientId: "c_empty_2" } },
-        { type: "paragraph", attrs: { clientId: "c_after" }, content: [{ type: "text", text: "after blanks" }] },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: "001000" },
+          content: [{ type: "text", text: "A" }],
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_x" },
+          content: [{ type: "text", text: "X" }],
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_b", blockId: "b_b", sortKey: "001000" },
+          content: [{ type: "text", text: "B" }],
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_c", blockId: "b_c", sortKey: "002000" },
+          content: [{ type: "text", text: "C" }],
+        },
       ],
     };
 
-    const creates = deriveSyncEntries(previous, next).filter((entry) => entry.opType === "create");
+    const entries = deriveSyncEntries(previous, next);
 
-    expect(creates.map((entry) => entry.clientId)).toEqual(["c_empty_1", "c_empty_2", "c_after"]);
-    expect(creates.map((entry) => entry.sortKey)).toEqual(["002000", "003000", "004000"]);
+    expect(entries.filter((entry) => entry.opType === "move")).toEqual([]);
+    expect(entries.find((entry) => entry.clientId === "c_x")?.opType).toBe(
+      "create",
+    );
+  });
+
+  it("does not emit moves for a text-only update when existing sortKeys are out of array order", () => {
+    const previous: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: "001000" },
+          content: [{ type: "text", text: "A" }],
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_b", blockId: "b_b", sortKey: "000500" },
+          content: [{ type: "text", text: "B" }],
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_c", blockId: "b_c", sortKey: "002000" },
+          content: [{ type: "text", text: "C" }],
+        },
+      ],
+    };
+    const next: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: "001000" },
+          content: [{ type: "text", text: "A" }],
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_b", blockId: "b_b", sortKey: "000500" },
+          content: [{ type: "text", text: "B edited" }],
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_c", blockId: "b_c", sortKey: "002000" },
+          content: [{ type: "text", text: "C" }],
+        },
+      ],
+    };
+
+    const entries = deriveSyncEntries(previous, next);
+
+    expect(entries.filter((entry) => entry.opType === "move")).toEqual([]);
+    expect(entries).toMatchObject([
+      { clientId: "c_b", blockId: "b_b", opType: "update" },
+    ]);
+  });
+
+  it("allocates unique sortKeys when multiple top-level blocks are created in sequence", () => {
+    const previous: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: "001000" },
+        },
+      ],
+    };
+    const next: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: "001000" },
+        },
+        { type: "paragraph", attrs: { clientId: "c_empty_1" } },
+        { type: "paragraph", attrs: { clientId: "c_empty_2" } },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_after" },
+          content: [{ type: "text", text: "after blanks" }],
+        },
+      ],
+    };
+
+    const creates = deriveSyncEntries(previous, next).filter(
+      (entry) => entry.opType === "create",
+    );
+
+    expect(creates.map((entry) => entry.clientId)).toEqual([
+      "c_empty_1",
+      "c_empty_2",
+      "c_after",
+    ]);
+    expect(creates.map((entry) => entry.sortKey)).toEqual([
+      "002000",
+      "003000",
+      "004000",
+    ]);
   });
 
   it("overrides duplicated inherited sortKeys when creating multiple adjacent blocks", () => {
     const previous: TiptapDoc = {
       type: "doc",
       content: [
-        { type: "paragraph", attrs: { clientId: "c_a", blockId: "b_a", sortKey: "000998" } },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: "000998" },
+        },
       ],
     };
     const next: TiptapDoc = {
       type: "doc",
       content: [
-        { type: "paragraph", attrs: { clientId: "c_a", blockId: "b_a", sortKey: "000998" } },
-        { type: "paragraph", attrs: { clientId: "c_new_1", sortKey: "001998" } },
-        { type: "paragraph", attrs: { clientId: "c_new_2", sortKey: "001998" }, content: [{ type: "text", text: "2" }] },
-        { type: "paragraph", attrs: { clientId: "c_new_3", sortKey: "001998" } },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: "000998" },
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_new_1", sortKey: "001998" },
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_new_2", sortKey: "001998" },
+          content: [{ type: "text", text: "2" }],
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_new_3", sortKey: "001998" },
+        },
       ],
     };
 
-    const creates = deriveSyncEntries(previous, next).filter((entry) => entry.opType === "create");
+    const creates = deriveSyncEntries(previous, next).filter(
+      (entry) => entry.opType === "create",
+    );
 
-    expect(creates.map((entry) => entry.sortKey)).toEqual(["001998", "002998", "003998"]);
+    expect(creates.map((entry) => entry.sortKey)).toEqual([
+      "001998",
+      "002998",
+      "003998",
+    ]);
     expect(new Set(creates.map((entry) => entry.sortKey)).size).toBe(3);
   });
 
@@ -120,60 +283,114 @@ describe("deriveSyncEntries order handling", () => {
       ],
     };
 
-    const creates = deriveSyncEntries(previous, next).filter((entry) => entry.opType === "create");
+    const creates = deriveSyncEntries(previous, next).filter(
+      (entry) => entry.opType === "create",
+    );
 
     expect(creates.map((entry) => entry.syncCreateId)).toEqual([
       "sync-create:c_blank",
       "sync-create:c_2",
     ]);
-    expect(creates[0].payload?.attrs).toMatchObject({ syncCreateId: "sync-create:c_blank" });
-    expect(creates[1].payload?.attrs).toMatchObject({ syncCreateId: "sync-create:c_2" });
+    expect(creates[0].payload?.attrs).toMatchObject({
+      syncCreateId: "sync-create:c_blank",
+    });
+    expect(creates[1].payload?.attrs).toMatchObject({
+      syncCreateId: "sync-create:c_2",
+    });
   });
 
   it("emits move entries when existing blocks change relative order", () => {
     const previous: TiptapDoc = {
       type: "doc",
       content: [
-        { type: "paragraph", attrs: { clientId: "c_a", blockId: "b_a", sortKey: "001000" } },
-        { type: "paragraph", attrs: { clientId: "c_b", blockId: "b_b", sortKey: "002000" } },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: "001000" },
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_b", blockId: "b_b", sortKey: "002000" },
+        },
       ],
     };
     const next: TiptapDoc = {
       type: "doc",
       content: [
-        { type: "paragraph", attrs: { clientId: "c_b", blockId: "b_b", sortKey: "002000" } },
-        { type: "paragraph", attrs: { clientId: "c_a", blockId: "b_a", sortKey: "001000" } },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_b", blockId: "b_b", sortKey: "002000" },
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: "001000" },
+        },
       ],
     };
 
     const entries = deriveSyncEntries(previous, next);
 
-    expect(entries.some((entry) => entry.opType === "move" && entry.blockId === "b_b")).toBe(true);
+    expect(
+      entries.some(
+        (entry) => entry.opType === "move" && entry.blockId === "b_b",
+      ),
+    ).toBe(true);
   });
 
   it("only emits a move for the dragged block when moving the tail block to the front", () => {
     const previous: TiptapDoc = {
       type: "doc",
       content: [
-        { type: "paragraph", attrs: { clientId: "c_2", blockId: "b_2", sortKey: "001750" } },
-        { type: "paragraph", attrs: { clientId: "c_3", blockId: "b_3", sortKey: "002750" } },
-        { type: "paragraph", attrs: { clientId: "c_4", blockId: "b_4", sortKey: "003750" } },
-        { type: "paragraph", attrs: { clientId: "c_5", blockId: "b_5", sortKey: "004750" } },
-        { type: "paragraph", attrs: { clientId: "c_6", blockId: "b_6", sortKey: "005750" } },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_2", blockId: "b_2", sortKey: "001750" },
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_3", blockId: "b_3", sortKey: "002750" },
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_4", blockId: "b_4", sortKey: "003750" },
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_5", blockId: "b_5", sortKey: "004750" },
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_6", blockId: "b_6", sortKey: "005750" },
+        },
       ],
     };
     const next: TiptapDoc = {
       type: "doc",
       content: [
-        { type: "paragraph", attrs: { clientId: "c_6", blockId: "b_6", sortKey: "005750" } },
-        { type: "paragraph", attrs: { clientId: "c_2", blockId: "b_2", sortKey: "001750" } },
-        { type: "paragraph", attrs: { clientId: "c_3", blockId: "b_3", sortKey: "002750" } },
-        { type: "paragraph", attrs: { clientId: "c_4", blockId: "b_4", sortKey: "003750" } },
-        { type: "paragraph", attrs: { clientId: "c_5", blockId: "b_5", sortKey: "004750" } },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_6", blockId: "b_6", sortKey: "005750" },
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_2", blockId: "b_2", sortKey: "001750" },
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_3", blockId: "b_3", sortKey: "002750" },
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_4", blockId: "b_4", sortKey: "003750" },
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_5", blockId: "b_5", sortKey: "004750" },
+        },
       ],
     };
 
-    const moves = deriveSyncEntries(previous, next).filter((entry) => entry.opType === "move");
+    const moves = deriveSyncEntries(previous, next).filter(
+      (entry) => entry.opType === "move",
+    );
 
     expect(moves).toEqual([
       {

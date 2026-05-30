@@ -48,6 +48,18 @@ export interface SyncReducerState {
   inflightEntryRevisions: Record<string, number>;
   pendingCommit: boolean;
   lastError: string | null;
+  hasCorruptedSortKeys: boolean;
+  sortKeyCorruptionReport: SortKeyCorruptionReport | null;
+}
+
+export interface SortKeyCorruptionReport {
+  duplicates: Array<{ sortKey: string; clientIds: string[] }>;
+  nonMonotonic: Array<{
+    previousClientId: string;
+    previousSortKey: string;
+    clientId: string;
+    sortKey: string;
+  }>;
 }
 
 export interface SyncBatchResult {
