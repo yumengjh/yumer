@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback, type ReactNode } from "react";
-import { Button, Spin, Switch, message, Tooltip, Dropdown, Modal, Input } from "antd";
+import { useEffect, useMemo, useState, useCallback, type ReactNode } from "react";
+import { Button, Spin, Switch, message, Tooltip, Dropdown, Modal, Input, Tag } from "antd";
 import type { MenuProps } from "antd";
 import {
   SearchOutlined,
@@ -50,6 +50,13 @@ import { getDocumentSyncState } from "@/services/sync/api";
 import { GcDebugModal } from "./GcDebugModal";
 import { SyncDebugModal } from "./SyncDebugModal";
 import { ThemeSwitcher } from "./ThemeSwitcher";
+import {
+  loadFilterKeys,
+  saveFilterKeys,
+  deepFilterKeys,
+  DEFAULT_FILTER_KEYS,
+} from "@/services/local-snapshot-filter";
+import { computeLineDiff } from "@/services/json-diff";
 import "./DocumentHeader.css";
 
 const PUBLIC_DOC_REVALIDATE_SECRET_KEY = "publicDocRevalidateSecret";
@@ -135,13 +142,18 @@ function SyncStatus({
 function LocalSnapshotStatus({
   state,
   onClick,
+  filteredMatch,
 }: {
   state: LocalSnapshotState;
   onClick: () => void;
+  filteredMatch?: boolean;
 }) {
   const timeLabel = state.lastSavedAt
     ? new Date(state.lastSavedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     : null;
+
+  const effectiveStatus: LocalSnapshotState["status"] =
+    state.status === "mismatch" && filteredMatch ? "saved" : state.status;
 
   const map: Record<LocalSnapshotState["status"], { text: string; mod: string }> = {
     idle: { text: "本地快照", mod: "idle" },
@@ -153,7 +165,7 @@ function LocalSnapshotStatus({
     error: { text: "本地快照：失败", mod: "error" },
   };
 
-  const item = map[state.status];
+  const item = map[effectiveStatus];
 
   return (
     <button
@@ -268,6 +280,48 @@ export function DocumentHeader({
   const [localSnapshotOpen, setLocalSnapshotOpen] = useState(false);
   const [localSnapshotCompareOpen, setLocalSnapshotCompareOpen] = useState(false);
   const [manualSnapshotSaving, setManualSnapshotSaving] = useState(false);
+  const [compareFilterKeys, setCompareFilterKeys] = useState<string[]>(() => loadFilterKeys());
+  const [compareFilterInput, setCompareFilterInput] = useState("");
+  const [diffMode, setDiffMode] = useState<"split" | "unified">("split");
+
+  const handleAddCompareFilter = useCallback(() => {
+    const key = compareFilterInput.trim();
+    if (!key || compareFilterKeys.includes(key)) return;
+    const next = [...compareFilterKeys, key];
+    setCompareFilterKeys(next);
+    saveFilterKeys(next);
+    setCompareFilterInput("");
+  }, [compareFilterInput, compareFilterKeys]);
+
+  const handleRemoveCompareFilter = useCallback(
+    (key: string) => {
+      const next = compareFilterKeys.filter((k) => k !== key);
+      setCompareFilterKeys(next);
+      saveFilterKeys(next);
+    },
+    [compareFilterKeys],
+  );
+
+  const handleResetCompareFilters = useCallback(() => {
+    setCompareFilterKeys([...DEFAULT_FILTER_KEYS]);
+    saveFilterKeys([...DEFAULT_FILTER_KEYS]);
+  }, []);
+
+  const compareFilterKeySet = useMemo(() => new Set(compareFilterKeys), [compareFilterKeys]);
+
+  const snapshotFilteredMatch = useMemo(() => {
+    const snapshot = localSnapshotState.storedSnapshot;
+    if (!snapshot || !currentDocumentJson) return false;
+    if (localSnapshotState.status !== "mismatch") return false;
+    try {
+      const snapshotText = JSON.stringify(deepFilterKeys(snapshot.content, compareFilterKeySet), null, 2);
+      const parsed = JSON.parse(currentDocumentJson);
+      const currentText = JSON.stringify(deepFilterKeys(parsed, compareFilterKeySet), null, 2);
+      return snapshotText === currentText;
+    } catch {
+      return false;
+    }
+  }, [localSnapshotState, currentDocumentJson, compareFilterKeySet]);
 
   useEffect(() => {
     refreshDocs().catch(() => {});
@@ -635,7 +689,7 @@ export function DocumentHeader({
         {currentDoc && visibleSaveStatus && (
           <div className="header-start__live">
             <SyncStatus status={visibleSaveStatus} lastSavedAt={lastSavedAt} />
-            <LocalSnapshotStatus state={localSnapshotState} onClick={() => setLocalSnapshotOpen(true)} />
+            <LocalSnapshotStatus state={localSnapshotState} onClick={() => setLocalSnapshotOpen(true)} filteredMatch={snapshotFilteredMatch} />
           </div>
         )}
       </div>
@@ -928,26 +982,128 @@ export function DocumentHeader({
         destroyOnClose
       >
         <div className="header-local-snapshot-compare">
-          <div className="header-local-snapshot-compare__summary">
-            <span>是否一致</span>
-            <strong>{localSnapshotState.storedSnapshot?.hash === localSnapshotState.currentHash ? "一致" : "不一致"}</strong>
-          </div>
-          <div className="header-local-snapshot-compare__grid">
-            <section className="header-local-snapshot-compare__pane">
-              <h4>本地快照</h4>
-              <pre className="header-local-snapshot-compare__code">
-                {localSnapshotState.storedSnapshot
-                  ? JSON.stringify(localSnapshotState.storedSnapshot.content, null, 2)
-                  : "无本地快照"}
-              </pre>
-            </section>
-            <section className="header-local-snapshot-compare__pane">
-              <h4>当前文档</h4>
-              <pre className="header-local-snapshot-compare__code">
-                {currentDocumentJson ?? "无当前文档内容"}
-              </pre>
-            </section>
-          </div>
+          {(() => {
+            const snapshotText = localSnapshotState.storedSnapshot
+              ? JSON.stringify(
+                  deepFilterKeys(localSnapshotState.storedSnapshot.content, compareFilterKeySet),
+                  null,
+                  2,
+                )
+              : null;
+            const currentText = (() => {
+              if (!currentDocumentJson) return null;
+              if (compareFilterKeySet.size === 0) return currentDocumentJson;
+              try {
+                const parsed = JSON.parse(currentDocumentJson);
+                return JSON.stringify(deepFilterKeys(parsed, compareFilterKeySet), null, 2);
+              } catch {
+                return currentDocumentJson;
+              }
+            })();
+            const rawMatch = localSnapshotState.storedSnapshot?.hash === localSnapshotState.currentHash;
+            const filteredMatch = snapshotText !== null && currentText !== null && snapshotText === currentText;
+            const matchLabel = rawMatch
+              ? "一致"
+              : filteredMatch
+                ? "一致（已过滤）"
+                : "不一致";
+
+            return (
+              <>
+                <div className="header-local-snapshot-compare__summary">
+                  <span>是否一致</span>
+                  <strong className={rawMatch ? "" : filteredMatch ? "header-local-snapshot-compare__summary--filtered" : "header-local-snapshot-compare__summary--mismatch"}>
+                    {matchLabel}
+                  </strong>
+                </div>
+                <div className="header-local-snapshot-compare__toolbar">
+                  <div className="header-local-snapshot-compare__filters">
+                    <span className="header-local-snapshot-compare__filter-label">过滤字段：</span>
+                    {compareFilterKeys.map((key) => (
+                      <Tag
+                        key={key}
+                        closable
+                        onClose={(e) => {
+                          e.preventDefault();
+                          handleRemoveCompareFilter(key);
+                        }}
+                      >
+                        {key}
+                      </Tag>
+                    ))}
+                    <Input
+                      size="small"
+                      placeholder="输入字段名，回车添加"
+                      value={compareFilterInput}
+                      onChange={(e) => setCompareFilterInput(e.target.value)}
+                      onPressEnter={handleAddCompareFilter}
+                      style={{ width: 180 }}
+                    />
+                    <Button size="small" type="link" onClick={handleResetCompareFilters}>
+                      重置
+                    </Button>
+                  </div>
+                  <div className="header-local-snapshot-compare__mode-switch">
+                    <Button
+                      size="small"
+                      type={diffMode === "split" ? "primary" : "default"}
+                      onClick={() => setDiffMode("split")}
+                    >
+                      并排
+                    </Button>
+                    <Button
+                      size="small"
+                      type={diffMode === "unified" ? "primary" : "default"}
+                      onClick={() => setDiffMode("unified")}
+                    >
+                      Diff
+                    </Button>
+                  </div>
+                </div>
+                {diffMode === "unified" ? (() => {
+                  const diffLines = computeLineDiff(snapshotText ?? "", currentText ?? "");
+                  const added = diffLines.filter((l) => l.kind === "added").length;
+                  const removed = diffLines.filter((l) => l.kind === "removed").length;
+                  return (
+                    <div className="header-local-snapshot-compare__diff">
+                      <div className="header-local-snapshot-compare__diff-stats">
+                        <span className="header-local-snapshot-compare__diff-stat-removed">-{removed}</span>
+                        <span className="header-local-snapshot-compare__diff-stat-added">+{added}</span>
+                      </div>
+                      <pre className="header-local-snapshot-compare__diff-code">
+                        {diffLines.map((line, idx) => (
+                          <div
+                            key={idx}
+                            className={`header-local-snapshot-compare__diff-line header-local-snapshot-compare__diff-line--${line.kind}`}
+                          >
+                            <span className="header-local-snapshot-compare__diff-prefix">
+                              {line.kind === "added" ? "+" : line.kind === "removed" ? "-" : " "}
+                            </span>
+                            {line.text}
+                          </div>
+                        ))}
+                      </pre>
+                    </div>
+                  );
+                })() : (
+                  <div className="header-local-snapshot-compare__grid">
+                    <section className="header-local-snapshot-compare__pane">
+                      <h4>本地快照</h4>
+                      <pre className="header-local-snapshot-compare__code">
+                        {snapshotText ?? "无本地快照"}
+                      </pre>
+                    </section>
+                    <section className="header-local-snapshot-compare__pane">
+                      <h4>当前文档</h4>
+                      <pre className="header-local-snapshot-compare__code">
+                        {currentText ?? "无当前文档内容"}
+                      </pre>
+                    </section>
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
       </Modal>
     </header>
