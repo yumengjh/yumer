@@ -49,6 +49,12 @@ import {
   type UserSettings,
   type WorkspaceSettings,
 } from "@/services/settings";
+import {
+  getEnabledFloatingToolbarItemIds,
+  readEditorToolbarPreferences,
+  writeEditorToolbarPreferences,
+  type EditorToolbarPreferences,
+} from "@/services/editor-toolbar-preferences";
 import { generateHTML } from "@tiptap/core";
 import { serializationExtensions } from "@/services/tiptap-extensions";
 import type { TiptapDoc } from "@/services/tiptap-converter";
@@ -348,6 +354,9 @@ function EditorContent() {
   const [discardingDraft, setDiscardingDraft] = useState(false);
   const [settingsState, setSettingsState] = useState<SettingsState>(() =>
     buildSettingsState({ priority: "workspace-first" }),
+  );
+  const [toolbarPreferences, setToolbarPreferences] = useState<EditorToolbarPreferences>(() =>
+    readEditorToolbarPreferences(),
   );
   const [settingsScope, setSettingsScope] = useState<SettingsScope>("user");
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -906,6 +915,18 @@ function EditorContent() {
     authed && workspaceId
       ? settingsState
       : buildSettingsState({ priority: readSettingsPriority() });
+  const floatingToolbarItemIds = useMemo(
+    () => getEnabledFloatingToolbarItemIds(toolbarPreferences),
+    [toolbarPreferences],
+  );
+  const showFixedToolbar =
+    !toolbarPreferences.floatingToolbarEnabled ||
+    toolbarPreferences.showFixedToolbarWithFloating;
+
+  const handleToolbarPreferencesChange = useCallback((next: EditorToolbarPreferences) => {
+    setToolbarPreferences(next);
+    writeEditorToolbarPreferences(next);
+  }, []);
 
   useEffect(() => {
     if (
@@ -960,6 +981,7 @@ function EditorContent() {
               workspace: activeSettingsState.workspaceSettings,
             }}
             effectiveSettings={activeSettingsState.effectiveSettings}
+            toolbarPreferences={toolbarPreferences}
             settingsSaving={settingsSaving}
             onSettingsScopeChange={setSettingsScope}
             onSettingsPriorityChange={(priority) => {
@@ -972,6 +994,7 @@ function EditorContent() {
                 }),
               );
             }}
+            onToolbarPreferencesChange={handleToolbarPreferencesChange}
             onSaveSettings={async (scope, nextSettings) => {
               setSettingsSaving(true);
               try {
@@ -1030,6 +1053,10 @@ function EditorContent() {
               content={content}
               onChange={handleEditorChange}
               placeholder="不用完美，先留下痕迹"
+              showToolbar={showFixedToolbar}
+              floatingToolbarEnabled={toolbarPreferences.floatingToolbarEnabled}
+              floatingToolbarItemIds={floatingToolbarItemIds}
+              floatingToolbarDelayMs={toolbarPreferences.floatingToolbarDelayMs}
               showTOC={showTOC}
               onTOCToggle={setShowTOC}
               loading={loadingDoc}

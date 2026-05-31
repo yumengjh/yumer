@@ -57,6 +57,7 @@ import {
   deepFilterKeys,
   DEFAULT_FILTER_KEYS,
 } from "@/services/local-snapshot-filter";
+import type { EditorToolbarPreferences } from "@/services/editor-toolbar-preferences";
 import { computeLineDiff } from "@/services/json-diff";
 import "./DocumentHeader.css";
 
@@ -78,9 +79,11 @@ interface DocumentHeaderProps {
     workspace: WorkspaceSettings;
   };
   effectiveSettings: AppSettings;
+  toolbarPreferences: EditorToolbarPreferences;
   settingsSaving?: boolean;
   onSettingsScopeChange: (scope: SettingsScope) => void;
   onSettingsPriorityChange: (priority: SettingsPriority) => void;
+  onToolbarPreferencesChange: (preferences: EditorToolbarPreferences) => void;
   onSaveSettings: (
     scope: SettingsScope,
     settings: UserSettings | WorkspaceSettings,
@@ -243,9 +246,11 @@ export function DocumentHeader({
   settingsPriority,
   settingsByScope,
   effectiveSettings,
+  toolbarPreferences,
   settingsSaving = false,
   onSettingsScopeChange,
   onSettingsPriorityChange,
+  onToolbarPreferencesChange,
   onSaveSettings,
   localSnapshotState,
   onRefreshLocalSnapshot,
@@ -887,9 +892,11 @@ export function DocumentHeader({
         priority={settingsPriority}
         settingsByScope={settingsByScope}
         effectiveSettings={effectiveSettings}
+        toolbarPreferences={toolbarPreferences}
         onClose={() => setSettingsOpen(false)}
         onScopeChange={onSettingsScopeChange}
         onPriorityChange={onSettingsPriorityChange}
+        onToolbarPreferencesChange={onToolbarPreferencesChange}
         onSubmit={async (nextSettings) => {
           await onSaveSettings(settingsScope, nextSettings);
           setSettingsOpen(false);

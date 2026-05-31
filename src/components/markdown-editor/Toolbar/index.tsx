@@ -2,8 +2,12 @@ import DesktopToolbar from "./DesktopToolbar";
 import MobileToolbar from "./MobileToolbar";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 
-export default function Toolbar() {
+interface ToolbarProps {
+  enabledItemIds?: ReadonlySet<string>;
+}
+
+export default function Toolbar({ enabledItemIds }: ToolbarProps = {}) {
   const isMobile = useMediaQuery("(max-width: 768px)");
 
-  return isMobile ? <MobileToolbar /> : <DesktopToolbar />;
+  return isMobile ? <MobileToolbar /> : <DesktopToolbar enabledItemIds={enabledItemIds} />;
 }

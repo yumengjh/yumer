@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { Form, InputNumber, Modal, Radio, Space, Switch, Typography } from "antd";
+import { Checkbox, Form, InputNumber, Modal, Radio, Space, Switch, Typography } from "antd";
 import type {
   SettingsPriority,
   SettingsScope,
@@ -9,6 +9,12 @@ import type {
   WorkspaceSettings,
   AppSettings,
 } from "@/services/settings";
+import {
+  DEFAULT_EDITOR_TOOLBAR_PREFERENCES,
+  FLOATING_TOOLBAR_ITEMS,
+  type EditorToolbarPreferences,
+  type FloatingToolbarItemId,
+} from "@/services/editor-toolbar-preferences";
 
 interface WorkspaceSettingsModalProps {
   open: boolean;
@@ -20,9 +26,11 @@ interface WorkspaceSettingsModalProps {
     workspace: WorkspaceSettings;
   };
   effectiveSettings: AppSettings;
+  toolbarPreferences?: EditorToolbarPreferences;
   onClose: () => void;
   onScopeChange: (scope: SettingsScope) => void;
   onPriorityChange: (priority: SettingsPriority) => void;
+  onToolbarPreferencesChange?: (preferences: EditorToolbarPreferences) => void;
   onSubmit: (settings: UserSettings | WorkspaceSettings) => Promise<void> | void;
 }
 
@@ -33,14 +41,26 @@ export function WorkspaceSettingsModal({
   priority,
   settingsByScope,
   effectiveSettings,
+  toolbarPreferences = DEFAULT_EDITOR_TOOLBAR_PREFERENCES,
   onClose,
   onScopeChange,
   onPriorityChange,
+  onToolbarPreferencesChange,
   onSubmit,
 }: WorkspaceSettingsModalProps) {
   const [form] = Form.useForm<AppSettings>();
 
   const currentSettings = useMemo(() => settingsByScope[scope], [scope, settingsByScope]);
+  const enabledFloatingItemIds = FLOATING_TOOLBAR_ITEMS
+    .filter((item) => toolbarPreferences.floatingItems[item.id])
+    .map((item) => item.id);
+
+  const patchToolbarPreferences = (patch: Partial<EditorToolbarPreferences>) => {
+    onToolbarPreferencesChange?.({
+      ...toolbarPreferences,
+      ...patch,
+    });
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -56,6 +76,7 @@ export function WorkspaceSettingsModal({
       confirmLoading={saving}
       onCancel={onClose}
       onOk={() => void form.submit()}
+      width={720}
       destroyOnHidden
     >
       <Space direction="vertical" size={16} style={{ width: "100%", marginBottom: 16 }}>
@@ -102,6 +123,72 @@ export function WorkspaceSettingsModal({
             当前生效：编辑区 {effectiveSettings.editor.contentWidth}px / {effectiveSettings.editor.fontSize}px；
             展示区 {effectiveSettings.reader.contentWidth}px / {effectiveSettings.reader.fontSize}px。
           </Typography.Paragraph>
+        </div>
+
+        <div>
+          <Typography.Text strong>本地工具栏</Typography.Text>
+          <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 8 }}>
+            这些选项只保存在当前浏览器，用来控制选区悬浮工具栏和固定工具栏是否同时显示。
+          </Typography.Paragraph>
+          <Space direction="vertical" size={10} style={{ width: "100%" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <span>选中内容时显示悬浮工具栏</span>
+              <Switch
+                checked={toolbarPreferences.floatingToolbarEnabled}
+                onChange={(checked) => patchToolbarPreferences({ floatingToolbarEnabled: checked })}
+              />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <span>开启悬浮工具栏时保留顶部固定工具栏</span>
+              <Switch
+                checked={toolbarPreferences.showFixedToolbarWithFloating}
+                disabled={!toolbarPreferences.floatingToolbarEnabled}
+                onChange={(checked) => patchToolbarPreferences({ showFixedToolbarWithFloating: checked })}
+              />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <span>悬浮工具栏延迟</span>
+              <InputNumber
+                min={0}
+                max={1200}
+                step={20}
+                addonAfter="ms"
+                value={toolbarPreferences.floatingToolbarDelayMs}
+                disabled={!toolbarPreferences.floatingToolbarEnabled}
+                onChange={(value) =>
+                  patchToolbarPreferences({
+                    floatingToolbarDelayMs:
+                      typeof value === "number" ? value : toolbarPreferences.floatingToolbarDelayMs,
+                  })
+                }
+                style={{ width: 140 }}
+              />
+            </div>
+            <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
+              数值越小越灵敏，`0ms` 表示选中后立即显示。
+            </Typography.Paragraph>
+            <Checkbox.Group
+              value={enabledFloatingItemIds}
+              onChange={(values) => {
+                const enabled = new Set(values.map(String));
+                const floatingItems = FLOATING_TOOLBAR_ITEMS.reduce(
+                  (acc, item) => {
+                    acc[item.id] = enabled.has(item.id);
+                    return acc;
+                  },
+                  {} as Record<FloatingToolbarItemId, boolean>,
+                );
+                patchToolbarPreferences({ floatingItems });
+              }}
+              style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8 }}
+            >
+              {FLOATING_TOOLBAR_ITEMS.map((item) => (
+                <Checkbox key={item.id} value={item.id}>
+                  {item.label}
+                </Checkbox>
+              ))}
+            </Checkbox.Group>
+          </Space>
         </div>
       </Space>
 

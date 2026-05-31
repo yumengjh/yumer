@@ -32,6 +32,44 @@
   display: none;
 }
 
+.toolbar--floating {
+  position: static;
+  top: auto;
+  justify-content: flex-start;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  padding: 6px 8px;
+  border: 1px solid var(--toolbar-border);
+  border-radius: 8px;
+  overflow-x: auto;
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.16);
+}
+
+.floating-selection-toolbar {
+  position: fixed;
+  z-index: 120;
+  transform: translate(-50%, -100%);
+  max-width: calc(100vw - 24px);
+}
+
+.floating-selection-toolbar::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 10px;
+  height: 10px;
+  transform: translateX(-50%) rotate(45deg);
+  background: var(--toolbar-bg);
+  border-right: 1px solid var(--toolbar-border);
+  border-bottom: 1px solid var(--toolbar-border);
+}
+
+.floating-selection-toolbar .toolbar {
+  position: relative;
+  z-index: 1;
+}
+
 .toolbar-group {
   display: flex;
   align-items: center;

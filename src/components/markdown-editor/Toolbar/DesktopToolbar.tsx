@@ -67,6 +67,11 @@ type ToolbarItem = {
   type?: "dropdown" | "color-picker" | "highlight-block-picker" | "indent-picker" | "table-picker" | "link-picker" | "format-painter" | "code-cleanup-picker";
 };
 
+interface DesktopToolbarProps {
+  variant?: "fixed" | "floating";
+  enabledItemIds?: ReadonlySet<string>;
+}
+
 function QuoteIcon() {
   return (
     <svg width="1em" height="1em" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -124,7 +129,10 @@ function OutdentIcon() {
   );
 }
 
-export default function DesktopToolbar() {
+export default function DesktopToolbar({
+  variant = "fixed",
+  enabledItemIds,
+}: DesktopToolbarProps = {}) {
   const { message } = App.useApp();
   const { editor, defaultFontSize, workspaceId } = useMarkdownEditorContext();
   const [linkPopupOpen, setLinkPopupOpen] = useState(false);
@@ -723,8 +731,14 @@ export default function DesktopToolbar() {
     ],
   ];
 
+  const visibleToolbarGroups = enabledItemIds
+    ? toolbarGroups
+        .map((group) => group.filter((item) => enabledItemIds.has(item.id)))
+        .filter((group) => group.length > 0)
+    : toolbarGroups;
+
   return (
-    <div className="toolbar">
+    <div className={`toolbar toolbar--${variant}`}>
       <input
         ref={imageInputRef}
         type="file"
@@ -736,7 +750,7 @@ export default function DesktopToolbar() {
           if (file) void handleImageFileSelect(file);
         }}
       />
-      {toolbarGroups.map((group, index) => (
+      {visibleToolbarGroups.map((group, index) => (
         <div className="toolbar-group" key={`toolbar-group-${index}`}>
           {group.map((item) =>
             item.type === "code-cleanup-picker" ? (

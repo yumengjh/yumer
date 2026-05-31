@@ -46,6 +46,7 @@ import { HeadingAnchor } from "./extensions/headingAnchor";
 import TaskItemView from "./TaskItemView";
 import { EditorContextProvider } from "./EditorContext";
 import Toolbar from "./Toolbar";
+import FloatingSelectionToolbar from "./Toolbar/FloatingSelectionToolbar";
 import BlockToolbar from "./BlockToolbar";
 import TableInteractions from "./TableInteractions";
 import TableOfContents from "./TableOfContents";
@@ -98,6 +99,12 @@ export interface MarkdownEditorProps {
   theme?: "light" | "dark";
   /** 是否显示工具栏，默认 true */
   showToolbar?: boolean;
+  /** Whether to show the floating toolbar when text is selected. */
+  floatingToolbarEnabled?: boolean;
+  /** Visible item ids for the floating toolbar. */
+  floatingToolbarItemIds?: string[];
+  /** Delay before showing the floating toolbar after selection stabilizes. */
+  floatingToolbarDelayMs?: number;
   /** 是否显示目录，默认 false */
   showTOC?: boolean;
   /** 目录开关回调 */
@@ -237,6 +244,9 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
   placeholder = "开始记录你的知识吧…",
   theme: themeProp,
   showToolbar = true,
+  floatingToolbarEnabled = false,
+  floatingToolbarItemIds = [],
+  floatingToolbarDelayMs = 180,
   showTOC = false,
   onTOCToggle,
   className,
@@ -257,6 +267,10 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
   const wrapperRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const titleSavedRef = useRef(title);
+  const floatingToolbarItemSet = useMemo(
+    () => new Set(floatingToolbarItemIds),
+    [floatingToolbarItemIds],
+  );
 
   const handleTitleBlur = useCallback(() => {
     const el = titleRef.current;
@@ -582,6 +596,12 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
       <div className="tiptap-card" data-code-theme={themeMode}>
         <EditorContextProvider value={{ editor, defaultFontSize: `${defaultFontSize}px`, workspaceId }}>
           {showToolbar && <Toolbar />}
+          {editable && floatingToolbarEnabled && (
+            <FloatingSelectionToolbar
+              enabledItemIds={floatingToolbarItemSet}
+              delayMs={floatingToolbarDelayMs}
+            />
+          )}
           <div
             ref={wrapperRef}
             className="tiptap-editor-wrapper"
