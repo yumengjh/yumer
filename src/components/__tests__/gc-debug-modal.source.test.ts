@@ -137,6 +137,10 @@ describe("GcDebugModal policy visibility", () => {
     expect(source).toContain("GcStorageCompactResult");
     expect(source).toContain("VACUUM_SQLITE_DATABASE");
     expect(source).toContain("freelistCount");
-    expect(source).toContain("estimatedFreelistBytes");
+    expect(source).toContain("estimatedFreeBytes");
+    expect(source).toContain("databaseFileBytes");
+    expect(source).toContain("totalFileBytes");
+    expect(source).toContain("freeRatio");
+    expect(source).toContain("unchangedReasons");
   });
 });

@@ -490,25 +490,50 @@ export async function getGcPolicy(
   });
 }
 
+export interface GcStorageStats {
+  databasePath?: string | null;
+  databaseFileBytes: number;
+  walFileBytes: number;
+  shmFileBytes: number;
+  pageSize: number;
+  pageCount: number;
+  freelistCount: number;
+  estimatedFreeBytes: number;
+  freeRatio: number;
+  journalMode?: string | null;
+  autoVacuum?: number | string | null;
+  busyTimeoutMs?: number | null;
+  totalFileBytes: number;
+}
+
+export interface GcStorageDelta {
+  databaseFileBytes: number;
+  walFileBytes: number;
+  shmFileBytes: number;
+  totalFileBytes: number;
+  pageCount: number;
+  freelistCount: number;
+  estimatedFreeBytes: number;
+}
+
 export interface GcStorageCompactResult {
-  supported: boolean;
+  driver?: string;
+  supported?: boolean;
   dryRun: boolean;
   mode: string;
-  before?: {
-    pageCount: number;
-    freelistCount: number;
-    pageSizeBytes: number;
-    fileSizeBytes: number;
-    estimatedFreelistBytes: number;
-  };
-  after?: {
-    pageCount: number;
-    freelistCount: number;
-    pageSizeBytes: number;
-    fileSizeBytes: number;
-  };
+  status?: string;
+  reason?: string;
+  wouldRun?: boolean;
+  triggeredBy?: string;
+  startedAt?: string;
+  finishedAt?: string;
   durationMs?: number;
-  message?: string;
+  before?: GcStorageStats;
+  after?: GcStorageStats;
+  delta?: GcStorageDelta;
+  checkpoint?: { attempted: boolean; reason?: string; result?: Record<string, unknown> };
+  unchangedReasons?: string[];
+  warnings?: string[];
 }
 
 export async function compactSqliteStorage(

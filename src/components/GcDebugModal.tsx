@@ -535,20 +535,22 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
 
         setCompactResult(result);
 
-        if (!result.supported) {
-          message.info(result.message ?? "当前数据库不支持 VACUUM");
+        if (result.status === "unsupported") {
+          message.info(result.reason ?? "当前数据库不支持 VACUUM");
         } else if (dryRun) {
           const before = result.before;
           if (before) {
-            const freeMB = (before.estimatedFreelistBytes / 1024 / 1024).toFixed(2);
+            const freeMB = (before.estimatedFreeBytes / 1024 / 1024).toFixed(2);
             message.success(`Dry-run 完成：可回收约 ${freeMB} MB（${before.freelistCount} 页）`);
           }
         } else {
-          const before = result.before;
-          const after = result.after;
-          if (before && after) {
-            const savedMB = ((before.fileSizeBytes - after.fileSizeBytes) / 1024 / 1024).toFixed(2);
-            message.success(`VACUUM 完成：文件缩小 ${savedMB} MB，耗时 ${result.durationMs ?? "--"}ms`);
+          const delta = result.delta;
+          if (delta) {
+            const savedMB = (-delta.totalFileBytes / 1024 / 1024).toFixed(2);
+            const msg = delta.totalFileBytes < 0
+              ? `VACUUM 完成：文件缩小 ${savedMB} MB`
+              : "VACUUM 完成：文件大小未变化";
+            message.success(`${msg}，耗时 ${result.durationMs ?? "--"}ms`);
           } else {
             message.success("VACUUM 完成");
           }
@@ -1214,41 +1216,93 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
               </div>
               {compactResult && (
                 <div className="gc-debug__compact-result">
-                  {!compactResult.supported ? (
-                    <Alert type="info" showIcon message={compactResult.message ?? "当前数据库不支持 VACUUM"} />
+                  {compactResult.status === "unsupported" ? (
+                    <Alert type="info" showIcon message={compactResult.reason ?? "当前数据库不支持 VACUUM"} />
                   ) : (
                     <>
                       {compactResult.before && (
                         <Descriptions column={2} bordered size="small" title="VACUUM 前">
-                          <Descriptions.Item label="文件大小">
-                            {(compactResult.before.fileSizeBytes / 1024 / 1024).toFixed(2)} MB
+                          <Descriptions.Item label="数据库文件">
+                            {(compactResult.before.databaseFileBytes / 1024 / 1024).toFixed(2)} MB
+                          </Descriptions.Item>
+                          <Descriptions.Item label="总文件大小">
+                            {(compactResult.before.totalFileBytes / 1024 / 1024).toFixed(2)} MB
                           </Descriptions.Item>
                           <Descriptions.Item label="总页数">
                             {compactResult.before.pageCount.toLocaleString()}
                           </Descriptions.Item>
+                          <Descriptions.Item label="页大小">
+                            {compactResult.before.pageSize.toLocaleString()} B
+                          </Descriptions.Item>
                           <Descriptions.Item label="空闲页数">
                             <Tag color="orange">{compactResult.before.freelistCount.toLocaleString()}</Tag>
                           </Descriptions.Item>
+                          <Descriptions.Item label="空闲比例">
+                            {(compactResult.before.freeRatio * 100).toFixed(1)}%
+                          </Descriptions.Item>
                           <Descriptions.Item label="估算可回收">
-                            <Tag color="green">{(compactResult.before.estimatedFreelistBytes / 1024 / 1024).toFixed(2)} MB</Tag>
+                            <Tag color="green">{(compactResult.before.estimatedFreeBytes / 1024 / 1024).toFixed(2)} MB</Tag>
+                          </Descriptions.Item>
+                          <Descriptions.Item label="日志模式">
+                            <Tag>{compactResult.before.journalMode ?? "--"}</Tag>
                           </Descriptions.Item>
                         </Descriptions>
                       )}
-                      {compactResult.after && (
-                        <Descriptions column={2} bordered size="small" title="VACUUM 后" style={{ marginTop: 12 }}>
-                          <Descriptions.Item label="文件大小">
-                            {(compactResult.after.fileSizeBytes / 1024 / 1024).toFixed(2)} MB
-                          </Descriptions.Item>
-                          <Descriptions.Item label="总页数">
-                            {compactResult.after.pageCount.toLocaleString()}
-                          </Descriptions.Item>
-                          <Descriptions.Item label="空闲页数">
-                            {compactResult.after.freelistCount.toLocaleString()}
-                          </Descriptions.Item>
-                          <Descriptions.Item label="耗时">
-                            {compactResult.durationMs != null ? `${compactResult.durationMs}ms` : "--"}
-                          </Descriptions.Item>
-                        </Descriptions>
+                      {compactResult.after && compactResult.delta && (
+                        <>
+                          <Descriptions column={2} bordered size="small" title="VACUUM 后" style={{ marginTop: 12 }}>
+                            <Descriptions.Item label="数据库文件">
+                              {(compactResult.after.databaseFileBytes / 1024 / 1024).toFixed(2)} MB
+                            </Descriptions.Item>
+                            <Descriptions.Item label="总文件大小">
+                              {(compactResult.after.totalFileBytes / 1024 / 1024).toFixed(2)} MB
+                            </Descriptions.Item>
+                            <Descriptions.Item label="总页数">
+                              {compactResult.after.pageCount.toLocaleString()}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="空闲页数">
+                              {compactResult.after.freelistCount.toLocaleString()}
+                            </Descriptions.Item>
+                          </Descriptions>
+                          <Descriptions column={2} bordered size="small" title="变化量" style={{ marginTop: 12 }}>
+                            <Descriptions.Item label="数据库文件变化">
+                              <Tag color={compactResult.delta.databaseFileBytes < 0 ? "green" : "default"}>
+                                {compactResult.delta.databaseFileBytes < 0 ? "" : "+"}
+                                {(compactResult.delta.databaseFileBytes / 1024 / 1024).toFixed(2)} MB
+                              </Tag>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="总文件变化">
+                              <Tag color={compactResult.delta.totalFileBytes < 0 ? "green" : "default"}>
+                                {compactResult.delta.totalFileBytes < 0 ? "" : "+"}
+                                {(compactResult.delta.totalFileBytes / 1024 / 1024).toFixed(2)} MB
+                              </Tag>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="页数变化">
+                              {compactResult.delta.pageCount}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="空闲页变化">
+                              {compactResult.delta.freelistCount}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="耗时" span={2}>
+                              {compactResult.durationMs != null ? `${compactResult.durationMs}ms` : "--"}
+                            </Descriptions.Item>
+                          </Descriptions>
+                        </>
+                      )}
+                      {compactResult.unchangedReasons && compactResult.unchangedReasons.length > 0 && (
+                        <Alert
+                          type="warning"
+                          showIcon
+                          message="文件大小未变化"
+                          description={compactResult.unchangedReasons.join(" / ")}
+                          style={{ marginTop: 12 }}
+                        />
+                      )}
+                      {compactResult.checkpoint && (
+                        <div style={{ marginTop: 8 }}>
+                          <Tag>WAL Checkpoint：{compactResult.checkpoint.attempted ? "已执行" : "未执行"}</Tag>
+                          {compactResult.checkpoint.reason && <Tag>{compactResult.checkpoint.reason}</Tag>}
+                        </div>
                       )}
                     </>
                   )}

@@ -419,16 +419,23 @@ describe("gc service", () => {
         JSON.stringify({
           success: true,
           data: {
+            driver: "sqlite",
             supported: true,
             dryRun: true,
             mode: "vacuum",
+            status: "planned",
+            wouldRun: true,
             before: {
+              databaseFileBytes: 4096000,
+              totalFileBytes: 4096000,
+              pageSize: 4096,
               pageCount: 1000,
               freelistCount: 200,
-              pageSizeBytes: 4096,
-              fileSizeBytes: 4096000,
-              estimatedFreelistBytes: 819200,
+              estimatedFreeBytes: 819200,
+              freeRatio: 0.2,
+              journalMode: "wal",
             },
+            warnings: ["vacuum_may_block_writes"],
           },
         }),
         { status: 200 },
@@ -453,7 +460,8 @@ describe("gc service", () => {
     );
     expect(result.supported).toBe(true);
     expect(result.before?.freelistCount).toBe(200);
-    expect(result.before?.estimatedFreelistBytes).toBe(819200);
+    expect(result.before?.estimatedFreeBytes).toBe(819200);
+    expect(result.before?.databaseFileBytes).toBe(4096000);
   });
 
   it("runs SQLite storage compact real execution with confirm", async () => {
@@ -462,22 +470,44 @@ describe("gc service", () => {
         JSON.stringify({
           success: true,
           data: {
+            driver: "sqlite",
             supported: true,
             dryRun: false,
             mode: "vacuum",
+            status: "completed",
+            durationMs: 150,
             before: {
+              databaseFileBytes: 4096000,
+              totalFileBytes: 4096000,
+              pageSize: 4096,
               pageCount: 1000,
               freelistCount: 200,
-              pageSizeBytes: 4096,
-              fileSizeBytes: 4096000,
+              estimatedFreeBytes: 819200,
+              freeRatio: 0.2,
+              journalMode: "wal",
             },
             after: {
+              databaseFileBytes: 3276800,
+              totalFileBytes: 3276800,
+              pageSize: 4096,
               pageCount: 800,
               freelistCount: 0,
-              pageSizeBytes: 4096,
-              fileSizeBytes: 3276800,
+              estimatedFreeBytes: 0,
+              freeRatio: 0,
+              journalMode: "wal",
             },
-            durationMs: 150,
+            delta: {
+              databaseFileBytes: -819200,
+              totalFileBytes: -819200,
+              walFileBytes: 0,
+              shmFileBytes: 0,
+              pageCount: -200,
+              freelistCount: -200,
+              estimatedFreeBytes: -819200,
+            },
+            checkpoint: { attempted: true, result: {} },
+            unchangedReasons: [],
+            warnings: ["vacuum_may_block_writes"],
           },
         }),
         { status: 200 },
@@ -505,5 +535,6 @@ describe("gc service", () => {
     expect(result.dryRun).toBe(false);
     expect(result.after?.pageCount).toBe(800);
     expect(result.durationMs).toBe(150);
+    expect(result.delta?.databaseFileBytes).toBe(-819200);
   });
 });
