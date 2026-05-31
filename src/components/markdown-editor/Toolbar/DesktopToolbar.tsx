@@ -1165,7 +1165,13 @@ export default function DesktopToolbar({
                       aria-label={item.label}
                       onClick={() => {
                         if (!tiptap) return;
-                        tiptap.chain().focus().insertHighlightBlock({ backgroundColor: lastHighlightColor }).run();
+                        tiptap
+                          .chain()
+                          .focus()
+                          .toggleHighlightBlockFromSelection({
+                            backgroundColor: lastHighlightColor,
+                          })
+                          .run();
                       }}
                     >
                       <span className="color-icon-wrap">
