@@ -349,3 +349,76 @@
   border: 1px solid var(--color-border-secondary);
   background: var(--color-bg-hover);
 }
+
+/* Inline alerts */
+.gc-debug__inline-alert {
+  margin-bottom: 10px;
+}
+
+/* Pool filters */
+.gc-debug__pool-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.gc-debug__pool-filter-label {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  font-weight: 600;
+}
+
+.gc-debug__pool-filter-tag {
+  cursor: pointer;
+  user-select: none;
+}
+
+/* Sweep console */
+.gc-debug__card--sweep {
+  padding-bottom: 14px;
+}
+
+.gc-debug__sweep-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.gc-debug__sweep-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.gc-debug__sweep-label {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.gc-debug__sweep-input {
+  max-width: 120px;
+}
+
+.gc-debug__sweep-hint {
+  font-size: 11px;
+}
+
+/* Small code in tables */
+.gc-debug__code-sm {
+  font-size: 11px;
+  word-break: break-all;
+}
+
+@media (max-width: 960px) {
+  .gc-debug__pool-filters {
+    gap: 4px;
+  }
+
+  .gc-debug__sweep-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

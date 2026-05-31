@@ -8,14 +8,19 @@ import {
   getBlockVersionGcCandidates,
   getBlockVersionGcHealth,
   getBlockVersionGcRun,
-  getRunScannedBlocks,
+  getGcCandidatePool,
   listBlockVersionGcRuns,
+  sweepDraftTombstones,
+  sweepRevisionTombstones,
   type BlockVersionGcCandidate,
   type BlockVersionGcHealth,
   type BlockVersionGcPolicySnapshot,
   type BlockVersionGcRun,
   type CandidateClass,
-  type GcScannedBlock,
+  type GcCandidatePoolItem,
+  type GcPoolState,
+  type GcRunMode,
+  type GcSweepResult,
   type PlannedAction,
   type Readiness,
   type RequiredCheck,
@@ -152,6 +157,30 @@ const REQUIRED_CHECK_LABELS: Record<RequiredCheck, string> = {
   verify_content_read_paths: "复查内容读取链路",
 };
 
+const RUN_MODE_LABELS: Record<GcRunMode, { label: string; color: string }> = {
+  preview: { label: "Preview", color: "blue" },
+  sweep: { label: "Sweep", color: "red" },
+};
+
+const POOL_STATE_LABELS: Record<GcPoolState, { label: string; color: string }> = {
+  pending: { label: "待晋升", color: "default" },
+  eligible: { label: "可执行", color: "blue" },
+  sweeping: { label: "执行中", color: "processing" },
+  swept: { label: "已清理", color: "green" },
+  resurrected: { label: "已复活", color: "orange" },
+  blocked: { label: "已阻断", color: "red" },
+};
+
+const SOURCE_LABELS: Record<string, string> = {
+  doc_snapshots: "正式快照",
+  document_drafts: "草稿副本",
+};
+
+const ROOT_REF_TYPE_LABELS: Record<string, string> = {
+  snapshot: "Snapshot",
+  draft: "Draft",
+};
+
 function getRiskColor(level?: string) {
   switch (level) {
     case "low":
@@ -183,8 +212,15 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
   const [candidatesTotal, setCandidatesTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<BlockVersionGcCandidate | null>(null);
-  const [scannedBlocks, setScannedBlocks] = useState<GcScannedBlock[]>([]);
-  const [scannedBlocksTotal, setScannedBlocksTotal] = useState(0);
+  const [poolItems, setPoolItems] = useState<GcCandidatePoolItem[]>([]);
+  const [poolTotal, setPoolTotal] = useState(0);
+  const [poolStateFilter, setPoolStateFilter] = useState<GcPoolState | undefined>(undefined);
+  const [poolActionFilter, setPoolActionFilter] = useState<PlannedAction | undefined>(undefined);
+  const [poolLoading, setPoolLoading] = useState(false);
+  const [sweepLoading, setSweepLoading] = useState(false);
+  const [sweepLimit, setSweepLimit] = useState(100);
+  const [sweepDryRun, setSweepDryRun] = useState(true);
+  const [selectedPoolItem, setSelectedPoolItem] = useState<GcCandidatePoolItem | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -242,19 +278,6 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
         setCandidatesTotal(0);
       }
 
-      tasks.push(
-        getRunScannedBlocks({
-          token: activeToken,
-          operatorId: activeOperatorId || undefined,
-          runId: fullRun.runId,
-          page: 1,
-          pageSize: 20,
-        }).then((result) => {
-          setScannedBlocks(result.items);
-          setScannedBlocksTotal(result.total);
-        }),
-      );
-
       await Promise.all(tasks);
     },
     [loadCandidatesForRun],
@@ -292,6 +315,19 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
         setHealth(healthResult);
         setRuns(runsResult.items);
 
+        // Load pool in background (non-blocking)
+        void getGcCandidatePool({
+          token: activeToken,
+          operatorId: activeOperatorId || undefined,
+          workspaceId,
+          docId,
+          page: 1,
+          pageSize: 100,
+        }).then((poolResult) => {
+          setPoolItems(poolResult.items);
+          setPoolTotal(poolResult.total);
+        }).catch(() => { /* ignore pool load errors on init */ });
+
         const latestRun = runsResult.items[0] ?? null;
         if (latestRun) {
           await loadRunDetail(latestRun, activeToken, activeOperatorId);
@@ -299,8 +335,6 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
           setSelectedRun(null);
           setCandidates([]);
           setCandidatesTotal(0);
-          setScannedBlocks([]);
-          setScannedBlocksTotal(0);
         }
       } catch (nextError) {
         setError(nextError instanceof Error ? nextError.message : "GC 调试信息加载失败");
@@ -346,6 +380,70 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
     }
   }, [docId, includeCandidates, loadPanelData, operatorId, persistCredentials, token, workspaceId]);
 
+  const loadPool = useCallback(
+    async (activeToken = token, activeOperatorId = operatorId, stateFilter = poolStateFilter, actionFilter = poolActionFilter) => {
+      if (!activeToken.trim()) return;
+      setPoolLoading(true);
+      try {
+        const result = await getGcCandidatePool({
+          token: activeToken,
+          operatorId: activeOperatorId || undefined,
+          workspaceId,
+          docId,
+          state: stateFilter,
+          action: actionFilter,
+          page: 1,
+          pageSize: 100,
+        });
+        setPoolItems(result.items);
+        setPoolTotal(result.total);
+      } catch (nextError) {
+        const msg = nextError instanceof Error ? nextError.message : "Candidate pool 加载失败";
+        setError(msg);
+      } finally {
+        setPoolLoading(false);
+      }
+    },
+    [docId, operatorId, poolActionFilter, poolStateFilter, token, workspaceId],
+  );
+
+  const handleSweep = useCallback(
+    async (type: "draft" | "revision") => {
+      if (!token.trim()) {
+        setError("请先输入系统管理员令牌");
+        return;
+      }
+      setSweepLoading(true);
+      setError(null);
+      persistCredentials(token, operatorId);
+
+      try {
+        const sweepFn = type === "draft" ? sweepDraftTombstones : sweepRevisionTombstones;
+        const result: GcSweepResult = await sweepFn({
+          token,
+          operatorId: operatorId || undefined,
+          workspaceId,
+          docId,
+          limit: sweepLimit,
+          dryRun: sweepDryRun,
+        });
+
+        const label = type === "draft" ? "Draft Tombstones" : "Revision Tombstones";
+        const modeLabel = sweepDryRun ? "Dry-run" : "Sweep";
+        message.success(`${modeLabel} ${label} 已完成：run ${result.runId}`);
+
+        await Promise.all([loadPanelData(token, operatorId), loadPool(token, operatorId)]);
+      } catch (nextError) {
+        const msg = nextError instanceof Error ? nextError.message : "Sweep 执行失败";
+        setError(msg);
+        message.error(msg);
+      } finally {
+        setSweepLoading(false);
+      }
+    },
+    [docId, loadPanelData, loadPool, operatorId, persistCredentials, sweepDryRun, sweepLimit, token, workspaceId],
+  );
+
   const scopeLabel = useMemo(
     () => ({
       workspaceId: workspaceId || "--",
@@ -374,6 +472,16 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
         key: "status",
         width: 96,
         render: (value?: string) => <Tag color={getStatusColor(value)}>{value || "unknown"}</Tag>,
+      },
+      {
+        title: "模式",
+        dataIndex: "mode",
+        key: "mode",
+        width: 88,
+        render: (value?: GcRunMode) => {
+          const m = value ? RUN_MODE_LABELS[value] : null;
+          return m ? <Tag color={m.color}>{m.label}</Tag> : <Tag>{value || "--"}</Tag>;
+        },
       },
       {
         title: "扫描",
@@ -453,6 +561,22 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
         render: (_, record) => String(record.reasonDetail?.rootKind ?? "--"),
       },
       {
+        title: "Root Ref",
+        key: "rootRef",
+        width: 160,
+        render: (_, record) => {
+          const refType = record.reasonDetail?.rootRefType as string | undefined;
+          const refId = record.reasonDetail?.rootRefId as string | undefined;
+          if (!refType && !refId) return "--";
+          const typeLabel = ROOT_REF_TYPE_LABELS[refType ?? ""] ?? refType ?? "--";
+          return (
+            <Tooltip title={refId}>
+              <Tag>{typeLabel}</Tag>
+            </Tooltip>
+          );
+        },
+      },
+      {
         title: "Age",
         key: "age",
         width: 120,
@@ -462,42 +586,6 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
           if (bucket) return <Tag>{bucket}</Tag>;
           return formatAge(typeof ms === "number" ? ms : undefined);
         },
-      },
-    ],
-    [],
-  );
-
-  const scannedBlockColumns = useMemo<ColumnsType<GcScannedBlock>>(
-    () => [
-      {
-        title: "Block ID",
-        dataIndex: "blockId",
-        key: "blockId",
-        render: (value: string) => <code>{value}</code>,
-      },
-      {
-        title: "Latest Ver",
-        dataIndex: "latestVer",
-        key: "latestVer",
-        width: 100,
-      },
-      {
-        title: "扫描版本数",
-        dataIndex: "scannedVersionCount",
-        key: "scannedVersionCount",
-        width: 100,
-      },
-      {
-        title: "最早版本",
-        key: "oldestVersionCreatedAt",
-        width: 160,
-        render: (_, record) => formatTime(record.oldestVersionCreatedAt),
-      },
-      {
-        title: "最新版本",
-        key: "newestVersionCreatedAt",
-        width: 160,
-        render: (_, record) => formatTime(record.newestVersionCreatedAt),
       },
     ],
     [],
@@ -677,9 +765,15 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
                 {selectedRun?.runId ? `run ${selectedRun.runId}` : "未选中 run"} / {formatCount(candidatesTotal)} 条
               </Typography.Text>
             </div>
+            {selectedRun && !selectedRun.candidateDetailsStored && (
+              <Alert type="info" showIcon message="本次 run 没有保存 candidates 明细" className="gc-debug__inline-alert" />
+            )}
+            {selectedRun?.candidateDetailsTruncated && (
+              <Alert type="warning" showIcon message="本次 candidates 明细被截断，完整候选请去 Candidate Pool 查看" className="gc-debug__inline-alert" />
+            )}
             <Table
               size="small"
-              rowKey={(record) => `${record.resourceKey}-${record.reasonCode}`}
+              rowKey={(record) => record.resourceKey + "-" + record.reasonCode}
               columns={candidateColumns}
               dataSource={candidates}
               pagination={false}
@@ -691,21 +785,203 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
             />
           </section>
 
+          {/* Candidate Pool Explorer */}
           <section className="gc-debug__card gc-debug__card--table">
             <div className="gc-debug__card-head">
-              <h3>Scanned Blocks</h3>
-              <Typography.Text type="secondary">
-                {selectedRun?.runId ? `run ${selectedRun.runId}` : "未选中 run"} / {formatCount(scannedBlocksTotal)} 块
-              </Typography.Text>
+              <h3>Candidate Pool</h3>
+              <Typography.Text type="secondary">{formatCount(poolTotal)} 条</Typography.Text>
+            </div>
+            <div className="gc-debug__pool-filters">
+              <span className="gc-debug__pool-filter-label">State：</span>
+              {(["pending", "eligible", "sweeping", "swept", "resurrected", "blocked"] as GcPoolState[]).map((s) => (
+                <Tag
+                  key={s}
+                  className="gc-debug__pool-filter-tag"
+                  color={poolStateFilter === s ? POOL_STATE_LABELS[s].color : undefined}
+                  onClick={() => {
+                    const next = poolStateFilter === s ? undefined : s;
+                    setPoolStateFilter(next);
+                    void loadPool(token, operatorId, next, poolActionFilter);
+                  }}
+                  style={{ cursor: "pointer" }}
+                >
+                  {POOL_STATE_LABELS[s].label}
+                </Tag>
+              ))}
+              <Divider type="vertical" />
+              <span className="gc-debug__pool-filter-label">Action：</span>
+              {(["candidate_block_version", "compact_map_entry"] as PlannedAction[]).map((a) => (
+                <Tag
+                  key={a}
+                  className="gc-debug__pool-filter-tag"
+                  color={poolActionFilter === a ? "blue" : undefined}
+                  onClick={() => {
+                    const next = poolActionFilter === a ? undefined : a;
+                    setPoolActionFilter(next);
+                    void loadPool(token, operatorId, poolStateFilter, next);
+                  }}
+                  style={{ cursor: "pointer" }}
+                >
+                  {PLANNED_ACTION_LABELS[a]}
+                </Tag>
+              ))}
+              <Button
+                size="small"
+                onClick={() => void loadPool()}
+                loading={poolLoading}
+                style={{ marginLeft: 8 }}
+              >
+                刷新 Pool
+              </Button>
             </div>
             <Table
               size="small"
-              rowKey="blockId"
-              columns={scannedBlockColumns}
-              dataSource={scannedBlocks}
+              rowKey={(record) => record.candidateKey ?? record.resourceKey}
+              dataSource={poolItems}
               pagination={false}
-              locale={{ emptyText: "暂无扫描块数据" }}
+              locale={{ emptyText: "暂无 pool 数据，点击刷新 Pool 加载" }}
+              scroll={{ x: 960 }}
+              columns={[
+                {
+                  title: "candidateKey",
+                  dataIndex: "candidateKey",
+                  key: "candidateKey",
+                  width: 200,
+                  render: (value: string) => <code className="gc-debug__code-sm">{value}</code>,
+                },
+                {
+                  title: "resourceKey",
+                  dataIndex: "resourceKey",
+                  key: "resourceKey",
+                  width: 160,
+                  render: (value: string) => <code className="gc-debug__code-sm">{value}</code>,
+                },
+                {
+                  title: "Action",
+                  dataIndex: "action",
+                  key: "action",
+                  width: 150,
+                  render: (value?: PlannedAction) => value ? <Tag>{PLANNED_ACTION_LABELS[value] ?? value}</Tag> : "--",
+                },
+                {
+                  title: "Source",
+                  key: "source",
+                  width: 100,
+                  render: (_, record) => {
+                    const src = record.source ?? record.reasonDetail?.source;
+                    return src ? <Tag>{SOURCE_LABELS[src] ?? src}</Tag> : "--";
+                  },
+                },
+                {
+                  title: "State",
+                  dataIndex: "state",
+                  key: "state",
+                  width: 88,
+                  render: (value?: GcPoolState) => {
+                    const s = value ? POOL_STATE_LABELS[value] : null;
+                    return s ? <Tag color={s.color}>{s.label}</Tag> : <Tag>{value || "--"}</Tag>;
+                  },
+                },
+                {
+                  title: "Root Ref",
+                  key: "rootRef",
+                  width: 140,
+                  render: (_, record) => {
+                    const refType = record.reasonDetail?.rootRefType as string | undefined;
+                    const refId = record.reasonDetail?.rootRefId as string | undefined;
+                    if (!refType && !refId) return "--";
+                    const typeLabel = ROOT_REF_TYPE_LABELS[refType ?? ""] ?? refType ?? "--";
+                    return (
+                      <Tooltip title={refId}>
+                        <Tag>{typeLabel}</Tag>
+                      </Tooltip>
+                    );
+                  },
+                },
+                {
+                  title: "Readiness",
+                  key: "readiness",
+                  width: 110,
+                  render: (_, record) => {
+                    const r = record.readiness;
+                    if (!r) return "--";
+                    const l = READINESS_LABELS[r];
+                    return l ? <Tag color={l.color}>{l.label}</Tag> : <Tag>{r}</Tag>;
+                  },
+                },
+                {
+                  title: "Risk",
+                  key: "riskLevel",
+                  width: 72,
+                  render: (_, record) => {
+                    const level = record.riskAssessment?.level ?? record.riskLevel;
+                    return level ? <Tag color={getRiskColor(level)}>{level}</Tag> : "--";
+                  },
+                },
+                {
+                  title: "eligibleAfter",
+                  dataIndex: "eligibleAfter",
+                  key: "eligibleAfter",
+                  width: 160,
+                  render: (value?: string | null) => formatTime(value),
+                },
+                {
+                  title: "lastSweepAt",
+                  dataIndex: "lastSweepAt",
+                  key: "lastSweepAt",
+                  width: 160,
+                  render: (value?: string | null) => formatTime(value),
+                },
+              ]}
+              onRow={(record) => ({
+                onClick: () => setSelectedPoolItem(record),
+                style: { cursor: "pointer" },
+              })}
             />
+          </section>
+
+          {/* Sweep Console */}
+          <section className="gc-debug__card gc-debug__card--sweep">
+            <div className="gc-debug__card-head">
+              <h3>Sweep Console</h3>
+              {health?.status === "blocked" && (
+                <Tag color="red">Health blocked — 不可执行 sweep</Tag>
+              )}
+            </div>
+            <div className="gc-debug__sweep-form">
+              <div className="gc-debug__sweep-row">
+                <label className="gc-debug__sweep-label">Limit：</label>
+                <Input
+                  type="number"
+                  value={sweepLimit}
+                  onChange={(e) => setSweepLimit(Number(e.target.value) || 100)}
+                  className="gc-debug__sweep-input"
+                  style={{ width: 100 }}
+                />
+                <Checkbox checked={sweepDryRun} onChange={(e) => setSweepDryRun(e.target.checked)}>
+                  Dry-run（不真实执行）
+                </Checkbox>
+              </div>
+              <div className="gc-debug__sweep-row">
+                <Button
+                  onClick={() => void handleSweep("draft")}
+                  loading={sweepLoading}
+                  disabled={health?.status === "blocked"}
+                >
+                  {sweepDryRun ? "Dry-run" : "执行"} Draft Tombstones
+                </Button>
+                <Button
+                  onClick={() => void handleSweep("revision")}
+                  loading={sweepLoading}
+                  disabled={health?.status === "blocked"}
+                >
+                  {sweepDryRun ? "Dry-run" : "执行"} Revision Tombstones
+                </Button>
+              </div>
+              <Typography.Text type="secondary" className="gc-debug__sweep-hint">
+                Draft = document_drafts tombstone compaction / Revision = doc_snapshots(kind=revision, pinned=false) tombstone compaction
+              </Typography.Text>
+            </div>
           </section>
         </Spin>
       </div>
@@ -787,6 +1063,38 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
             <Descriptions.Item label="distanceFromLatestVer">
               {selectedCandidate.reasonDetail?.distanceFromLatestVer != null
                 ? String(selectedCandidate.reasonDetail.distanceFromLatestVer)
+                : "--"}
+            </Descriptions.Item>
+          </Descriptions>
+
+          {/* Root-entry 级字段 */}
+          <Descriptions column={2} bordered size="small" title="Root Entry" style={{ marginTop: 12 }}>
+            <Descriptions.Item label="rootRefType">
+              {(() => {
+                const refType = selectedCandidate.reasonDetail?.rootRefType as string | undefined;
+                if (!refType) return "--";
+                return <Tag>{ROOT_REF_TYPE_LABELS[refType] ?? refType}</Tag>;
+              })()}
+            </Descriptions.Item>
+            <Descriptions.Item label="rootRefId">
+              <code>{String(selectedCandidate.reasonDetail?.rootRefId ?? "--")}</code>
+            </Descriptions.Item>
+            <Descriptions.Item label="rootRefKey" span={2}>
+              <code>{String(selectedCandidate.reasonDetail?.rootRefKey ?? "--")}</code>
+            </Descriptions.Item>
+            <Descriptions.Item label="hardRooted">
+              {selectedCandidate.reasonDetail?.hardRooted != null
+                ? String(selectedCandidate.reasonDetail.hardRooted)
+                : "--"}
+            </Descriptions.Item>
+            <Descriptions.Item label="retainedByPolicy">
+              {selectedCandidate.reasonDetail?.retainedByPolicy != null
+                ? String(selectedCandidate.reasonDetail.retainedByPolicy)
+                : "--"}
+            </Descriptions.Item>
+            <Descriptions.Item label="rootSourceCount">
+              {selectedCandidate.reasonDetail?.rootSourceCount != null
+                ? String(selectedCandidate.reasonDetail.rootSourceCount)
                 : "--"}
             </Descriptions.Item>
           </Descriptions>
@@ -878,6 +1186,157 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
           <details className="gc-debug__raw-detail">
             <summary>原始 reasonDetail JSON</summary>
             <pre className="gc-debug__json">{JSON.stringify(selectedCandidate.reasonDetail, null, 2)}</pre>
+          </details>
+        </div>
+      )}
+    </Drawer>
+
+    <Drawer
+      open={!!selectedPoolItem}
+      title={selectedPoolItem ? `Pool 详情 · ${selectedPoolItem.candidateKey}` : "Pool 详情"}
+      width={560}
+      onClose={() => setSelectedPoolItem(null)}
+      destroyOnClose
+    >
+      {selectedPoolItem && (
+        <div className="gc-debug__candidate-detail">
+          <Descriptions column={2} bordered size="small" title="基本信息">
+            <Descriptions.Item label="candidateKey" span={2}>
+              <code>{selectedPoolItem.candidateKey}</code>
+            </Descriptions.Item>
+            <Descriptions.Item label="resourceKey" span={2}>
+              <code>{selectedPoolItem.resourceKey}</code>
+            </Descriptions.Item>
+            <Descriptions.Item label="blockId">
+              <code>{selectedPoolItem.blockId ?? "--"}</code>
+            </Descriptions.Item>
+            <Descriptions.Item label="blockVer">
+              {selectedPoolItem.blockVer ?? "--"}
+            </Descriptions.Item>
+            <Descriptions.Item label="action">
+              {selectedPoolItem.action ? <Tag>{PLANNED_ACTION_LABELS[selectedPoolItem.action] ?? selectedPoolItem.action}</Tag> : "--"}
+            </Descriptions.Item>
+            <Descriptions.Item label="source">
+              {selectedPoolItem.source ? <Tag>{SOURCE_LABELS[selectedPoolItem.source] ?? selectedPoolItem.source}</Tag> : "--"}
+            </Descriptions.Item>
+            <Descriptions.Item label="state">
+              {(() => {
+                const s = selectedPoolItem.state;
+                const l = s ? POOL_STATE_LABELS[s] : null;
+                return l ? <Tag color={l.color}>{l.label}</Tag> : <Tag>{s || "--"}</Tag>;
+              })()}
+            </Descriptions.Item>
+            <Descriptions.Item label="riskLevel">
+              <Tag color={getRiskColor(selectedPoolItem.riskAssessment?.level ?? selectedPoolItem.riskLevel)}>
+                {selectedPoolItem.riskAssessment?.level ?? selectedPoolItem.riskLevel ?? "--"}
+              </Tag>
+            </Descriptions.Item>
+          </Descriptions>
+
+          <Divider />
+
+          <Descriptions column={2} bordered size="small" title="Root Entry">
+            <Descriptions.Item label="rootRefType">
+              {(() => {
+                const refType = selectedPoolItem.reasonDetail?.rootRefType as string | undefined;
+                if (!refType) return "--";
+                return <Tag>{ROOT_REF_TYPE_LABELS[refType] ?? refType}</Tag>;
+              })()}
+            </Descriptions.Item>
+            <Descriptions.Item label="rootRefId">
+              <code>{String(selectedPoolItem.reasonDetail?.rootRefId ?? "--")}</code>
+            </Descriptions.Item>
+            <Descriptions.Item label="rootRefKey" span={2}>
+              <code>{String(selectedPoolItem.reasonDetail?.rootRefKey ?? "--")}</code>
+            </Descriptions.Item>
+          </Descriptions>
+
+          <Divider />
+
+          <Descriptions column={2} bordered size="small" title="晋升与执行">
+            <Descriptions.Item label="eligibleAfter">
+              {formatTime(selectedPoolItem.eligibleAfter)}
+            </Descriptions.Item>
+            <Descriptions.Item label="lastSweepAt">
+              {formatTime(selectedPoolItem.lastSweepAt)}
+            </Descriptions.Item>
+            <Descriptions.Item label="lastValidationAt">
+              {formatTime(selectedPoolItem.lastValidationAt)}
+            </Descriptions.Item>
+            <Descriptions.Item label="stableCount">
+              {selectedPoolItem.stableCount ?? "--"}
+            </Descriptions.Item>
+            <Descriptions.Item label="firstSeenAt">
+              {formatTime(selectedPoolItem.firstSeenAt)}
+            </Descriptions.Item>
+            <Descriptions.Item label="lastSeenAt">
+              {formatTime(selectedPoolItem.lastSeenAt)}
+            </Descriptions.Item>
+          </Descriptions>
+
+          {selectedPoolItem.lastBlockers && selectedPoolItem.lastBlockers.length > 0 && (
+            <>
+              <Divider />
+              <div className="gc-debug__subsection">
+                <h4>Blockers</h4>
+                <div className="gc-debug__decision-reasons-block">
+                  {selectedPoolItem.lastBlockers.map((b, idx) => (
+                    <div key={idx} className="gc-debug__decision-reason-item">{b}</div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          <Divider />
+
+          <details className="gc-debug__compat-section">
+            <summary>兼容字段（风险/动作/检查）</summary>
+            <div className="gc-debug__compat-inner">
+              {selectedPoolItem.riskAssessment && (
+                <div className="gc-debug__risk-assessment">
+                  <div className="gc-debug__risk-header">
+                    <Tag color={getRiskColor(selectedPoolItem.riskAssessment.level)}>
+                      {selectedPoolItem.riskAssessment.level}
+                    </Tag>
+                    <span>风险分：<strong>{selectedPoolItem.riskAssessment.score}</strong></span>
+                  </div>
+                  {selectedPoolItem.riskAssessment.reasons.length > 0 && (
+                    <div className="gc-debug__risk-reasons">
+                      {selectedPoolItem.riskAssessment.reasons.map((reason, idx) => (
+                        <div key={idx} className="gc-debug__risk-reason-item">{reason}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              <Descriptions column={1} bordered size="small" style={{ marginTop: 12 }}>
+                <Descriptions.Item label="readiness">
+                  {selectedPoolItem.readiness ? (() => {
+                    const l = READINESS_LABELS[selectedPoolItem.readiness];
+                    return l ? <Tag color={l.color}>{l.label}</Tag> : <Tag>{selectedPoolItem.readiness}</Tag>;
+                  })() : "--"}
+                </Descriptions.Item>
+                <Descriptions.Item label="requiredChecks">
+                  {selectedPoolItem.requiredChecks && selectedPoolItem.requiredChecks.length > 0 ? (
+                    <div className="gc-debug__checks-list">
+                      {selectedPoolItem.requiredChecks.map((check) => (
+                        <Tag key={check} className="gc-debug__check-tag">
+                          {REQUIRED_CHECK_LABELS[check] ?? check}
+                        </Tag>
+                      ))}
+                    </div>
+                  ) : "--"}
+                </Descriptions.Item>
+              </Descriptions>
+            </div>
+          </details>
+
+          <Divider />
+
+          <details className="gc-debug__raw-detail">
+            <summary>原始 JSON</summary>
+            <pre className="gc-debug__json">{JSON.stringify(selectedPoolItem, null, 2)}</pre>
           </details>
         </div>
       )}

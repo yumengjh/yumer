@@ -12,7 +12,10 @@ import {
   createBlockVersionGcRun,
   getBlockVersionGcCandidates,
   getBlockVersionGcHealth,
+  getGcCandidatePool,
   listBlockVersionGcRuns,
+  sweepDraftTombstones,
+  sweepRevisionTombstones,
 } from "../gc";
 
 describe("gc service", () => {
@@ -152,5 +155,142 @@ describe("gc service", () => {
     );
     expect(runs.items[0].runId).toBe("gc_run_1");
     expect(candidates.items[0].resourceKey).toBe("b_1@2");
+  });
+
+  it("queries candidate pool with state and action filters", async () => {
+    apiFetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            items: [
+              {
+                candidateKey: "snapshot:doc_1@snap@4->b_1@4",
+                resourceKey: "b_1@4",
+                action: "compact_map_entry",
+                state: "eligible",
+              },
+            ],
+            total: 1,
+            page: 1,
+            pageSize: 100,
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await getGcCandidatePool({
+      token: "gc-secret",
+      operatorId: "debugger",
+      workspaceId: "ws_1",
+      docId: "doc_1",
+      state: "eligible",
+      action: "compact_map_entry",
+      page: 1,
+      pageSize: 100,
+    });
+
+    expect(apiFetch).toHaveBeenCalledWith(
+      "/admin/gc/block-versions/pool?page=1&pageSize=100&state=eligible&action=compact_map_entry&workspaceId=ws_1&docId=doc_1",
+      expect.objectContaining({
+        method: "GET",
+        headers: expect.objectContaining({
+          "x-system-admin-token": "gc-secret",
+          "x-operator-id": "debugger",
+        }),
+      }),
+    );
+    expect(result.items[0].candidateKey).toBe("snapshot:doc_1@snap@4->b_1@4");
+    expect(result.items[0].state).toBe("eligible");
+  });
+
+  it("runs draft tombstone sweep with dry-run", async () => {
+    apiFetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            runId: "gc_run_sweep_1",
+            mode: "sweep",
+            status: "completed",
+            dryRun: true,
+            source: "document_drafts",
+            processedCount: 5,
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await sweepDraftTombstones({
+      token: "gc-secret",
+      operatorId: "debugger",
+      workspaceId: "ws_1",
+      docId: "doc_1",
+      limit: 50,
+      dryRun: true,
+    });
+
+    expect(apiFetch).toHaveBeenCalledWith(
+      "/admin/gc/block-versions/sweeps/draft-tombstones",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "content-type": "application/json",
+          "x-system-admin-token": "gc-secret",
+          "x-operator-id": "debugger",
+        }),
+        body: JSON.stringify({
+          workspaceId: "ws_1",
+          docId: "doc_1",
+          limit: 50,
+          dryRun: true,
+        }),
+      }),
+    );
+    expect(result.runId).toBe("gc_run_sweep_1");
+    expect(result.dryRun).toBe(true);
+  });
+
+  it("runs revision tombstone sweep", async () => {
+    apiFetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            runId: "gc_run_sweep_2",
+            mode: "sweep",
+            status: "completed",
+            dryRun: false,
+            source: "doc_snapshots",
+            processedCount: 3,
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await sweepRevisionTombstones({
+      token: "gc-secret",
+      workspaceId: "ws_1",
+      docId: "doc_1",
+      dryRun: false,
+    });
+
+    expect(apiFetch).toHaveBeenCalledWith(
+      "/admin/gc/block-versions/sweeps/revision-tombstones",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          workspaceId: "ws_1",
+          docId: "doc_1",
+          limit: 100,
+          dryRun: false,
+        }),
+      }),
+    );
+    expect(result.runId).toBe("gc_run_sweep_2");
+    expect(result.dryRun).toBe(false);
   });
 });

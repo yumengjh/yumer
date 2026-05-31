@@ -41,16 +41,67 @@ describe("GcDebugModal policy visibility", () => {
     expect(source).toContain("兼容字段");
     expect(source).toContain("扫描范围");
 
-    // Scanned blocks
-    expect(source).toContain("scannedBlocks");
-    expect(source).toContain("getRunScannedBlocks");
-    expect(source).toContain("Scanned Blocks");
-    expect(source).toContain("scannedBlockColumns");
-
     // Compat fields still present
     expect(source).toContain("riskAssessment");
     expect(source).toContain("plannedAction");
     expect(source).toContain("requiredChecks");
     expect(source).toContain("readiness");
+  });
+
+  it("renders candidate pool explorer with state/action filters", () => {
+    const source = fs.readFileSync(
+      path.resolve(process.cwd(), "src/components/GcDebugModal.tsx"),
+      "utf8",
+    );
+
+    // Pool explorer
+    expect(source).toContain("Candidate Pool");
+    expect(source).toContain("getGcCandidatePool");
+    expect(source).toContain("poolStateFilter");
+    expect(source).toContain("poolActionFilter");
+    expect(source).toContain("POOL_STATE_LABELS");
+    expect(source).toContain("刷新 Pool");
+
+    // Pool state labels
+    expect(source).toContain("待晋升");
+    expect(source).toContain("可执行");
+    expect(source).toContain("已清理");
+    expect(source).toContain("已阻断");
+    expect(source).toContain("已复活");
+
+    // Root-entry fields
+    expect(source).toContain("rootRefType");
+    expect(source).toContain("rootRefId");
+    expect(source).toContain("rootRefKey");
+    expect(source).toContain("ROOT_REF_TYPE_LABELS");
+  });
+
+  it("renders sweep console with dry-run and real sweep buttons", () => {
+    const source = fs.readFileSync(
+      path.resolve(process.cwd(), "src/components/GcDebugModal.tsx"),
+      "utf8",
+    );
+
+    // Sweep console
+    expect(source).toContain("Sweep Console");
+    expect(source).toContain("sweepDraftTombstones");
+    expect(source).toContain("sweepRevisionTombstones");
+    expect(source).toContain("Draft Tombstones");
+    expect(source).toContain("Revision Tombstones");
+    expect(source).toContain("Dry-run");
+    expect(source).toContain("sweepDryRun");
+    expect(source).toContain("sweepLimit");
+
+    // Mode column in runs table
+    expect(source).toContain("RUN_MODE_LABELS");
+    expect(source).toContain("GcRunMode");
+    expect(source).toContain("mode");
+
+    // candidateDetailsTruncated warning
+    expect(source).toContain("candidateDetailsTruncated");
+    expect(source).toContain("本次 candidates 明细被截断");
+
+    // Health blocked guard
+    expect(source).toContain("Health blocked");
   });
 });

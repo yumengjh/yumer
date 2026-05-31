@@ -2,6 +2,10 @@ import { apiFetch } from "./api-client";
 
 export type GcRunStatus = "running" | "completed" | "blocked" | "failed";
 
+export type GcRunMode = "preview" | "sweep";
+
+export type GcPoolState = "pending" | "eligible" | "sweeping" | "swept" | "resurrected" | "blocked";
+
 export interface BlockVersionGcHealth {
   status: "ok" | "blocked";
   missingRevisionSnapshots: number;
@@ -42,7 +46,7 @@ export interface BlockVersionGcPolicySnapshot {
 export interface BlockVersionGcRun {
   runId: string;
   resourceType: "block_version";
-  mode: "preview";
+  mode: GcRunMode;
   status: GcRunStatus;
   scope: {
     workspaceId?: string | null;
@@ -143,6 +147,47 @@ export interface GcScannedBlock {
   scannedVersionCount?: number;
   oldestVersionCreatedAt?: number;
   newestVersionCreatedAt?: number;
+}
+
+export interface GcCandidatePoolItem {
+  id?: number;
+  candidateKey: string;
+  resourceKey: string;
+  resourceRowId?: number;
+  docId?: string | null;
+  workspaceId?: string | null;
+  blockId?: string;
+  blockVer?: number;
+  action?: PlannedAction;
+  source?: string;
+  state?: GcPoolState;
+  reasonCode?: string;
+  reasonDetail?: CandidateReasonDetail;
+  riskLevel?: "low" | "medium" | "high";
+  riskAssessment?: RiskAssessment;
+  plannedAction?: PlannedAction;
+  requiredChecks?: RequiredCheck[];
+  readiness?: Readiness;
+  eligibleAfter?: string | null;
+  lastSweepAt?: string | null;
+  lastValidationAt?: string | null;
+  lastBlockers?: string[] | null;
+  firstSeenAt?: string;
+  lastSeenAt?: string;
+  stableCount?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface GcSweepResult {
+  runId: string;
+  mode: "sweep";
+  status: GcRunStatus;
+  summary?: BlockVersionGcRunSummary;
+  processedCount?: number;
+  affectedEntries?: number;
+  dryRun: boolean;
+  source: string;
 }
 
 type AdminRequestOptions = {
@@ -318,4 +363,78 @@ export async function getRunScannedBlocks(
       method: "GET",
     },
   );
+}
+
+export async function getGcCandidatePool(
+  input: AdminRequestOptions &
+    ScopeOptions & {
+      page?: number;
+      pageSize?: number;
+      state?: GcPoolState;
+      action?: PlannedAction;
+    },
+): Promise<PaginatedGcResult<GcCandidatePoolItem>> {
+  const query = buildQuery({
+    page: input.page ?? 1,
+    pageSize: input.pageSize ?? 100,
+    state: input.state,
+    action: input.action,
+    workspaceId: input.workspaceId,
+    docId: input.docId,
+  });
+
+  return requestGc<PaginatedGcResult<GcCandidatePoolItem>>(
+    `/admin/gc/block-versions/pool${query}`,
+    {
+      token: input.token,
+      operatorId: input.operatorId,
+      method: "GET",
+    },
+  );
+}
+
+export async function sweepDraftTombstones(
+  input: AdminRequestOptions &
+    ScopeOptions & {
+      limit?: number;
+      dryRun?: boolean;
+    },
+): Promise<GcSweepResult> {
+  return requestGc<GcSweepResult>("/admin/gc/block-versions/sweeps/draft-tombstones", {
+    token: input.token,
+    operatorId: input.operatorId,
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      workspaceId: input.workspaceId,
+      docId: input.docId,
+      limit: input.limit ?? 100,
+      dryRun: input.dryRun ?? true,
+    }),
+  });
+}
+
+export async function sweepRevisionTombstones(
+  input: AdminRequestOptions &
+    ScopeOptions & {
+      limit?: number;
+      dryRun?: boolean;
+    },
+): Promise<GcSweepResult> {
+  return requestGc<GcSweepResult>("/admin/gc/block-versions/sweeps/revision-tombstones", {
+    token: input.token,
+    operatorId: input.operatorId,
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      workspaceId: input.workspaceId,
+      docId: input.docId,
+      limit: input.limit ?? 100,
+      dryRun: input.dryRun ?? true,
+    }),
+  });
 }
