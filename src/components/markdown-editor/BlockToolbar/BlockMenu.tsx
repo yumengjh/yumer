@@ -1,13 +1,17 @@
-import { useMemo, useCallback } from 'react';
-import { Menu, message } from 'antd';
+import { useMemo, useCallback, useRef, useState } from 'react';
+import { Menu, message, Popover } from 'antd';
 import type { MenuProps } from 'antd';
 import { DeleteOutlined, ClearOutlined, PlusCircleOutlined } from '@ant-design/icons';
 import { TextSelection } from '@tiptap/pm/state';
-import { useMarkdownEditor } from '../EditorContext';
+import { useMarkdownEditor, useMarkdownEditorContext } from '../EditorContext';
 import { getTableElementFromToolbarTarget } from './blockTarget';
 import { createBlockMenuItems, getHeadingAnchorIdFromBlock } from './blockMenuItems';
 import { buildAnchorUrl } from '../utils/anchorId';
 import { planExplicitMoveSortKey, withExplicitMoveSortKeyAttrs } from './sortKeyReorder';
+import { createBlockInsertContent } from './blockInsertContent';
+import type { BlockInsertType } from './blockInsertMenuItems';
+import BlockInsertPanel from './BlockInsertPanel';
+import { uploadImage } from '@/services/images';
 
 interface BlockMenuProps {
   onClose: () => void;
@@ -77,6 +81,16 @@ function getDeleteFallbackBlock(
 
 export function BlockMenu({ onClose, hoveredBlock, hoveredTableCell, onWillDeleteBlock }: BlockMenuProps) {
   const editor = useMarkdownEditor();
+  const { workspaceId } = useMarkdownEditorContext();
+  const menuRootRef = useRef<HTMLDivElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const insertPanelHideTimerRef = useRef<number | null>(null);
+  const [activeInsertSide, setActiveInsertSide] = useState<'above' | 'below' | null>(null);
+  const [insertPanelTop, setInsertPanelTop] = useState(0);
+  const [insertPanelLeft, setInsertPanelLeft] = useState(0);
+  const [insertPanelHeight, setInsertPanelHeight] = useState(0);
+  const [pendingImageSide, setPendingImageSide] = useState<'above' | 'below' | null>(null);
+
   const tableElement = useMemo(
     () => getTableElementFromToolbarTarget(hoveredBlock),
     [hoveredBlock],
@@ -86,6 +100,26 @@ export function BlockMenu({ onClose, hoveredBlock, hoveredTableCell, onWillDelet
     () => getHeadingAnchorIdFromBlock(hoveredBlock),
     [hoveredBlock],
   );
+
+  const clearInsertPanelHideTimer = useCallback(() => {
+    if (insertPanelHideTimerRef.current) {
+      window.clearTimeout(insertPanelHideTimerRef.current);
+      insertPanelHideTimerRef.current = null;
+    }
+  }, []);
+
+  const closeInsertPanel = useCallback(() => {
+    clearInsertPanelHideTimer();
+    setActiveInsertSide(null);
+  }, [clearInsertPanelHideTimer]);
+
+  const scheduleCloseInsertPanel = useCallback(() => {
+    clearInsertPanelHideTimer();
+    insertPanelHideTimerRef.current = window.setTimeout(() => {
+      setActiveInsertSide(null);
+      insertPanelHideTimerRef.current = null;
+    }, 120);
+  }, [clearInsertPanelHideTimer]);
 
   const canMoveUp = useMemo(() => {
     if (!editor || !hoveredBlock || isTableTarget) return false;
@@ -185,19 +219,20 @@ export function BlockMenu({ onClose, hoveredBlock, hoveredTableCell, onWillDelet
     view.dispatch(view.state.tr.replaceWith(range.from, range.to, paragraph));
   }, [editor, hoveredBlock, isTableTarget]);
 
-  const insertParagraph = useCallback((where: 'above' | 'below') => {
+  const insertBlock = useCallback((where: 'above' | 'below', type: BlockInsertType = 'paragraph') => {
     if (!editor || !hoveredBlock || isTableTarget) return;
-    const { view } = editor;
-    const range = getBlockRange(hoveredBlock, view);
+    const range = getBlockRange(hoveredBlock, editor.view);
     if (!range) return;
-    const paragraph = view.state.schema.nodes.paragraph.create();
     const insertAt = where === 'above' ? range.from : range.to;
-    try {
-      view.dispatch(view.state.tr.insert(insertAt, paragraph));
-    } catch (error) {
-      console.error('[BlockMenu] insert paragraph failed:', error);
-      message.warning('当前位置暂不支持插入普通段落');
-    }
+    editor.chain().focus().insertContentAt(insertAt, createBlockInsertContent(type)).run();
+  }, [editor, hoveredBlock, isTableTarget]);
+
+  const insertTable = useCallback((where: 'above' | 'below', rows: number, cols: number) => {
+    if (!editor || !hoveredBlock || isTableTarget) return;
+    const range = getBlockRange(hoveredBlock, editor.view);
+    if (!range) return;
+    const insertAt = where === 'above' ? range.from : range.to;
+    editor.chain().focus().setTextSelection(insertAt).insertTable({ rows, cols, withHeaderRow: true }).run();
   }, [editor, hoveredBlock, isTableTarget]);
 
   const swapBlocks = useCallback((direction: 'up' | 'down') => {
@@ -318,13 +353,68 @@ export function BlockMenu({ onClose, hoveredBlock, hoveredTableCell, onWillDelet
     }
   }, [editor, tableElement, focusTableCell]);
 
-  const blockItems: MenuProps['items'] = useMemo(() => (
-    createBlockMenuItems({
+  const handleImageFile = useCallback(async (file: File) => {
+    if (!editor || !workspaceId || !pendingImageSide || !hoveredBlock) return;
+    const range = getBlockRange(hoveredBlock, editor.view);
+    if (!range) return;
+
+    try {
+      const image = await uploadImage(workspaceId, file);
+      const insertAt = pendingImageSide === 'above' ? range.from : range.to;
+      editor
+        .chain()
+        .focus()
+        .insertContentAt(insertAt, {
+          type: 'imageBlock',
+          attrs: {
+            imageId: image.imageId,
+            src: image.publicUrl || image.url,
+            filename: image.filename,
+            mimeType: image.mimeType,
+            size: image.size,
+            naturalWidth: image.width,
+            naturalHeight: image.height,
+            width: image.width,
+            height: image.height,
+            alt: image.filename,
+          },
+        })
+        .run();
+      setPendingImageSide(null);
+      onClose();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '图片上传失败');
+    }
+  }, [editor, hoveredBlock, onClose, pendingImageSide, workspaceId]);
+
+  const openInsertPanel = useCallback((side: 'above' | 'below', titleElement: HTMLElement) => {
+    clearInsertPanelHideTimer();
+    const menuRect = menuRootRef.current?.getBoundingClientRect();
+    const titleRect = titleElement.getBoundingClientRect();
+    setActiveInsertSide(side);
+    if (menuRect) {
+      setInsertPanelTop(Math.max(0, titleRect.top - menuRect.top));
+      setInsertPanelLeft(Math.max(0, titleRect.right - menuRect.left));
+      setInsertPanelHeight(titleRect.height);
+    }
+  }, [clearInsertPanelHideTimer]);
+
+  const blockItems: MenuProps['items'] = useMemo(() => {
+    return createBlockMenuItems({
       canMoveUp,
       canMoveDown,
       headingAnchorId,
-    })
-  ), [canMoveUp, canMoveDown, headingAnchorId]);
+    }).map((item) => {
+      if (!item || !("key" in item) || typeof item.key !== 'string') return item;
+      if (item.key === 'addBelow') {
+        return { ...item, className: 'block-menu-insert-trigger block-menu-insert-trigger--below' };
+      }
+      if (item.key === 'addAbove') {
+        return { ...item, className: 'block-menu-insert-trigger block-menu-insert-trigger--above' };
+      }
+      return item;
+    });
+  }, [canMoveUp, canMoveDown, headingAnchorId]);
 
   const tableItems: MenuProps['items'] = useMemo(() => [
     { key: 'addRowBefore', icon: <PlusCircleOutlined />, label: '上方插入行' },
@@ -357,23 +447,87 @@ export function BlockMenu({ onClose, hoveredBlock, hoveredTableCell, onWillDelet
       case 'cut':      void copyBlock().then(() => deleteBlock()); break;
       case 'copyAnchorLink': void copyAnchorLink(); break;
       case 'clear':    clearFormat(); break;
-      case 'addAbove': insertParagraph('above'); break;
-      case 'addBelow': insertParagraph('below'); break;
+      case 'addAbove': insertBlock('above'); break;
+      case 'addBelow': insertBlock('below'); break;
       case 'moveUp':   swapBlocks('up'); break;
       case 'moveDown': swapBlocks('down'); break;
       default: console.log(`[BlockMenu] clicked: ${key}`);
     }
     onClose();
-  }, [isTableTarget, runTableCommand, onClose, deleteBlock, copyBlock, copyAnchorLink, clearFormat, insertParagraph, swapBlocks]);
+  }, [isTableTarget, runTableCommand, onClose, insertBlock, deleteBlock, copyBlock, copyAnchorLink, clearFormat, swapBlocks]);
 
   return (
-    <div className={`block-menu-popover${isTableTarget ? ' block-menu-popover--table' : ''}`}>
-      <Menu
-        items={items}
-        onClick={handleClick}
-        selectable={false}
-        style={{ border: 'none', borderRadius: 6 }}
+    <div ref={menuRootRef} className={`block-menu-popover${isTableTarget ? ' block-menu-popover--table' : ''}`}>
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        hidden
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = '';
+          if (file) void handleImageFile(file);
+        }}
       />
+      <div
+        onMouseMove={(event) => {
+          if (isTableTarget) return;
+          const target = event.target as HTMLElement;
+          const trigger = target.closest('.block-menu-insert-trigger') as HTMLElement | null;
+          if (!trigger) return;
+          const side = trigger.classList.contains('block-menu-insert-trigger--above') ? 'above' : 'below';
+          openInsertPanel(side, trigger);
+        }}
+        onMouseLeave={() => {
+          if (!isTableTarget) scheduleCloseInsertPanel();
+        }}
+      >
+        <Menu
+          items={items}
+          onClick={handleClick}
+          selectable={false}
+          style={{ border: 'none', borderRadius: 6 }}
+        />
+      </div>
+      <Popover
+        open={Boolean(activeInsertSide) && !isTableTarget}
+        trigger={[]}
+        placement="rightTop"
+        arrow={false}
+        destroyOnHidden
+        getPopupContainer={() => document.body}
+        content={
+          activeInsertSide ? (
+            <BlockInsertPanel
+              onMouseEnter={clearInsertPanelHideTimer}
+              onMouseLeave={scheduleCloseInsertPanel}
+              onInsertBlock={(type) => insertBlock(activeInsertSide, type)}
+              onInsertTable={(rows, cols) => insertTable(activeInsertSide, rows, cols)}
+              onInsertImage={() => {
+                if (!workspaceId) {
+                  message.error('未选择工作空间');
+                  return;
+                }
+                setPendingImageSide(activeInsertSide);
+                imageInputRef.current?.click();
+              }}
+              onClose={() => {
+                closeInsertPanel();
+                onClose();
+              }}
+            />
+          ) : null
+        }
+      >
+        <span
+          className="block-insert-panel-anchor"
+          style={{
+            top: insertPanelTop,
+            left: insertPanelLeft,
+            height: insertPanelHeight,
+          }}
+        />
+      </Popover>
     </div>
   );
 }

@@ -1590,3 +1590,10 @@ pre.code-block-view {
     --doc-main-side-padding: 12px;
   }
 }
+
+/* ---------- 拖拽光标（选区文本拖拽等） ---------- */
+.ProseMirror-dropcursor {
+  background-color: #2563eb !important;
+  box-shadow: 0 0 6px rgba(37, 99, 235, 0.3);
+  border-radius: 2px;
+}

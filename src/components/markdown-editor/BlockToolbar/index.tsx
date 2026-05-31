@@ -40,7 +40,6 @@ const HANDLE_WIDTH = 20;
 // 句柄与块可视边缘之间的最小间�?
 const MIN_GAP = 4;
 
-
 export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
   const editor = useMarkdownEditor();
   const [hoveredBlock, setHoveredBlock] = useState<HTMLElement | null>(null);
@@ -169,7 +168,9 @@ const updatePosition = useCallback((block: HTMLElement) => {
       if (isDraggingActiveRef.current) return;
       if (menuVisible) return;
       const eventTarget = e.target as HTMLElement;
-      if (eventTarget.closest('.block-handle-wrapper') || eventTarget.closest('.block-menu-popover')) return;
+      if (
+        eventTarget.closest('.block-handle-wrapper') ||
+        eventTarget.closest('.block-menu-popover')) return;
       const currentAnchor = hoveredAnchorRef.current;
       if (currentAnchor) {
         const anchorRect = currentAnchor.getBoundingClientRect();
@@ -321,12 +322,13 @@ const updatePosition = useCallback((block: HTMLElement) => {
 
       const sourceBlock = allBlockEls[sourceIdx];
 
-      // 获取源块�?ProseMirror 位置
+      // 获取源块?ProseMirror 位置
       const $source = doc.resolve(view.posAtDOM(sourceBlock, 0));
       const sourceStart = $source.before(1);
       const sourceEnd = $source.after(1);
       const sourceNode = doc.nodeAt(sourceStart);
       if (!sourceNode) return;
+
       const topLevelNodes = Array.from({ length: doc.childCount }, (_, index) => doc.child(index));
       const plannedSortKey = planExplicitMoveSortKey(
         topLevelNodes,
@@ -354,14 +356,14 @@ const updatePosition = useCallback((block: HTMLElement) => {
         insertPos = $target.before(1);
       }
 
-      // 两步事务：先删后插，�?mapping.mapPos 确保位置正确
+      // 两步事务：先删后插，?mapping.mapPos 确保位置正确
       const tr = view.state.tr;
       tr.delete(sourceStart, sourceEnd);
       const mappedPos = tr.mapping.map(insertPos);
       tr.insert(mappedPos, nodeToInsert);
       view.dispatch(tr);
     } catch (err) {
-      console.error('[BlockToolbar] 移动块失�?', err);
+      console.error('[BlockToolbar] 移动块失?', err);
     }
   }, [editor]);
 
@@ -387,7 +389,7 @@ const updatePosition = useCallback((block: HTMLElement) => {
     if (!wrapper) return;
     const wrapperRect = wrapper.getBoundingClientRect();
 
-    // 更新幽灵位置（position: fixed，直接用 viewport 坐标�?
+    // 更新幽灵位置（position: fixed，直接用 viewport 坐标?
     const ghost = ghostElementRef.current;
     if (ghost) {
       ghost.style.left = (clientX + GHOST_OFFSET_X) + 'px';
@@ -409,7 +411,7 @@ const updatePosition = useCallback((block: HTMLElement) => {
     const blocks = blockElementsRef.current;
     const sourceIdx = sourceIndexRef.current;
 
-    // 光标不在编辑器区域内 �?隐藏指示�?
+    // 光标不在编辑器区域内 -> 隐藏指示线
     if (clientY < wrapperRect.top || clientY > wrapperRect.bottom || blocks.length <= 1) {
       dropTargetIndexRef.current = -1;
       const indicator = dropIndicatorRef.current;
@@ -459,7 +461,7 @@ const updatePosition = useCallback((block: HTMLElement) => {
     } else {
       dropTargetIndexRef.current = -1;
     }
-  }, [wrapperRef]);
+  }, [wrapperRef, editor]);
 
   const cleanupDrag = useCallback(() => {
     // 移除幽灵
@@ -569,7 +571,6 @@ const updatePosition = useCallback((block: HTMLElement) => {
     }
   }, [menuState, closeMenu, openMenu]);
 
-  // 拖拽结束时确保恢�?
   useEffect(() => {
     return () => {
       if (isDraggingRef.current) {

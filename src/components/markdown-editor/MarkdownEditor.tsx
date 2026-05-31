@@ -383,6 +383,10 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
           heading: {
             levels: [1, 2, 3, 4, 5, 6],
           },
+          dropcursor: {
+            width: 2,
+            color: '#2563eb',
+          },
         }),
         codeBlockExtension,
         // 行内格式扩展（禁用 inputRule，保留 mark/command 能力）

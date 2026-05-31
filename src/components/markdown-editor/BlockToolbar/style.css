@@ -3,6 +3,10 @@
   position: absolute;
   z-index: 100;
   pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
 }
 
 .block-handle-wrapper--animate {
@@ -33,6 +37,27 @@
 }
 
 .block-handle__btn:hover {
+  background: var(--color-bg-hover, #f0f0f0);
+  color: var(--color-text, #333);
+}
+
+.block-insert-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--dropdown-bg, #fff);
+  color: var(--color-text-tertiary, #999);
+  box-shadow: 0 0 0 1px var(--dropdown-border, rgba(0, 0, 0, 0.08));
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+
+.block-insert-btn:hover {
   background: var(--color-bg-hover, #f0f0f0);
   color: var(--color-text, #333);
 }
@@ -76,12 +101,17 @@
 
 /* ---- 菜单面板 ---- */
 .block-menu-popover {
+  position: relative;
   min-width: 160px;
   background: var(--dropdown-bg);
   border: 1px solid var(--dropdown-border);
   border-radius: 6px;
   box-shadow: var(--dropdown-shadow);
-  overflow: hidden;
+  overflow: visible;
+}
+
+.block-insert-menu-popover .ant-dropdown-menu {
+  min-width: 168px;
 }
 
 .block-menu-popover .ant-menu {
@@ -92,6 +122,157 @@
   height: 36px;
   line-height: 36px;
   font-size: 13px;
+}
+
+.block-menu-popover .ant-menu-submenu-title {
+  height: 36px !important;
+  line-height: 36px !important;
+}
+
+.block-insert-panel {
+  width: 272px;
+  padding: 8px;
+  background: var(--dropdown-bg, #fff);
+}
+
+.block-insert-panel-anchor {
+  position: absolute;
+  width: 1px;
+  pointer-events: none;
+}
+
+.block-insert-panel__section + .block-insert-panel__section {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border, #f0f0f0);
+}
+
+.block-insert-panel__section-title {
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: var(--color-text-tertiary, #999);
+}
+
+.block-insert-panel__recent {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  max-height: 60px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.block-insert-panel__recent::-webkit-scrollbar {
+  width: 4px;
+}
+
+.block-insert-panel__recent::-webkit-scrollbar-thumb {
+  background-color: var(--color-text-quaternary, #bbb);
+  border-radius: 4px;
+}
+
+.block-insert-panel__recent-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border: none;
+  border-radius: 7px;
+  background: var(--color-fill-secondary, #f5f5f5);
+  color: var(--color-text, #333);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.block-insert-panel__recent-remove {
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-text-tertiary, #999);
+}
+
+.block-insert-panel__empty {
+  font-size: 12px;
+  color: var(--color-text-quaternary, #bbb);
+}
+
+.block-insert-panel__syntax-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.block-insert-panel__syntax-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text, #333);
+  cursor: pointer;
+  padding: 0;
+}
+
+.block-insert-panel__syntax-button:hover,
+.block-insert-panel__card:hover,
+.block-insert-panel__recent-chip:hover {
+  background: var(--color-bg-hover, #f5f5f5);
+}
+
+.block-insert-panel__symbol {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.block-insert-panel__card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.block-insert-panel__card-wrap {
+  position: relative;
+}
+
+.block-insert-panel__card {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--color-border, #ececec);
+  border-radius: 10px;
+  background: var(--color-bg-container, #fff);
+  color: var(--color-text, #333);
+  cursor: pointer;
+}
+
+.block-insert-panel__card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--color-fill-secondary, #f5f5f5);
+}
+
+.block-insert-panel__card-label {
+  font-size: 12px;
+}
+
+.block-insert-panel__card-arrow {
+  margin-left: auto;
+  color: var(--color-text-tertiary, #999);
+  font-size: 10px;
+}
+
+.block-insert-panel__table-picker-popover {
+  position: absolute;
+  top: 0;
+  left: calc(100% + 10px);
+  z-index: 30;
 }
 
 /* ---- 拖拽幽灵元素 ---- */
@@ -105,8 +286,7 @@
   box-shadow: var(--dropdown-shadow);
   opacity: 0.75;
   will-change: left, top;
-  overflow: hidden;
-  max-height: 160px;
+  overflow: hidden;  max-height: 160px;
   mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
   -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
 }
