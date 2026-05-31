@@ -1343,27 +1343,89 @@ pre.code-block-view {
   display: flex;
   align-items: flex-start;
   margin-bottom: 4px;
+  --task-checkbox-size: 16px;
+  --task-checkbox-offset: 26px;
+  --task-checkbox-gap: 12px;
+  --task-check-stroke: 3;
+}
+
+.tiptap-editor li[data-list-font-size]::marker,
+.doc-content li[data-list-font-size]::marker {
+  font-size: var(--list-font-size);
 }
 
 /* 展示页：自定义 Checkbox 容器 */
 .tiptap-editor :where(li[data-type="taskItem"]) > label,
-.doc-content :where(li[data-type="taskItem"]) > label {
+.doc-content :where(li[data-type="taskItem"]) > label,
+.tiptap-editor .task-item-checkbox,
+.tiptap-editor .checkbox-wrapper,
+.doc-content .checkbox-wrapper {
   flex: 0 0 auto;
-  margin-right: 12px;
+}
+
+.tiptap-editor .checkbox-wrapper,
+.doc-content .checkbox-wrapper {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  margin-right: var(--task-checkbox-gap);
   user-select: none;
+}
+
+.tiptap-editor .checkbox-wrapper .label,
+.doc-content .checkbox-wrapper .label {
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 26px; /* 1.74 * 15px ≈ 26px, 确保与首行文字垂直居中 */
+  height: var(--task-checkbox-offset);
 }
 
-/* 编辑器：AntD Checkbox 容器 */
-.tiptap-editor li.task-list-item .ant-checkbox-wrapper {
-  flex: 0 0 auto;
-  margin-right: 12px;
-  display: flex;
-  align-items: center;
-  height: 26px; /* 与行高一致 */
+.tiptap-editor .checkbox-wrapper .check,
+.doc-content .checkbox-wrapper .check,
+.tiptap-editor .task-item-checkbox-input {
+  visibility: hidden;
+  display: none;
+  position: absolute;
+  opacity: 0;
+  width: var(--task-checkbox-size);
+  height: var(--task-checkbox-size);
+}
+
+.tiptap-editor .task-item-checkbox-svg,
+.doc-content .task-item-checkbox-svg {
+  width: var(--task-checkbox-size);
+  height: var(--task-checkbox-size);
+  vertical-align: middle;
+}
+
+.tiptap-editor .task-item-checkbox-box,
+.doc-content .task-item-checkbox-box {
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 4;
+}
+
+.tiptap-editor .checkbox-wrapper .path1,
+.doc-content .checkbox-wrapper .path1,
+.tiptap-editor .task-item-check-path,
+.doc-content .task-item-check-path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: var(--task-check-stroke);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 400;
+  stroke-dashoffset: 400;
+  transition: 0.5s stroke-dashoffset;
+  opacity: 0;
+}
+
+.tiptap-editor .checkbox-wrapper .check:checked + .label svg g path,
+.doc-content .checkbox-wrapper .check:checked + .label svg g path,
+.tiptap-editor .task-item-checkbox-input:checked + .task-item-checkbox svg g path {
+  stroke-dashoffset: 0;
+  opacity: 1;
 }
 
 .tiptap-editor :where(li[data-type="taskItem"], li.task-list-item) > div,
@@ -1372,13 +1434,13 @@ pre.code-block-view {
   min-width: 0;
 }
 
-/* 展示页：自定义 Checkbox 样式 (仅作用于非 AntD 的 input) */
+/* 展示页：旧 input checkbox fallback */
 .tiptap-editor :where(li[data-type="taskItem"]) input[type="checkbox"]:not(.ant-checkbox-input),
 .doc-content :where(li[data-type="taskItem"]) input[type="checkbox"] {
   -webkit-appearance: none;
   appearance: none;
-  width: 16px;
-  height: 16px;
+  width: var(--task-checkbox-size);
+  height: var(--task-checkbox-size);
   border: 1.5px solid var(--color-border);
   border-radius: 3px;
   background-color: var(--color-bg-container);

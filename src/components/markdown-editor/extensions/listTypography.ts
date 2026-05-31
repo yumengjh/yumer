@@ -1,0 +1,118 @@
+import { Extension } from "@tiptap/core";
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { Plugin } from "@tiptap/pm/state";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
+
+const DEFAULT_LIST_FONT_SIZE_PX = 15;
+
+function normalizeFontSize(value: unknown): string | null {
+  if (typeof value !== "string" && typeof value !== "number") {
+    return null;
+  }
+
+  const text = `${value}`.trim();
+  if (!text) return null;
+  if (text.endsWith("px")) return text;
+  return /^\d+(\.\d+)?$/.test(text) ? `${text}px` : null;
+}
+
+export function findListContentFontSize(node: ProseMirrorNode): string | null {
+  let fontSize: string | null = null;
+
+  node.descendants((child) => {
+    if (fontSize || !child.isText) return fontSize === null;
+
+    for (const mark of child.marks) {
+      if (mark.type.name !== "textStyle") continue;
+      const normalized = normalizeFontSize(mark.attrs?.fontSize);
+      if (normalized) {
+        fontSize = normalized;
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  return fontSize;
+}
+
+export function getListTypographyVars(node: ProseMirrorNode): Record<string, string> | null {
+  const fontSize = findListContentFontSize(node);
+  if (!fontSize) return null;
+
+  const fontSizeNumber = Number.parseFloat(fontSize);
+  const scale = Number.isFinite(fontSizeNumber)
+    ? Math.max(1, fontSizeNumber / DEFAULT_LIST_FONT_SIZE_PX)
+    : 1;
+  const checkboxSize = `${Math.round(16 * scale * 100) / 100}px`;
+  const checkboxOffset = `${Math.round((fontSizeNumber * 1.74) * 100) / 100}px`;
+  const checkboxGap = `${Math.round(12 * scale * 100) / 100}px`;
+  const checkmarkWidth = `${Math.round(4 * scale * 100) / 100}px`;
+  const checkmarkHeight = `${Math.round(8 * scale * 100) / 100}px`;
+  const checkmarkLeft = `${Math.round(4.5 * scale * 100) / 100}px`;
+  const checkmarkTop = `${Math.round(1 * scale * 100) / 100}px`;
+  const checkmarkBorder = `${Math.round(2 * scale * 100) / 100}px`;
+  const checkboxRadius = `${Math.round(6 * scale * 100) / 100}px`;
+  const checkStroke = `${Math.round(4 * scale * 100) / 100}px`;
+  const checkLength = `${Math.round(100 * scale * 100) / 100}`;
+
+  return {
+    "--list-font-size": fontSize,
+    "--task-checkbox-size": checkboxSize,
+    "--task-checkbox-offset": checkboxOffset,
+    "--task-checkbox-gap": checkboxGap,
+    "--task-checkmark-width": checkmarkWidth,
+    "--task-checkmark-height": checkmarkHeight,
+    "--task-checkmark-left": checkmarkLeft,
+    "--task-checkmark-top": checkmarkTop,
+    "--task-checkmark-border": checkmarkBorder,
+    "--task-checkbox-radius": checkboxRadius,
+    "--task-check-stroke": checkStroke,
+    "--task-check-length": checkLength,
+  };
+}
+
+function serializeVars(vars: Record<string, string>): string {
+  return Object.entries(vars)
+    .map(([key, value]) => `${key}:${value}`)
+    .join(";");
+}
+
+export const ListTypography = Extension.create({
+  name: "listTypography",
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        props: {
+          decorations: (state) => {
+            const decorations: Decoration[] = [];
+
+            state.doc.descendants((node, pos) => {
+              if (node.type.name !== "listItem" && node.type.name !== "taskItem") {
+                return true;
+              }
+
+              const vars = getListTypographyVars(node);
+              if (!vars) return true;
+
+              decorations.push(
+                Decoration.node(pos, pos + node.nodeSize, {
+                  "data-list-font-size": vars["--list-font-size"],
+                  style: serializeVars(vars),
+                }),
+              );
+
+              return true;
+            });
+
+            return decorations.length > 0
+              ? DecorationSet.create(state.doc, decorations)
+              : null;
+          },
+        },
+      }),
+    ];
+  },
+});

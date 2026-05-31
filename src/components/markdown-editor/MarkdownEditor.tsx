@@ -32,6 +32,7 @@ import { TableHeader } from "@tiptap/extension-table-header";
 import HorizontalRule from "@tiptap/extension-horizontal-rule";
 import { createPasteHandlerExtension } from "./extensions/pasteHandler";
 import { createFontSizeExtension } from "./extensions/fontSize";
+import { ListTypography } from "./extensions/listTypography";
 import { TableIndexColumn } from "./extensions/tableIndexColumn";
 import { OrderedListStyle } from "./extensions/orderedListStyle";
 import { LineHeight } from "./extensions/lineHeight";
@@ -421,6 +422,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
           },
         }),
         TextStyle,
+        ListTypography,
         Color,
         Highlight.configure({
           multicolor: true,
