@@ -1,0 +1,213 @@
+/* ── 悬浮面板 ── */
+
+.find-replace-bar {
+  position: fixed;
+  top: 52px;
+  right: 16px;
+  z-index: 200;
+  width: 400px;
+  max-height: calc(100vh - 64px);
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-elevated, #fff);
+  /* 宽边框作为拖拽热区 */
+  border: 10px solid var(--color-bg-elevated, #fff);
+  border-radius: 6px;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.14),
+    0 2px 8px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+  will-change: transform, opacity;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.find-replace-bar:active {
+  cursor: grabbing;
+}
+
+/* 内容区允许选中文字 */
+.find-replace-bar__content {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.find-replace-bar--enter {
+  animation: frb-slide-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.find-replace-bar--exit {
+  animation: frb-slide-out 0.18s cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+@keyframes frb-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes frb-slide-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.97);
+  }
+}
+
+/* ── 内容区 ── */
+
+.find-replace-bar__content {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── 搜索/替换行 ── */
+
+.find-replace-bar__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.find-replace-bar__row + .find-replace-bar__row {
+  padding-top: 6px;
+}
+
+.find-replace-bar__input {
+  flex: 1;
+  min-width: 0;
+}
+
+.find-replace-bar__icon {
+  color: var(--header-icon);
+  font-size: 13px;
+}
+
+.find-replace-bar__counter {
+  font-size: 12px;
+  color: var(--header-icon);
+  white-space: nowrap;
+  user-select: none;
+  padding-left: 4px;
+}
+
+.find-replace-bar__nav {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.find-replace-bar__option {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.find-replace-bar__option-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--header-icon);
+  user-select: none;
+}
+
+.find-replace-bar__actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* ── 匹配列表 ── */
+
+.find-replace-bar__list {
+  border-top: 1px solid var(--header-border);
+  margin-top: 10px;
+  padding-top: 2px;
+  max-height: 240px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.find-replace-bar__list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.4;
+  transition:
+    background 0.1s,
+    color 0.1s;
+  color: var(--header-text);
+  border-radius: 4px;
+}
+
+.find-replace-bar__list-item:hover {
+  background: var(--color-bg-hover);
+}
+
+.find-replace-bar__list-item--active {
+  background: var(--color-bg-active);
+}
+
+.find-replace-bar__list-type {
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--color-bg-hover);
+  color: var(--header-icon);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.find-replace-bar__list-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── ProseMirror 匹配高亮 ── */
+
+.find-match {
+  border-radius: 2px;
+}
+
+.find-match--active {
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15);
+}
+
+/* ── 响应式 ── */
+
+@media (max-width: 640px) {
+  .find-replace-bar {
+    right: 8px;
+    left: 8px;
+    width: auto;
+    top: 50px;
+    border-width: 6px;
+  }
+
+  .find-replace-bar__option-label {
+    display: none;
+  }
+
+  .find-replace-bar__actions .ant-btn {
+    padding-inline: 6px;
+    font-size: 12px;
+  }
+}

@@ -23,6 +23,7 @@ import {
   BugOutlined,
   PushpinOutlined,
   DatabaseOutlined,
+  FileSearchOutlined,
 } from "@ant-design/icons";
 import { useDocument, type SaveStatus } from "../contexts/DocumentContext";
 import { VersionDiffModal } from "./VersionDiffModal";
@@ -93,6 +94,8 @@ interface DocumentHeaderProps {
   autoSaveSnapshotEnabled: boolean;
   onAutoSaveSnapshotChange: (enabled: boolean) => void;
   currentDocumentJson: string | null;
+  /** 打开/关闭查找替换栏 */
+  onToggleFindReplace?: () => void;
 }
 
 type VisibleSaveStatus = Exclude<SaveStatus, "idle">;
@@ -253,6 +256,7 @@ export function DocumentHeader({
   autoSaveSnapshotEnabled,
   onAutoSaveSnapshotChange,
   currentDocumentJson,
+  onToggleFindReplace,
 }: DocumentHeaderProps) {
   const {
     currentDoc,
@@ -630,6 +634,18 @@ export function DocumentHeader({
                   <HistoryOutlined />
                 </button>
               </Tooltip>
+              {onToggleFindReplace && (
+                <Tooltip title="查找替换 (Ctrl+F)">
+                  <button
+                    type="button"
+                    className="header-icon-btn"
+                    onClick={onToggleFindReplace}
+                    aria-label="查找替换"
+                  >
+                    <FileSearchOutlined />
+                  </button>
+                </Tooltip>
+              )}
             </nav>
           )}
 

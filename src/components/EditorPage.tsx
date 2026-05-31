@@ -20,6 +20,7 @@ import {
   shouldPersistLastEditPosition,
 } from "@/components/editorLastEditPosition";
 import { DocumentHeader } from "@/components/DocumentHeader";
+import FindReplaceBar from "@/components/FindReplaceBar";
 import { useAutoSave } from "@/hooks/useAutoSave";
 import { useLocalDocumentSnapshot } from "@/hooks/useLocalDocumentSnapshot";
 import {
@@ -342,6 +343,7 @@ function EditorContent() {
   const [loadingDoc, setLoadingDoc] = useState(false);
   const [outputModalOpen, setOutputModalOpen] = useState(false);
   const [showTOC, setShowTOC] = useState(false);
+  const [findReplaceOpen, setFindReplaceOpen] = useState(false);
   const [manualSaving, setManualSaving] = useState(false);
   const [discardingDraft, setDiscardingDraft] = useState(false);
   const [settingsState, setSettingsState] = useState<SettingsState>(() =>
@@ -410,6 +412,19 @@ function EditorContent() {
   useEffect(() => {
     contentRef.current = content;
   }, [content]);
+
+  // Ctrl+F / Ctrl+H 打开查找替换栏
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const key = e.key.toLowerCase();
+      if ((e.ctrlKey || e.metaKey) && (key === "f" || key === "h")) {
+        e.preventDefault();
+        setFindReplaceOpen((prev) => !prev);
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   useEffect(() => {
     restoredLastEditDocIdRef.current = null;
@@ -1002,6 +1017,12 @@ function EditorContent() {
               localStorage.setItem("yuediter:local-snapshot:auto-save", String(enabled));
             }}
             currentDocumentJson={currentDocumentJson}
+            onToggleFindReplace={() => setFindReplaceOpen((prev) => !prev)}
+          />
+          <FindReplaceBar
+            editor={editorRef.current?.getEditor() ?? null}
+            visible={findReplaceOpen}
+            onClose={() => setFindReplaceOpen(false)}
           />
           <div className="output-card">
             <MarkdownEditor
