@@ -489,3 +489,46 @@ export async function getGcPolicy(
     method: "GET",
   });
 }
+
+export interface GcStorageCompactResult {
+  supported: boolean;
+  dryRun: boolean;
+  mode: string;
+  before?: {
+    pageCount: number;
+    freelistCount: number;
+    pageSizeBytes: number;
+    fileSizeBytes: number;
+    estimatedFreelistBytes: number;
+  };
+  after?: {
+    pageCount: number;
+    freelistCount: number;
+    pageSizeBytes: number;
+    fileSizeBytes: number;
+  };
+  durationMs?: number;
+  message?: string;
+}
+
+export async function compactSqliteStorage(
+  input: AdminRequestOptions & {
+    dryRun?: boolean;
+    mode?: string;
+    confirm?: string;
+  },
+): Promise<GcStorageCompactResult> {
+  return requestGc<GcStorageCompactResult>("/admin/gc/storage/compact", {
+    token: input.token,
+    operatorId: input.operatorId,
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      dryRun: input.dryRun ?? true,
+      mode: input.mode ?? "vacuum",
+      confirm: input.confirm,
+    }),
+  });
+}

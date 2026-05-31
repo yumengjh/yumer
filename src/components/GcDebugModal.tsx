@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Button, Checkbox, Descriptions, Divider, Drawer, Empty, Input, Modal, Popconfirm, Spin, Table, Tag, Tooltip, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import {
+  compactSqliteStorage,
   createBlockVersionGcRun,
   getBlockVersionGcCandidates,
   getBlockVersionGcHealth,
@@ -23,6 +24,7 @@ import {
   type GcPolicyDefaults,
   type GcPoolState,
   type GcRunMode,
+  type GcStorageCompactResult,
   type GcSweepResult,
   type PlannedAction,
   type Readiness,
@@ -239,6 +241,8 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
   const [selectedPoolItem, setSelectedPoolItem] = useState<GcCandidatePoolItem | null>(null);
   const [policy, setPolicy] = useState<GcPolicyDefaults | null>(null);
   const [runModeFilter, setRunModeFilter] = useState<GcRunMode | undefined>(undefined);
+  const [compactLoading, setCompactLoading] = useState(false);
+  const [compactResult, setCompactResult] = useState<GcStorageCompactResult | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -508,6 +512,56 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
       }
     },
     [docId, loadPanelData, loadPool, operatorId, persistCredentials, sweepDryRun, sweepLimit, token, workspaceId],
+  );
+
+  const handleCompact = useCallback(
+    async (dryRun: boolean) => {
+      if (!token.trim()) {
+        setError("请先输入系统管理员令牌");
+        return;
+      }
+      setCompactLoading(true);
+      setError(null);
+      persistCredentials(token, operatorId);
+
+      try {
+        const result = await compactSqliteStorage({
+          token,
+          operatorId: operatorId || undefined,
+          dryRun,
+          mode: "vacuum",
+          confirm: dryRun ? undefined : "VACUUM_SQLITE_DATABASE",
+        });
+
+        setCompactResult(result);
+
+        if (!result.supported) {
+          message.info(result.message ?? "当前数据库不支持 VACUUM");
+        } else if (dryRun) {
+          const before = result.before;
+          if (before) {
+            const freeMB = (before.estimatedFreelistBytes / 1024 / 1024).toFixed(2);
+            message.success(`Dry-run 完成：可回收约 ${freeMB} MB（${before.freelistCount} 页）`);
+          }
+        } else {
+          const before = result.before;
+          const after = result.after;
+          if (before && after) {
+            const savedMB = ((before.fileSizeBytes - after.fileSizeBytes) / 1024 / 1024).toFixed(2);
+            message.success(`VACUUM 完成：文件缩小 ${savedMB} MB，耗时 ${result.durationMs ?? "--"}ms`);
+          } else {
+            message.success("VACUUM 完成");
+          }
+        }
+      } catch (nextError) {
+        const msg = nextError instanceof Error ? nextError.message : "Storage compact 执行失败";
+        setError(msg);
+        message.error(msg);
+      } finally {
+        setCompactLoading(false);
+      }
+    },
+    [operatorId, persistCredentials, token],
   );
 
   const scopeLabel = useMemo(
@@ -1120,6 +1174,86 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
                   从 candidate pool 中选取 state=eligible + action=candidate_block_version 的候选，删除 block_versions 行。只代表逻辑清理完成，不代表磁盘空间已回收。
                 </Typography.Text>
               </div>
+            </div>
+          </section>
+
+          {/* Storage Maintenance */}
+          <section className="gc-debug__card gc-debug__card--sweep">
+            <div className="gc-debug__card-head">
+              <h3>Storage Maintenance</h3>
+              <Tag color="orange">仅 SQLite</Tag>
+            </div>
+            <div className="gc-debug__sweep-form">
+              <Typography.Text type="secondary" className="gc-debug__sweep-hint">
+                SQLite VACUUM 可回收已删除行占用的磁盘空间。Postgres 请使用 autovacuum 或 DBA 维护。VACUUM 可能阻塞写入，建议在维护窗口执行。
+              </Typography.Text>
+              <div className="gc-debug__sweep-row">
+                <Popconfirm
+                  title="预演 SQLite VACUUM"
+                  description="仅分析可回收空间，不真实执行。"
+                  onConfirm={() => void handleCompact(true)}
+                  okText="执行 Dry-run"
+                  cancelText="取消"
+                >
+                  <Button loading={compactLoading}>
+                    Dry-run VACUUM
+                  </Button>
+                </Popconfirm>
+                <Popconfirm
+                  title="确认执行 SQLite VACUUM？"
+                  description="此操作将压缩数据库文件，可能阻塞写入。请确保在维护窗口执行。"
+                  onConfirm={() => void handleCompact(false)}
+                  okText="确认执行"
+                  cancelText="取消"
+                  okButtonProps={{ danger: true }}
+                >
+                  <Button danger loading={compactLoading}>
+                    执行 VACUUM
+                  </Button>
+                </Popconfirm>
+              </div>
+              {compactResult && (
+                <div className="gc-debug__compact-result">
+                  {!compactResult.supported ? (
+                    <Alert type="info" showIcon message={compactResult.message ?? "当前数据库不支持 VACUUM"} />
+                  ) : (
+                    <>
+                      {compactResult.before && (
+                        <Descriptions column={2} bordered size="small" title="VACUUM 前">
+                          <Descriptions.Item label="文件大小">
+                            {(compactResult.before.fileSizeBytes / 1024 / 1024).toFixed(2)} MB
+                          </Descriptions.Item>
+                          <Descriptions.Item label="总页数">
+                            {compactResult.before.pageCount.toLocaleString()}
+                          </Descriptions.Item>
+                          <Descriptions.Item label="空闲页数">
+                            <Tag color="orange">{compactResult.before.freelistCount.toLocaleString()}</Tag>
+                          </Descriptions.Item>
+                          <Descriptions.Item label="估算可回收">
+                            <Tag color="green">{(compactResult.before.estimatedFreelistBytes / 1024 / 1024).toFixed(2)} MB</Tag>
+                          </Descriptions.Item>
+                        </Descriptions>
+                      )}
+                      {compactResult.after && (
+                        <Descriptions column={2} bordered size="small" title="VACUUM 后" style={{ marginTop: 12 }}>
+                          <Descriptions.Item label="文件大小">
+                            {(compactResult.after.fileSizeBytes / 1024 / 1024).toFixed(2)} MB
+                          </Descriptions.Item>
+                          <Descriptions.Item label="总页数">
+                            {compactResult.after.pageCount.toLocaleString()}
+                          </Descriptions.Item>
+                          <Descriptions.Item label="空闲页数">
+                            {compactResult.after.freelistCount.toLocaleString()}
+                          </Descriptions.Item>
+                          <Descriptions.Item label="耗时">
+                            {compactResult.durationMs != null ? `${compactResult.durationMs}ms` : "--"}
+                          </Descriptions.Item>
+                        </Descriptions>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </section>
         </Spin>

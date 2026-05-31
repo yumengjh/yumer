@@ -9,6 +9,7 @@ vi.mock("../api-client", () => ({
 }));
 
 import {
+  compactSqliteStorage,
   createBlockVersionGcRun,
   getBlockVersionGcCandidates,
   getBlockVersionGcHealth,
@@ -410,5 +411,99 @@ describe("gc service", () => {
       expect.any(Object),
     );
     expect(result.items[0].mode).toBe("sweep");
+  });
+
+  it("runs SQLite storage compact dry-run", async () => {
+    apiFetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            supported: true,
+            dryRun: true,
+            mode: "vacuum",
+            before: {
+              pageCount: 1000,
+              freelistCount: 200,
+              pageSizeBytes: 4096,
+              fileSizeBytes: 4096000,
+              estimatedFreelistBytes: 819200,
+            },
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await compactSqliteStorage({
+      token: "gc-secret",
+      dryRun: true,
+    });
+
+    expect(apiFetch).toHaveBeenCalledWith(
+      "/admin/gc/storage/compact",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          dryRun: true,
+          mode: "vacuum",
+          confirm: undefined,
+        }),
+      }),
+    );
+    expect(result.supported).toBe(true);
+    expect(result.before?.freelistCount).toBe(200);
+    expect(result.before?.estimatedFreelistBytes).toBe(819200);
+  });
+
+  it("runs SQLite storage compact real execution with confirm", async () => {
+    apiFetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            supported: true,
+            dryRun: false,
+            mode: "vacuum",
+            before: {
+              pageCount: 1000,
+              freelistCount: 200,
+              pageSizeBytes: 4096,
+              fileSizeBytes: 4096000,
+            },
+            after: {
+              pageCount: 800,
+              freelistCount: 0,
+              pageSizeBytes: 4096,
+              fileSizeBytes: 3276800,
+            },
+            durationMs: 150,
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await compactSqliteStorage({
+      token: "gc-secret",
+      dryRun: false,
+      confirm: "VACUUM_SQLITE_DATABASE",
+    });
+
+    expect(apiFetch).toHaveBeenCalledWith(
+      "/admin/gc/storage/compact",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          dryRun: false,
+          mode: "vacuum",
+          confirm: "VACUUM_SQLITE_DATABASE",
+        }),
+      }),
+    );
+    expect(result.supported).toBe(true);
+    expect(result.dryRun).toBe(false);
+    expect(result.after?.pageCount).toBe(800);
+    expect(result.durationMs).toBe(150);
   });
 });

@@ -439,6 +439,10 @@
   font-size: 12px;
 }
 
+.gc-debug__compact-result {
+  margin-top: 8px;
+}
+
 /* Small code in tables */
 .gc-debug__code-sm {
   font-size: 11px;
