@@ -434,6 +434,13 @@ export async function saveDocumentContent(
 
 export type EditorContent = string | TiptapDoc;
 
+function createBlankTiptapDoc(): TiptapDoc {
+  return {
+    type: "doc",
+    content: [{ type: "paragraph" }],
+  };
+}
+
 /**
  * 加载文档内容（V2）
  * - 旧格式（payload.html）→ 返回 HTML 字符串
@@ -453,7 +460,7 @@ export async function loadDocumentContentV2(
   const lastEditPosition = readLastEditPositionFromEditorState(resp.editorState);
   if (!resp.tree) {
     return {
-      content: "",
+      content: createBlankTiptapDoc(),
       blockIds: [],
       docVer: resp.head,
       source: resp.source,
@@ -467,7 +474,7 @@ export async function loadDocumentContentV2(
 
   if (contentBlocks.length === 0) {
     return {
-      content: "",
+      content: createBlankTiptapDoc(),
       blockIds: [],
       docVer: resp.head,
       source: resp.source,

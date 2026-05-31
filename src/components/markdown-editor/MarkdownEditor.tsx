@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, forwardRef, useImper
 import { useEditor, EditorContent, ReactNodeViewRenderer } from "@tiptap/react";
 import type { Editor } from "@tiptap/react";
 import type { EditorContent as EditorContentType } from "@/services/document";
+import type { TiptapDoc } from "@/services/tiptap-converter";
 import StarterKit from "@tiptap/starter-kit";
 import CodeBlock from "@tiptap/extension-code-block";
 import Code from "@tiptap/extension-code";
@@ -67,6 +68,8 @@ export interface MarkdownEditorRef {
   getText: () => string;
   /** 获取 Tiptap Editor 实例 */
   getEditor: () => Editor | null;
+  /** 仅将同步确认的 blockId/sortKey 写回当前编辑器节点 attrs */
+  patchBlockIdentityFromDoc: (doc: TiptapDoc) => boolean;
   /** 滚动到指定 blockId 的块位置 */
   scrollToBlock: (blockId: string) => boolean;
   /** 获取当前选区所在块及相邻块 */
@@ -538,6 +541,8 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
     getHTML: () => editor?.getHTML() ?? "",
     getText: () => editor?.getText() ?? "",
     getEditor: () => editor,
+    patchBlockIdentityFromDoc: (doc: TiptapDoc) =>
+      editor ? patchEditorBlockIdentityFromDoc(editor, doc) : false,
     scrollToBlock: (blockId: string) => {
       if (!editor) return false;
       let el = editor.view.dom.querySelector(`[data-block-id="${blockId}"]`) as HTMLElement | null;

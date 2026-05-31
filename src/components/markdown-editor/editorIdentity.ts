@@ -25,7 +25,7 @@ export function patchEditorDocumentIdentity(editor: EditorLike): boolean {
   const seenClientIds = new Set<string>();
   const seenBlockIds = new Set<string>();
 
-  state.doc.forEach((node, offset) => {
+  state.doc.descendants((node, pos) => {
     if (!IDENTITY_BLOCK_NODE_TYPES.has(node.type.name)) return;
 
     const identity = readIdentityFromAttrs(node.attrs);
@@ -75,7 +75,7 @@ export function patchEditorDocumentIdentity(editor: EditorLike): boolean {
     }
 
     if (changed) {
-      tr.setNodeMarkup(offset, undefined, attrs, node.marks);
+      tr.setNodeMarkup(pos, undefined, attrs, node.marks);
     }
   });
 

@@ -12,7 +12,7 @@ vi.mock("../api-client", () => ({
   apiDelete,
 }));
 
-import { discardDraft, getEditContent } from "../document";
+import { discardDraft, getEditContent, loadDocumentContentV2 } from "../document";
 
 describe("document edit content api", () => {
   beforeEach(() => {
@@ -37,6 +37,26 @@ describe("document edit content api", () => {
     expect(apiGet).toHaveBeenCalledWith("/documents/doc_1/edit-content");
     expect(response.source).toBe("draft");
     expect(response.draft.exists).toBe(true);
+  });
+
+  it("returns a blank TipTap document when edit content has no content blocks", async () => {
+    apiGet.mockResolvedValue({
+      docId: "doc_empty",
+      source: "head",
+      head: 1,
+      publishedHead: 1,
+      draft: { exists: false, draftId: null },
+      lock: { locked: false, lockOwnerUserId: null, lockExpiresAt: null },
+      tree: { blockId: "root_1", type: "root", children: [] },
+      pagination: { totalBlocks: 1, returnedBlocks: 1, hasMore: false },
+    });
+
+    const response = await loadDocumentContentV2("doc_empty");
+
+    expect(response.content).toEqual({
+      type: "doc",
+      content: [{ type: "paragraph" }],
+    });
   });
 
   it("deletes /documents/:docId/draft when discarding a draft", async () => {

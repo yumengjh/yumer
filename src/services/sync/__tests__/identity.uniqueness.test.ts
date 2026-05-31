@@ -47,4 +47,40 @@ describe("identity uniqueness", () => {
     expect(doc.content?.[1].attrs?.blockId).toBeUndefined();
     expect(doc.content?.[1].attrs?.["data-block-id"]).toBeUndefined();
   });
+
+  it("assigns a new clientId when a nested node duplicates a later top-level block", () => {
+    const doc = ensureDocumentIdentity({
+      type: "doc",
+      content: [
+        {
+          type: "orderedList",
+          attrs: { clientId: "list_1" },
+          content: [
+            {
+              type: "listItem",
+              content: [
+                {
+                  type: "paragraph",
+                  attrs: { clientId: "reused_client" },
+                  content: [{ type: "text", text: "inside list" }],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "reused_client" },
+          content: [{ type: "text", text: "middle block" }],
+        },
+      ],
+    });
+
+    const nestedParagraph = doc.content?.[0].content?.[0].content?.[0];
+    const topLevelParagraph = doc.content?.[1];
+
+    expect(nestedParagraph?.attrs?.clientId).toBe("reused_client");
+    expect(topLevelParagraph?.attrs?.clientId).toEqual(expect.any(String));
+    expect(topLevelParagraph?.attrs?.clientId).not.toBe("reused_client");
+  });
 });

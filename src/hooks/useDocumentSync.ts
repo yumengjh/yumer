@@ -3,9 +3,11 @@ import type { TiptapDoc } from "@/services/tiptap-converter";
 import { postSyncBatch } from "@/services/sync/api";
 import { selectSyncBatchOperations } from "@/services/sync/batching";
 import { applyCreateAck } from "@/services/sync/engine";
+import { collectOrphanedCreateDeletes } from "@/services/sync/orphaned-create";
 import {
   clearPendingCommit,
   createInitialSyncState,
+  enqueueChange,
   markBatchInflight,
   markPendingCommit,
   resolveBatchFailure,
@@ -314,6 +316,19 @@ export function useDocumentSync({
               }));
 
             const currentSnapshot = snapshotRef.current;
+            const orphanedCreateDeletes = collectOrphanedCreateDeletes(
+              currentSnapshot,
+              createMappings,
+            );
+            if (orphanedCreateDeletes.length > 0) {
+              updateSyncState((prev) => {
+                if (!prev) return prev;
+                return orphanedCreateDeletes.reduce(
+                  (next, entry) => enqueueChange(next, entry),
+                  prev,
+                );
+              });
+            }
             if (currentSnapshot && createMappings.length > 0) {
               const patched = applyCreateAck(currentSnapshot, createMappings);
               if (onContentPatched && patched !== currentSnapshot) {

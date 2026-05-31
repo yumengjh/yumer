@@ -23,6 +23,30 @@ describe("sync snapshot advancement", () => {
     expect(next.snapshot.content?.[0].attrs?.clientId).toBe("client_1");
   });
 
+  it("treats an initial edited block without a server blockId as unsynced", () => {
+    const state = createInitialSyncState("doc_1", "root_1", 1);
+    const doc: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "client_unsynced" },
+          content: [{ type: "text", text: "first line typed into empty doc" }],
+        },
+      ],
+    };
+
+    const next = advanceSyncSnapshot(state, null, doc);
+
+    expect(next.state.dirtyOrder).toEqual(["client_unsynced"]);
+    expect(next.state.entries.client_unsynced).toMatchObject({
+      clientId: "client_unsynced",
+      blockId: null,
+      opType: "create",
+      sortKey: "001000",
+    });
+  });
+
   it("synchronously enqueues differences between the previous and current editor snapshot", () => {
     const state = createInitialSyncState("doc_1", "root_1", 1);
     const previous: TiptapDoc = {
@@ -54,6 +78,39 @@ describe("sync snapshot advancement", () => {
       "new text just typed",
     );
     expect(next.snapshot.content?.[0].content?.[0].text).toBe("new text just typed");
+  });
+
+  it("keeps a block without a server blockId as create when it is edited later", () => {
+    const state = createInitialSyncState("doc_1", "root_1", 1);
+    const previous: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "client_unsynced" },
+        },
+      ],
+    };
+    const current: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "client_unsynced" },
+          content: [{ type: "text", text: "now has content" }],
+        },
+      ],
+    };
+
+    const next = advanceSyncSnapshot(state, previous, current);
+
+    expect(next.state.dirtyOrder).toEqual(["client_unsynced"]);
+    expect(next.state.entries.client_unsynced).toMatchObject({
+      clientId: "client_unsynced",
+      blockId: null,
+      opType: "create",
+      sortKey: "001000",
+    });
   });
 
   it("persists generated sortKeys into the local snapshot for sequential blank-line creation", () => {

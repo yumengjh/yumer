@@ -305,28 +305,9 @@ function mergeAckAttrsIntoCurrentEditorDoc(current: TiptapDoc, ackDoc: TiptapDoc
 
 type OutputTab = "html" | "markdown" | "json";
 
-const DEFAULT_CONTENT: TiptapDoc = {
+const BLANK_CONTENT: TiptapDoc = {
   type: "doc",
-  content: [
-    { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "欢迎使用 Markdown 增强型富文本编辑器" }] },
-    { type: "paragraph", content: [
-      { type: "text", text: "这是一款 " },
-      { type: "text", text: "所见即所得", marks: [{ type: "bold" }] },
-      { type: "text", text: " 的现代化编辑器，基于 TipTap 构建，融合 Markdown 简洁性与富文本强大能力，支持所有常用排版与内容格式：" },
-    ]},
-    { type: "bulletList", content: [
-      { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "六级标题（H1 - H6）自动排版与目录结构" }] }] },
-      { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "加粗、斜体、下划线、删除线、字体颜色、背景高亮" }] }] },
-      { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "有序列表 / 无序列表（支持多前缀样式）" }] }] },
-      { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "待办事项清单、段落对齐、行高、缩进调整" }] }] },
-      { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "代码块 / 行内代码（支持主流编程语言语法高亮）" }] }] },
-      { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "引用块、高亮提示块、分割线、表格、链接、图片" }] }] },
-      { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "撤销 / 重做、清除格式、格式刷一键复用样式" }] }] },
-    ]},
-    { type: "blockquote", content: [{ type: "paragraph", content: [{ type: "text", text: "无需记忆复杂语法，点击工具栏即可完成专业排版，适用于笔记、文档、技术文章、报告等多种场景。" }] }] },
-    { type: "codeBlock", attrs: { language: "typescript" }, content: [{ type: "text", text: '// 快速体验：选中文字 → 使用工具栏格式化\nconst editor = "现代化富文本编辑器";\nconsole.log("欢迎使用", editor);' }] },
-    { type: "paragraph", content: [{ type: "text", text: "开始你的创作吧 ↓" }] },
-  ],
+  content: [{ type: "paragraph" }],
 };
 
 function EditorContent() {
@@ -355,7 +336,7 @@ function EditorContent() {
     setPendingScrollBlockId,
   } = useDocument();
 
-  const [content, setContent] = useState<EditorContent>(DEFAULT_CONTENT);
+  const [content, setContent] = useState<EditorContent>(BLANK_CONTENT);
   const [contentDirty, setContentDirty] = useState(false);
   const [activeTab, setActiveTab] = useState<OutputTab>("markdown");
   const [loadingDoc, setLoadingDoc] = useState(false);
@@ -398,9 +379,15 @@ function EditorContent() {
     onContentPatched: (doc) => {
       const latestEditorContent = editorRef.current?.getJSON() as TiptapDoc | undefined;
       if (latestEditorContent?.type === "doc") {
-        // 不要在 create ack 到达时 setContent：高频编辑中 ack 对应的是旧 snapshot，
-        // 回灌到 React/editor 会覆盖用户当前视觉顺序。只把 ack 合并进 sync snapshot。
-        return mergeAckAttrsIntoCurrentEditorDoc(latestEditorContent, doc);
+        // create ack 只合并 attrs，不回灌旧 snapshot 内容，避免覆盖用户正在输入的文本/顺序。
+        // 同时必须把 blockId/sortKey 写回 editor 与 React content，否则下一次刷新前的首行更新会丢失身份。
+        const merged = mergeAckAttrsIntoCurrentEditorDoc(latestEditorContent, doc);
+        if (merged !== latestEditorContent) {
+          editorRef.current?.patchBlockIdentityFromDoc(merged);
+          contentRef.current = merged;
+          setContent(merged);
+        }
+        return merged;
       }
       return doc;
     },
@@ -512,7 +499,7 @@ function EditorContent() {
     const docId = currentDoc?.docId;
     if (!docId) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- document-bound editor state must reset when the active document is cleared
-      setContent(DEFAULT_CONTENT);
+      setContent(BLANK_CONTENT);
       setContentDirty(false);
       setHasUnsavedChanges(false);
       markSavedAt(null);
@@ -527,14 +514,14 @@ function EditorContent() {
     setContentDirty(false);
     loadContent(docId)
       .then((loaded) => {
-        setContent(loaded.content || DEFAULT_CONTENT);
+        setContent(loaded.content || BLANK_CONTENT);
         setContentDirty(false);
         setHasUnsavedChanges(false);
         markSavedAt(null);
         setSaveStatus("loaded");
       })
       .catch(() => {
-        setContent(DEFAULT_CONTENT);
+        setContent(BLANK_CONTENT);
         setContentDirty(false);
         loadedDocIdRef.current = null;
       })
@@ -792,7 +779,7 @@ function EditorContent() {
           ? hashEditorDoc(editorContentAtReload)
           : null;
         const loaded = await loadContent(currentDoc.docId);
-        const loadedContent = loaded.content || DEFAULT_CONTENT;
+        const loadedContent = loaded.content || BLANK_CONTENT;
         const currentEditorContent = editorRef.current?.getJSON() as TiptapDoc | undefined;
         const currentHash = currentEditorContent?.type === "doc" && hashAtReloadStart
           ? hashEditorDoc(currentEditorContent)
@@ -852,7 +839,7 @@ function EditorContent() {
     try {
       await discardDraftRequest(currentDoc.docId);
       const loaded = await loadContent(currentDoc.docId);
-      setContent(loaded.content || DEFAULT_CONTENT);
+      setContent(loaded.content || BLANK_CONTENT);
       setContentDirty(false);
       setHasUnsavedChanges(false);
       markSavedAt(null);

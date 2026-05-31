@@ -71,9 +71,9 @@ export function ensureDocumentIdentity(doc: IdentityDoc): IdentityDoc {
 
   const seenClientIds = new Set<string>();
   const seenBlockIds = new Set<string>();
-  let changed = false;
-  const content = doc.content.map((node) => {
+  const visitNode = (node: IdentityNode): IdentityNode => {
     let nextNode = ensureBlockIdentity(node);
+    let changed = nextNode !== node;
 
     if (IDENTITY_BLOCK_NODE_TYPES.has(nextNode.type)) {
       const attrs = { ...(nextNode.attrs ?? {}) };
@@ -108,9 +108,32 @@ export function ensureDocumentIdentity(doc: IdentityDoc): IdentityDoc {
 
       if (nodeChanged) {
         nextNode = { ...nextNode, attrs };
+        changed = true;
       }
     }
 
+    if (Array.isArray(nextNode.content)) {
+      let contentChanged = false;
+      const content = nextNode.content.map((child) => {
+        const nextChild = visitNode(child);
+        if (nextChild !== child) {
+          contentChanged = true;
+        }
+        return nextChild;
+      });
+
+      if (contentChanged) {
+        nextNode = { ...nextNode, content };
+        changed = true;
+      }
+    }
+
+    return changed ? nextNode : node;
+  };
+
+  let changed = false;
+  const content = doc.content.map((node) => {
+    const nextNode = visitNode(node);
     if (nextNode !== node) {
       changed = true;
     }

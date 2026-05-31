@@ -5,6 +5,7 @@ import {
   hasCorruptedSortKeys,
   normalizeEditorDoc,
 } from "@/services/sync/engine";
+import { readIdentityFromAttrs } from "@/services/sync/identity";
 import { enqueueChange } from "@/services/sync/reducer";
 import type { SyncReducerState } from "@/services/sync/types";
 
@@ -39,6 +40,17 @@ function applyLocalSortKeys(
   return changed ? { ...snapshot, content } : snapshot;
 }
 
+function shouldCreateInitialUnsyncedContent(snapshot: TiptapDoc): boolean {
+  const nodes = Array.isArray(snapshot.content) ? snapshot.content : [];
+  if (nodes.length !== 1) return false;
+
+  const [node] = nodes;
+  const identity = readIdentityFromAttrs(node.attrs);
+  if (identity.blockId) return false;
+  if (Array.isArray(node.content) && node.content.length > 0) return true;
+  return node.type !== "paragraph" && node.type !== "heading";
+}
+
 export function advanceSyncSnapshot(
   state: SyncReducerState,
   previousSnapshot: TiptapDoc | null,
@@ -46,14 +58,25 @@ export function advanceSyncSnapshot(
 ): { state: SyncReducerState; snapshot: TiptapDoc } {
   const normalizedSnapshot = normalizeEditorDoc(content);
   if (!previousSnapshot) {
+    let nextState = state;
+    if (shouldCreateInitialUnsyncedContent(normalizedSnapshot)) {
+      const entries = deriveSyncEntries(
+        { type: "doc", content: [] },
+        normalizedSnapshot,
+      );
+      for (const entry of entries) {
+        nextState = enqueueChange(nextState, entry);
+      }
+    }
     const report = analyzeSortKeyIntegrity(normalizedSnapshot);
+    const snapshot = applyLocalSortKeys(normalizedSnapshot, nextState);
     return {
       state: {
-        ...state,
+        ...nextState,
         hasCorruptedSortKeys: hasCorruptedSortKeys(report),
         sortKeyCorruptionReport: hasCorruptedSortKeys(report) ? report : null,
       },
-      snapshot: normalizedSnapshot,
+      snapshot,
     };
   }
 
