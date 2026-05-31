@@ -19,7 +19,8 @@ export default function FloatingSelectionToolbar({
   const { editor } = useMarkdownEditorContext();
   const shellRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<number | null>(null);
-  const [position, setPosition] = useState<FloatingToolbarPosition | null>(null);
+  const [position, setPosition] = useState<FloatingToolbarPosition>({ left: -9999, top: -9999 });
+  const [isVisible, setIsVisible] = useState(false);
 
   const updatePosition = useCallback(() => {
     if (timerRef.current) {
@@ -28,13 +29,13 @@ export default function FloatingSelectionToolbar({
     }
 
     if (!editor || editor.isDestroyed || !editor.isEditable) {
-      setPosition(null);
+      setIsVisible(false);
       return;
     }
 
     const { selection } = editor.state;
     if (selection.empty) {
-      setPosition(null);
+      setIsVisible(false);
       return;
     }
 
@@ -54,6 +55,7 @@ export default function FloatingSelectionToolbar({
 
       if (delayMs <= 0) {
         setPosition(nextPosition);
+        setIsVisible(true);
         return;
       }
 
@@ -63,10 +65,11 @@ export default function FloatingSelectionToolbar({
 
       timerRef.current = window.setTimeout(() => {
         setPosition(nextPosition);
+        setIsVisible(true);
         timerRef.current = null;
       }, delayMs);
     } catch {
-      setPosition(null);
+      setIsVisible(false);
     }
   }, [delayMs, editor]);
 
@@ -86,7 +89,7 @@ export default function FloatingSelectionToolbar({
         window.clearTimeout(timerRef.current);
         timerRef.current = null;
       }
-      setPosition(null);
+      setIsVisible(false);
     };
 
     editor.on("selectionUpdate", scheduleUpdate);
@@ -109,16 +112,16 @@ export default function FloatingSelectionToolbar({
     };
   }, [editor, updatePosition]);
 
-  if (!position || !enabledItemIds || enabledItemIds.size === 0) return null;
+  const reallyVisible = isVisible && Boolean(enabledItemIds) && enabledItemIds!.size > 0;
 
   return (
     <div
       ref={shellRef}
-      className="floating-selection-toolbar"
+      className={`floating-selection-toolbar ${reallyVisible ? "is-visible" : ""}`}
       style={{ left: position.left, top: position.top }}
       onMouseDown={(event) => event.preventDefault()}
     >
-      <DesktopToolbar variant="floating" enabledItemIds={enabledItemIds} />
+      <DesktopToolbar variant="floating" enabledItemIds={enabledItemIds || new Set()} />
     </div>
   );
 }

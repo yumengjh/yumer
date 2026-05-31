@@ -16,7 +16,7 @@ describe("editor toolbar preferences", () => {
       showFixedToolbarWithFloating: true,
       floatingItems: {
         bold: false,
-        table: true,
+        link: false,
         unknown: true,
       },
     });
@@ -25,7 +25,7 @@ describe("editor toolbar preferences", () => {
     expect(normalized.showFixedToolbarWithFloating).toBe(true);
     expect(normalized.floatingToolbarDelayMs).toBe(180);
     expect(normalized.floatingItems.bold).toBe(false);
-    expect(normalized.floatingItems.table).toBe(true);
+    expect(normalized.floatingItems.link).toBe(false);
     expect("unknown" in normalized.floatingItems).toBe(false);
   });
 
@@ -44,11 +44,24 @@ describe("editor toolbar preferences", () => {
       floatingItems: {
         ...DEFAULT_EDITOR_TOOLBAR_PREFERENCES.floatingItems,
         bold: false,
-        table: true,
+        link: false,
       },
     });
 
     expect(ids.includes("bold")).toBe(false);
-    expect(ids.at(-1)).toBe("table");
+    expect(ids.includes("link")).toBe(false);
+  });
+
+  it("limits floating toolbar items to inline actions only", () => {
+    expect(getEnabledFloatingToolbarItemIds(DEFAULT_EDITOR_TOOLBAR_PREFERENCES)).toEqual([
+      "bold",
+      "italic",
+      "underline",
+      "strike",
+      "text-color",
+      "bg-color",
+      "link",
+      "clearFormat",
+    ]);
   });
 });

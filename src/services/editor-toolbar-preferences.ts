@@ -1,31 +1,9 @@
+import {
+  FLOATING_TOOLBAR_ITEMS,
+  type FloatingToolbarItemId,
+} from "@/components/markdown-editor/Toolbar/floatingToolbarItems";
+
 export const EDITOR_TOOLBAR_PREFERENCES_STORAGE_KEY = "yuediter:editor-toolbar-preferences";
-
-export const FLOATING_TOOLBAR_ITEMS = [
-  { id: "text-mode", label: "段落/标题", defaultEnabled: true },
-  { id: "font-size", label: "字号", defaultEnabled: true },
-  { id: "bold", label: "加粗", defaultEnabled: true },
-  { id: "italic", label: "斜体", defaultEnabled: true },
-  { id: "underline", label: "下划线", defaultEnabled: true },
-  { id: "strike", label: "删除线", defaultEnabled: true },
-  { id: "text-color", label: "文字颜色", defaultEnabled: true },
-  { id: "bg-color", label: "背景色", defaultEnabled: true },
-  { id: "link", label: "链接", defaultEnabled: true },
-  { id: "bullet-list", label: "无序列表", defaultEnabled: true },
-  { id: "ordered-list", label: "有序列表", defaultEnabled: true },
-  { id: "check-list", label: "待办列表", defaultEnabled: false },
-  { id: "text-align", label: "对齐", defaultEnabled: false },
-  { id: "line-height", label: "行高", defaultEnabled: false },
-  { id: "clearFormat", label: "清除格式", defaultEnabled: true },
-  { id: "format-painter", label: "格式刷", defaultEnabled: false },
-  { id: "blockquote", label: "引用", defaultEnabled: false },
-  { id: "divider", label: "分割线", defaultEnabled: false },
-  { id: "image", label: "图片", defaultEnabled: false },
-  { id: "table", label: "表格", defaultEnabled: false },
-  { id: "code-language", label: "代码语言", defaultEnabled: false },
-  { id: "code-cleanup", label: "代码清理", defaultEnabled: false },
-] as const;
-
-export type FloatingToolbarItemId = (typeof FLOATING_TOOLBAR_ITEMS)[number]["id"];
 
 export interface EditorToolbarPreferences {
   floatingToolbarEnabled: boolean;
@@ -124,3 +102,6 @@ export function getEnabledFloatingToolbarItemIds(
     .filter((item) => normalized.floatingItems[item.id])
     .map((item) => item.id);
 }
+
+export { FLOATING_TOOLBAR_ITEMS };
+export type { FloatingToolbarItemId };

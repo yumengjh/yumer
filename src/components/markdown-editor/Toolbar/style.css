@@ -48,8 +48,19 @@
 .floating-selection-toolbar {
   position: fixed;
   z-index: 120;
-  transform: translate(-50%, -100%);
   max-width: calc(100vw - 24px);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% + 8px));
+  transition: opacity 0.2s cubic-bezier(0.2, 0, 0, 1), transform 0.2s cubic-bezier(0.2, 0, 0, 1), visibility 0.2s;
+}
+
+.floating-selection-toolbar.is-visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translate(-50%, -100%);
 }
 
 .floating-selection-toolbar::after {
