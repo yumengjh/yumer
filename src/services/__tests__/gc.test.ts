@@ -13,7 +13,9 @@ import {
   getBlockVersionGcCandidates,
   getBlockVersionGcHealth,
   getGcCandidatePool,
+  getGcPolicy,
   listBlockVersionGcRuns,
+  sweepBlockVersions,
   sweepDraftTombstones,
   sweepRevisionTombstones,
 } from "../gc";
@@ -292,5 +294,121 @@ describe("gc service", () => {
     );
     expect(result.runId).toBe("gc_run_sweep_2");
     expect(result.dryRun).toBe(false);
+  });
+
+  it("runs block version physical sweep", async () => {
+    apiFetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            runId: "gc_run_sweep_3",
+            mode: "sweep",
+            status: "completed",
+            dryRun: true,
+            source: "block_versions",
+            summary: {
+              selectedCandidates: 5,
+              processedCandidates: 5,
+              wouldDeleteCandidates: 3,
+              blockedCandidates: 2,
+            },
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await sweepBlockVersions({
+      token: "gc-secret",
+      operatorId: "debugger",
+      workspaceId: "ws_1",
+      docId: "doc_1",
+      limit: 50,
+      dryRun: true,
+    });
+
+    expect(apiFetch).toHaveBeenCalledWith(
+      "/admin/gc/block-versions/sweeps/block-versions",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          workspaceId: "ws_1",
+          docId: "doc_1",
+          limit: 50,
+          dryRun: true,
+        }),
+      }),
+    );
+    expect(result.runId).toBe("gc_run_sweep_3");
+    expect(result.summary?.wouldDeleteCandidates).toBe(3);
+    expect(result.summary?.blockedCandidates).toBe(2);
+  });
+
+  it("fetches GC policy defaults", async () => {
+    apiFetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            gracePeriodMs: 86400000,
+            tombstoneGracePeriodMs: 604800000,
+            keepLatestPerBlock: 2,
+            maxCandidatesToStore: 500,
+            promotionDelayMs: 300000,
+            stableSeenThreshold: 2,
+            rootSources: ["doc_snapshots", "document_drafts"],
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await getGcPolicy({
+      token: "gc-secret",
+    });
+
+    expect(apiFetch).toHaveBeenCalledWith(
+      "/admin/gc/block-versions/policy",
+      expect.objectContaining({
+        method: "GET",
+        headers: expect.objectContaining({
+          "x-system-admin-token": "gc-secret",
+        }),
+      }),
+    );
+    expect(result.gracePeriodMs).toBe(86400000);
+    expect(result.keepLatestPerBlock).toBe(2);
+    expect(result.stableSeenThreshold).toBe(2);
+  });
+
+  it("lists runs with mode filter", async () => {
+    apiFetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            items: [{ runId: "gc_run_sweep_1", mode: "sweep", status: "completed" }],
+            total: 1,
+            page: 1,
+            pageSize: 20,
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await listBlockVersionGcRuns({
+      token: "gc-secret",
+      mode: "sweep",
+      page: 1,
+      pageSize: 20,
+    });
+
+    expect(apiFetch).toHaveBeenCalledWith(
+      "/admin/gc/block-versions/runs?page=1&pageSize=20&mode=sweep",
+      expect.any(Object),
+    );
+    expect(result.items[0].mode).toBe("sweep");
   });
 });

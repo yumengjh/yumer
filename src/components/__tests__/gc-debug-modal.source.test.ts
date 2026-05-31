@@ -92,10 +92,31 @@ describe("GcDebugModal policy visibility", () => {
     expect(source).toContain("sweepDryRun");
     expect(source).toContain("sweepLimit");
 
+    // Block version sweep
+    expect(source).toContain("sweepBlockVersions");
+    expect(source).toContain("Block Versions");
+    expect(source).toContain("Popconfirm");
+    expect(source).toContain("物理删除");
+
     // Mode column in runs table
     expect(source).toContain("RUN_MODE_LABELS");
     expect(source).toContain("GcRunMode");
     expect(source).toContain("mode");
+
+    // Mode filter
+    expect(source).toContain("runModeFilter");
+    expect(source).toContain("loadRunsByMode");
+
+    // Policy display
+    expect(source).toContain("getGcPolicy");
+    expect(source).toContain("GcPolicyDefaults");
+    expect(source).toContain("policy");
+
+    // Blocker labels
+    expect(source).toContain("BLOCKER_LABELS");
+    expect(source).toContain("block_latest_version");
+    expect(source).toContain("snapshot_root_present");
+    expect(source).toContain("draft_root_present");
 
     // candidateDetailsTruncated warning
     expect(source).toContain("candidateDetailsTruncated");
@@ -103,5 +124,10 @@ describe("GcDebugModal policy visibility", () => {
 
     // Health blocked guard
     expect(source).toContain("Health blocked");
+
+    // Sweep summary fields
+    expect(source).toContain("wouldDeleteCandidates");
+    expect(source).toContain("deletedBlockVersions");
+    expect(source).toContain("blockedCandidates");
   });
 });

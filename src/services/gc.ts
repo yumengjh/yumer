@@ -183,11 +183,27 @@ export interface GcSweepResult {
   runId: string;
   mode: "sweep";
   status: GcRunStatus;
-  summary?: BlockVersionGcRunSummary;
+  summary?: BlockVersionGcRunSummary & {
+    selectedCandidates?: number;
+    processedCandidates?: number;
+    wouldDeleteCandidates?: number;
+    deletedBlockVersions?: number;
+    blockedCandidates?: number;
+  };
   processedCount?: number;
   affectedEntries?: number;
   dryRun: boolean;
   source: string;
+}
+
+export interface GcPolicyDefaults {
+  gracePeriodMs: number;
+  tombstoneGracePeriodMs: number;
+  keepLatestPerBlock: number;
+  maxCandidatesToStore: number;
+  promotionDelayMs?: number;
+  stableSeenThreshold?: number;
+  rootSources: string[];
 }
 
 type AdminRequestOptions = {
@@ -289,12 +305,14 @@ export async function listBlockVersionGcRuns(
       page?: number;
       pageSize?: number;
       status?: GcRunStatus;
+      mode?: GcRunMode;
     },
 ): Promise<PaginatedGcResult<BlockVersionGcRun>> {
   const query = buildQuery({
     page: input.page ?? 1,
     pageSize: input.pageSize ?? 10,
     status: input.status,
+    mode: input.mode,
     workspaceId: input.workspaceId,
     docId: input.docId,
   });
@@ -436,5 +454,38 @@ export async function sweepRevisionTombstones(
       limit: input.limit ?? 100,
       dryRun: input.dryRun ?? true,
     }),
+  });
+}
+
+export async function sweepBlockVersions(
+  input: AdminRequestOptions &
+    ScopeOptions & {
+      limit?: number;
+      dryRun?: boolean;
+    },
+): Promise<GcSweepResult> {
+  return requestGc<GcSweepResult>("/admin/gc/block-versions/sweeps/block-versions", {
+    token: input.token,
+    operatorId: input.operatorId,
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      workspaceId: input.workspaceId,
+      docId: input.docId,
+      limit: input.limit ?? 100,
+      dryRun: input.dryRun ?? true,
+    }),
+  });
+}
+
+export async function getGcPolicy(
+  input: AdminRequestOptions,
+): Promise<GcPolicyDefaults> {
+  return requestGc<GcPolicyDefaults>("/admin/gc/block-versions/policy", {
+    token: input.token,
+    operatorId: input.operatorId,
+    method: "GET",
   });
 }

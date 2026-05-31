@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Button, Checkbox, Descriptions, Divider, Drawer, Empty, Input, Modal, Spin, Table, Tag, Tooltip, Typography, message } from "antd";
+import { Alert, Button, Checkbox, Descriptions, Divider, Drawer, Empty, Input, Modal, Popconfirm, Spin, Table, Tag, Tooltip, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import {
   createBlockVersionGcRun,
@@ -9,7 +9,9 @@ import {
   getBlockVersionGcHealth,
   getBlockVersionGcRun,
   getGcCandidatePool,
+  getGcPolicy,
   listBlockVersionGcRuns,
+  sweepBlockVersions,
   sweepDraftTombstones,
   sweepRevisionTombstones,
   type BlockVersionGcCandidate,
@@ -18,6 +20,7 @@ import {
   type BlockVersionGcRun,
   type CandidateClass,
   type GcCandidatePoolItem,
+  type GcPolicyDefaults,
   type GcPoolState,
   type GcRunMode,
   type GcSweepResult,
@@ -176,6 +179,19 @@ const SOURCE_LABELS: Record<string, string> = {
   document_drafts: "草稿副本",
 };
 
+const BLOCKER_LABELS: Record<string, string> = {
+  candidate_action_invalid: "候选动作无效",
+  document_missing: "文档已删除",
+  document_workspace_mismatch: "文档工作区不匹配",
+  block_missing: "块已删除",
+  block_version_missing: "版本已删除",
+  block_latest_version: "当前最新版本，不可删除",
+  block_version_too_recent: "版本过新，未过宽限期",
+  block_version_policy_retained: "版本仍在策略保留窗口内",
+  snapshot_root_present: "正式快照仍引用此版本",
+  draft_root_present: "草稿仍引用此版本",
+};
+
 const ROOT_REF_TYPE_LABELS: Record<string, string> = {
   snapshot: "Snapshot",
   draft: "Draft",
@@ -221,6 +237,8 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
   const [sweepLimit, setSweepLimit] = useState(100);
   const [sweepDryRun, setSweepDryRun] = useState(true);
   const [selectedPoolItem, setSelectedPoolItem] = useState<GcCandidatePoolItem | null>(null);
+  const [policy, setPolicy] = useState<GcPolicyDefaults | null>(null);
+  const [runModeFilter, setRunModeFilter] = useState<GcRunMode | undefined>(undefined);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -315,6 +333,14 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
         setHealth(healthResult);
         setRuns(runsResult.items);
 
+        // Load policy in background
+        void getGcPolicy({
+          token: activeToken,
+          operatorId: activeOperatorId || undefined,
+        }).then((policyResult) => {
+          setPolicy(policyResult);
+        }).catch(() => { /* ignore policy load errors */ });
+
         // Load pool in background (non-blocking)
         void getGcCandidatePool({
           token: activeToken,
@@ -407,8 +433,27 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
     [docId, operatorId, poolActionFilter, poolStateFilter, token, workspaceId],
   );
 
+  const loadRunsByMode = useCallback(
+    async (mode?: GcRunMode) => {
+      if (!token.trim()) return;
+      try {
+        const result = await listBlockVersionGcRuns({
+          token,
+          operatorId: operatorId || undefined,
+          workspaceId,
+          docId,
+          mode,
+          page: 1,
+          pageSize: 20,
+        });
+        setRuns(result.items);
+      } catch { /* ignore */ }
+    },
+    [docId, operatorId, token, workspaceId],
+  );
+
   const handleSweep = useCallback(
-    async (type: "draft" | "revision") => {
+    async (type: "draft" | "revision" | "block-versions") => {
       if (!token.trim()) {
         setError("请先输入系统管理员令牌");
         return;
@@ -418,8 +463,17 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
       persistCredentials(token, operatorId);
 
       try {
-        const sweepFn = type === "draft" ? sweepDraftTombstones : sweepRevisionTombstones;
-        const result: GcSweepResult = await sweepFn({
+        const sweepFnMap = {
+          draft: sweepDraftTombstones,
+          revision: sweepRevisionTombstones,
+          "block-versions": sweepBlockVersions,
+        };
+        const labelMap = {
+          draft: "Draft Tombstones",
+          revision: "Revision Tombstones",
+          "block-versions": "Block Versions",
+        };
+        const result: GcSweepResult = await sweepFnMap[type]({
           token,
           operatorId: operatorId || undefined,
           workspaceId,
@@ -428,9 +482,21 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
           dryRun: sweepDryRun,
         });
 
-        const label = type === "draft" ? "Draft Tombstones" : "Revision Tombstones";
         const modeLabel = sweepDryRun ? "Dry-run" : "Sweep";
-        message.success(`${modeLabel} ${label} 已完成：run ${result.runId}`);
+        const summary = result.summary;
+        let extra = "";
+        if (summary) {
+          if (sweepDryRun && typeof summary.wouldDeleteCandidates === "number") {
+            extra = `，将删除 ${summary.wouldDeleteCandidates} 个版本`;
+          }
+          if (!sweepDryRun && typeof summary.deletedBlockVersions === "number") {
+            extra = `，已删除 ${summary.deletedBlockVersions} 个版本`;
+          }
+          if (typeof summary.blockedCandidates === "number" && summary.blockedCandidates > 0) {
+            extra += `，${summary.blockedCandidates} 个被阻断`;
+          }
+        }
+        message.success(`${modeLabel} ${labelMap[type]} 已完成：run ${result.runId}${extra}`);
 
         await Promise.all([loadPanelData(token, operatorId), loadPool(token, operatorId)]);
       } catch (nextError) {
@@ -741,7 +807,29 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
           <section className="gc-debug__card gc-debug__card--table">
             <div className="gc-debug__card-head">
               <h3>Recent Runs</h3>
-              <Typography.Text type="secondary">{formatCount(runs.length)} 条已加载</Typography.Text>
+              <div className="gc-debug__run-mode-filter">
+                <Tag
+                  color={runModeFilter === undefined ? "blue" : undefined}
+                  onClick={() => { setRunModeFilter(undefined); void loadRunsByMode(undefined); }}
+                  style={{ cursor: "pointer" }}
+                >
+                  全部
+                </Tag>
+                <Tag
+                  color={runModeFilter === "preview" ? "blue" : undefined}
+                  onClick={() => { setRunModeFilter("preview"); void loadRunsByMode("preview"); }}
+                  style={{ cursor: "pointer" }}
+                >
+                  Preview
+                </Tag>
+                <Tag
+                  color={runModeFilter === "sweep" ? "red" : undefined}
+                  onClick={() => { setRunModeFilter("sweep"); void loadRunsByMode("sweep"); }}
+                  style={{ cursor: "pointer" }}
+                >
+                  Sweep
+                </Tag>
+              </div>
             </div>
             <Table
               size="small"
@@ -948,6 +1036,16 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
                 <Tag color="red">Health blocked — 不可执行 sweep</Tag>
               )}
             </div>
+
+            {policy && (
+              <div className="gc-debug__policy-inline">
+                <Tag>宽限期 {formatDuration(policy.gracePeriodMs)}</Tag>
+                <Tag>Tombstone 宽限期 {formatDuration(policy.tombstoneGracePeriodMs)}</Tag>
+                <Tag>每块保留 {policy.keepLatestPerBlock}</Tag>
+                {policy.stableSeenThreshold != null && <Tag>稳定阈值 {policy.stableSeenThreshold} 次</Tag>}
+              </div>
+            )}
+
             <div className="gc-debug__sweep-form">
               <div className="gc-debug__sweep-row">
                 <label className="gc-debug__sweep-label">Limit：</label>
@@ -962,25 +1060,66 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
                   Dry-run（不真实执行）
                 </Checkbox>
               </div>
-              <div className="gc-debug__sweep-row">
-                <Button
-                  onClick={() => void handleSweep("draft")}
-                  loading={sweepLoading}
-                  disabled={health?.status === "blocked"}
-                >
-                  {sweepDryRun ? "Dry-run" : "执行"} Draft Tombstones
-                </Button>
-                <Button
-                  onClick={() => void handleSweep("revision")}
-                  loading={sweepLoading}
-                  disabled={health?.status === "blocked"}
-                >
-                  {sweepDryRun ? "Dry-run" : "执行"} Revision Tombstones
-                </Button>
+
+              <div className="gc-debug__sweep-group">
+                <Typography.Text type="secondary" className="gc-debug__sweep-group-label">Tombstone Compaction</Typography.Text>
+                <div className="gc-debug__sweep-row">
+                  <Button
+                    onClick={() => void handleSweep("draft")}
+                    loading={sweepLoading}
+                    disabled={health?.status === "blocked"}
+                  >
+                    {sweepDryRun ? "Dry-run" : "执行"} Draft Tombstones
+                  </Button>
+                  <Button
+                    onClick={() => void handleSweep("revision")}
+                    loading={sweepLoading}
+                    disabled={health?.status === "blocked"}
+                  >
+                    {sweepDryRun ? "Dry-run" : "执行"} Revision Tombstones
+                  </Button>
+                </div>
+                <Typography.Text type="secondary" className="gc-debug__sweep-hint">
+                  Draft = document_drafts tombstone compaction / Revision = doc_snapshots(kind=revision, pinned=false) tombstone compaction
+                </Typography.Text>
               </div>
-              <Typography.Text type="secondary" className="gc-debug__sweep-hint">
-                Draft = document_drafts tombstone compaction / Revision = doc_snapshots(kind=revision, pinned=false) tombstone compaction
-              </Typography.Text>
+
+              <Divider style={{ margin: "8px 0" }} />
+
+              <div className="gc-debug__sweep-group">
+                <Typography.Text type="secondary" className="gc-debug__sweep-group-label">Block Version Physical Delete</Typography.Text>
+                <div className="gc-debug__sweep-row">
+                  {sweepDryRun ? (
+                    <Button
+                      onClick={() => void handleSweep("block-versions")}
+                      loading={sweepLoading}
+                      disabled={health?.status === "blocked"}
+                    >
+                      Dry-run Block Versions
+                    </Button>
+                  ) : (
+                    <Popconfirm
+                      title="确认执行 Block Version 物理删除？"
+                      description="此操作将真正删除 block_versions 行，不可撤回。请确保已先执行 dry-run 确认。"
+                      onConfirm={() => void handleSweep("block-versions")}
+                      okText="确认删除"
+                      cancelText="取消"
+                      okButtonProps={{ danger: true }}
+                    >
+                      <Button
+                        danger
+                        loading={sweepLoading}
+                        disabled={health?.status === "blocked"}
+                      >
+                        执行 Block Versions
+                      </Button>
+                    </Popconfirm>
+                  )}
+                </div>
+                <Typography.Text type="secondary" className="gc-debug__sweep-hint">
+                  从 candidate pool 中选取 state=eligible + action=candidate_block_version 的候选，删除 block_versions 行。只代表逻辑清理完成，不代表磁盘空间已回收。
+                </Typography.Text>
+              </div>
             </div>
           </section>
         </Spin>
@@ -1281,7 +1420,9 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
                 <h4>Blockers</h4>
                 <div className="gc-debug__decision-reasons-block">
                   {selectedPoolItem.lastBlockers.map((b, idx) => (
-                    <div key={idx} className="gc-debug__decision-reason-item">{b}</div>
+                    <div key={idx} className="gc-debug__decision-reason-item">
+                      <Tag color="red" className="gc-debug__blocker-tag">{BLOCKER_LABELS[b] ?? b}</Tag>
+                    </div>
                   ))}
                 </div>
               </div>

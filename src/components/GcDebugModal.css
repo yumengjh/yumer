@@ -406,6 +406,39 @@
   font-size: 11px;
 }
 
+.gc-debug__sweep-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gc-debug__sweep-group-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.gc-debug__policy-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.gc-debug__run-mode-filter {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.gc-debug__run-mode-filter .ant-tag {
+  cursor: pointer;
+  user-select: none;
+}
+
+.gc-debug__blocker-tag {
+  font-size: 12px;
+}
+
 /* Small code in tables */
 .gc-debug__code-sm {
   font-size: 11px;
