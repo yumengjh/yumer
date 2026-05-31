@@ -12,6 +12,10 @@ describe("TaskItemView source contract", () => {
       path.resolve(process.cwd(), "src/components/markdown-editor/styles/editor.css"),
       "utf8",
     );
+    const publicDocCss = fs.readFileSync(
+      path.resolve(process.cwd(), "app/doc/[slug]/style.css"),
+      "utf8",
+    );
 
     expect(source).toContain("getListTypographyVars");
     expect(source).toContain("style={styleVars}");
@@ -29,8 +33,16 @@ describe("TaskItemView source contract", () => {
     expect(css).toContain(".checkbox-wrapper .check");
     expect(css).toContain(".checkbox-wrapper .path1");
     expect(css).toContain(".checkbox-wrapper .check:checked + .label svg g path");
+    expect(css).toContain(".doc-content .task-item-checkbox-input:checked + .task-item-checkbox svg g path");
     expect(css).toContain(".task-item-checkbox-input");
     expect(css).toContain(".task-item-checkbox-svg");
+    expect(css).toContain('input[type="checkbox"]:not(.ant-checkbox-input):not(.task-item-checkbox-input)');
     expect(css).toContain("stroke-dashoffset");
+    expect(css).toContain("margin-top: calc((var(--list-font-size, 15px) * 1.74 - var(--task-checkbox-size)) / 2)");
+    expect(publicDocCss).toContain(".doc-content .task-item-checkbox-svg");
+    expect(publicDocCss).toContain(".doc-content .checkbox-wrapper .check:checked + .label svg g path");
+    expect(publicDocCss).toContain('> div:not(.checkbox-wrapper)');
+    expect(publicDocCss).toContain('input[type="checkbox"]:not(.task-item-checkbox-input)');
+    expect(publicDocCss).toContain("margin-top: calc((var(--list-font-size, 15px) * 1.74 - var(--task-checkbox-size)) / 2)");
   });
 });

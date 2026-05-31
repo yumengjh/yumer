@@ -232,7 +232,7 @@
   z-index: 50;
 }
 
-/* Todo 列表样式 - 文档展示区域 */
+/* Todo ???? - ?????????????? SVG checkbox */
 .doc-content ul[data-type="taskList"],
 .doc-content ul.task-list {
   list-style: none;
@@ -245,31 +245,82 @@
   display: flex;
   align-items: flex-start;
   margin-bottom: 4px;
+  --task-checkbox-size: 16px;
+  --task-checkbox-gap: 12px;
+  --task-check-stroke: 3;
 }
 
-.doc-content li[data-type="taskItem"] > label,
-.doc-content li.task-list-item > label {
+.doc-content .checkbox-wrapper {
   flex: 0 0 auto;
-  margin-right: 12px;
+  position: relative;
+  display: block;
+  overflow: hidden;
+  margin-top: calc((var(--list-font-size, 15px) * 1.74 - var(--task-checkbox-size)) / 2);
+  margin-right: var(--task-checkbox-gap);
   user-select: none;
+}
+
+.doc-content .checkbox-wrapper .label {
+  cursor: default;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 26px;
+  height: var(--task-checkbox-size);
+  line-height: 1;
 }
 
-.doc-content li[data-type="taskItem"] > div,
-.doc-content li.task-list-item > div {
+.doc-content .checkbox-wrapper .check,
+.doc-content .task-item-checkbox-input {
+  visibility: hidden;
+  display: none;
+  position: absolute;
+  opacity: 0;
+  width: var(--task-checkbox-size);
+  height: var(--task-checkbox-size);
+}
+
+.doc-content .task-item-checkbox-svg {
+  width: var(--task-checkbox-size);
+  height: var(--task-checkbox-size);
+  vertical-align: middle;
+}
+
+.doc-content .task-item-checkbox-box {
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 4;
+}
+
+.doc-content .checkbox-wrapper .path1,
+.doc-content .task-item-check-path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: var(--task-check-stroke);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 400;
+  stroke-dashoffset: 400;
+  opacity: 0;
+}
+
+.doc-content .checkbox-wrapper .check:checked + .label svg g path,
+.doc-content .task-item-checkbox-input:checked + .task-item-checkbox svg g path {
+  stroke-dashoffset: 0;
+  opacity: 1;
+}
+
+.doc-content li[data-type="taskItem"] > div:not(.checkbox-wrapper),
+.doc-content li.task-list-item > div:not(.checkbox-wrapper) {
   flex: 1 1 auto;
   min-width: 0;
 }
 
-.doc-content li[data-type="taskItem"] input[type="checkbox"],
-.doc-content li.task-list-item input[type="checkbox"] {
+.doc-content li[data-type="taskItem"] input[type="checkbox"]:not(.task-item-checkbox-input),
+.doc-content li.task-list-item input[type="checkbox"]:not(.task-item-checkbox-input) {
   -webkit-appearance: none;
   appearance: none;
-  width: 16px;
-  height: 16px;
+  width: var(--task-checkbox-size);
+  height: var(--task-checkbox-size);
   border: 1.5px solid var(--color-border);
   border-radius: 3px;
   background-color: var(--color-bg-container);
@@ -280,14 +331,14 @@
   transform: translateY(-1px);
 }
 
-.doc-content li[data-type="taskItem"] input[type="checkbox"]:checked,
-.doc-content li.task-list-item input[type="checkbox"]:checked {
+.doc-content li[data-type="taskItem"] input[type="checkbox"]:not(.task-item-checkbox-input):checked,
+.doc-content li.task-list-item input[type="checkbox"]:not(.task-item-checkbox-input):checked {
   background-color: #15303d;
   border-color: #15303d;
 }
 
-.doc-content li[data-type="taskItem"] input[type="checkbox"]:checked::after,
-.doc-content li.task-list-item input[type="checkbox"]:checked::after {
+.doc-content li[data-type="taskItem"] input[type="checkbox"]:not(.task-item-checkbox-input):checked::after,
+.doc-content li.task-list-item input[type="checkbox"]:not(.task-item-checkbox-input):checked::after {
   content: "";
   position: absolute;
   top: 1px;

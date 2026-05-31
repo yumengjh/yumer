@@ -80,11 +80,20 @@ export function resolvePublicDocHtml(data: ContentResponse): string {
 
 export function sanitizePublicDocHtml(rawHtml: string): string {
   return sanitizeHtml(rawHtml, {
+    parser: {
+      lowerCaseAttributeNames: false,
+    },
     allowedTags: sanitizeHtml.defaults.allowedTags.concat([
       "img",
       "span",
       "pre",
       "code",
+      "label",
+      "input",
+      "svg",
+      "rect",
+      "g",
+      "path",
       "table",
       "thead",
       "tbody",
@@ -101,6 +110,12 @@ export function sanitizePublicDocHtml(rawHtml: string): string {
       code: ["class", "data-language"],
       pre: ["class", "data-language"],
       span: ["class", "style", "data-*"],
+      label: ["class", "style", "data-*", "for"],
+      input: ["type", "checked", "disabled", "class", "style", "data-*", "id"],
+      svg: ["class", "viewBox", "aria-hidden", "style", "data-*"],
+      rect: ["class", "x", "y", "width", "height", "fill", "style", "data-*"],
+      g: ["class", "transform", "style", "data-*"],
+      path: ["class", "d", "fill", "style", "data-*"],
       button: ["type", "class", "data-*"],
       th: ["colspan", "rowspan", "style", "class"],
       td: ["colspan", "rowspan", "style", "class"],

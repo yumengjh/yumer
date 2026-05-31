@@ -1368,6 +1368,7 @@ pre.code-block-view {
   position: relative;
   display: block;
   overflow: hidden;
+  margin-top: calc((var(--list-font-size, 15px) * 1.74 - var(--task-checkbox-size)) / 2);
   margin-right: var(--task-checkbox-gap);
   user-select: none;
 }
@@ -1378,7 +1379,8 @@ pre.code-block-view {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: var(--task-checkbox-offset);
+  height: var(--task-checkbox-size);
+  line-height: 1;
 }
 
 .tiptap-editor .checkbox-wrapper .check,
@@ -1423,7 +1425,8 @@ pre.code-block-view {
 
 .tiptap-editor .checkbox-wrapper .check:checked + .label svg g path,
 .doc-content .checkbox-wrapper .check:checked + .label svg g path,
-.tiptap-editor .task-item-checkbox-input:checked + .task-item-checkbox svg g path {
+.tiptap-editor .task-item-checkbox-input:checked + .task-item-checkbox svg g path,
+.doc-content .task-item-checkbox-input:checked + .task-item-checkbox svg g path {
   stroke-dashoffset: 0;
   opacity: 1;
 }
@@ -1435,8 +1438,8 @@ pre.code-block-view {
 }
 
 /* 展示页：旧 input checkbox fallback */
-.tiptap-editor :where(li[data-type="taskItem"]) input[type="checkbox"]:not(.ant-checkbox-input),
-.doc-content :where(li[data-type="taskItem"]) input[type="checkbox"] {
+.tiptap-editor :where(li[data-type="taskItem"]) input[type="checkbox"]:not(.ant-checkbox-input):not(.task-item-checkbox-input),
+.doc-content :where(li[data-type="taskItem"]) input[type="checkbox"]:not(.task-item-checkbox-input) {
   -webkit-appearance: none;
   appearance: none;
   width: var(--task-checkbox-size);
@@ -1452,19 +1455,19 @@ pre.code-block-view {
   transform: translateY(-1px); /* 微调视觉居中 */
 }
 
-.tiptap-editor :where(li[data-type="taskItem"]) input[type="checkbox"]:not(.ant-checkbox-input):hover,
-.doc-content :where(li[data-type="taskItem"]) input[type="checkbox"]:hover {
+.tiptap-editor :where(li[data-type="taskItem"]) input[type="checkbox"]:not(.ant-checkbox-input):not(.task-item-checkbox-input):hover,
+.doc-content :where(li[data-type="taskItem"]) input[type="checkbox"]:not(.task-item-checkbox-input):hover {
   border-color: var(--color-border-strong);
 }
 
-.tiptap-editor :where(li[data-type="taskItem"]) input[type="checkbox"]:not(.ant-checkbox-input):checked,
-.doc-content :where(li[data-type="taskItem"]) input[type="checkbox"]:checked {
+.tiptap-editor :where(li[data-type="taskItem"]) input[type="checkbox"]:not(.ant-checkbox-input):not(.task-item-checkbox-input):checked,
+.doc-content :where(li[data-type="taskItem"]) input[type="checkbox"]:not(.task-item-checkbox-input):checked {
   background-color: #15303d;
   border-color: #15303d;
 }
 
-.tiptap-editor :where(li[data-type="taskItem"]) input[type="checkbox"]:not(.ant-checkbox-input):checked::after,
-.doc-content :where(li[data-type="taskItem"]) input[type="checkbox"]:checked::after {
+.tiptap-editor :where(li[data-type="taskItem"]) input[type="checkbox"]:not(.ant-checkbox-input):not(.task-item-checkbox-input):checked::after,
+.doc-content :where(li[data-type="taskItem"]) input[type="checkbox"]:not(.task-item-checkbox-input):checked::after {
   content: "";
   position: absolute;
   top: 1px;
