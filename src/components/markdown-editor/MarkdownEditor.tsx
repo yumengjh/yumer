@@ -13,7 +13,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import Underline from "@tiptap/extension-underline";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
-import Link from "@tiptap/extension-link";
+import { LinkExtension } from "./extensions/linkExtension";
 import { TextStyle } from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import Highlight from "@tiptap/extension-highlight";
@@ -50,6 +50,7 @@ import { EditorContextProvider } from "./EditorContext";
 import Toolbar from "./Toolbar";
 import FloatingSelectionToolbar from "./Toolbar/FloatingSelectionToolbar";
 import BlockToolbar from "./BlockToolbar";
+import LinkToolbar from "./LinkToolbar";
 import TableInteractions from "./TableInteractions";
 import TableOfContents from "./TableOfContents";
 import AppLoader from "@/components/AppLoader";
@@ -425,12 +426,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
             return ReactNodeViewRenderer(TaskItemView);
           },
         }),
-        Link.configure({
-          openOnClick: false,
-          HTMLAttributes: {
-            class: "tiptap-link",
-          },
-        }),
+        LinkExtension.configure(),
         TextStyle,
         ListTypography,
         Color,
@@ -646,6 +642,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
               <EditorContent editor={editor} />
               {editable && <TableInteractions wrapperRef={wrapperRef} />}
               {editable && <BlockToolbar wrapperRef={wrapperRef} />}
+              {editable && <LinkToolbar editor={editor} />}
             </>
           )}
           </div>

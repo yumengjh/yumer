@@ -1,0 +1,101 @@
+/* Link Hover Toolbar */
+.link-hover-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  background: var(--color-bg-elevated, #fff);
+  border: 1px solid var(--color-border-secondary, #f0f0f0);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  z-index: 1000;
+  pointer-events: auto;
+  cursor: default;
+  user-select: none;
+  animation: link-toolbar-fade-in 0.15s ease-out;
+}
+
+@keyframes link-toolbar-fade-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -100%) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -100%) translateY(0);
+  }
+}
+
+.link-toolbar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  color: var(--color-text-secondary, rgba(0, 0, 0, 0.65));
+  transition: background 0.15s, color 0.15s;
+}
+
+.link-toolbar-btn:hover {
+  background: var(--color-bg-text-hover, rgba(0, 0, 0, 0.06));
+  color: var(--color-text, rgba(0, 0, 0, 0.88));
+}
+
+/* Copy success state — matches code block pattern */
+.link-toolbar-btn.is-copied {
+  color: #52c41a;
+}
+
+/* Edit mode */
+.link-hover-toolbar--editing {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 320px;
+  padding: 10px 12px;
+}
+
+/* Edit field row with icon */
+.link-edit-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.link-edit-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  color: var(--color-text-tertiary, rgba(0, 0, 0, 0.45));
+  font-size: 12px;
+}
+
+.link-edit-icon--text {
+  font-weight: 600;
+  font-family: serif;
+}
+
+.link-edit-input {
+  flex: 1;
+}
+
+/* Edit action bar */
+.link-edit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border-secondary, #f0f0f0);
+}
+
+.link-edit-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
