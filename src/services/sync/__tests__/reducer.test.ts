@@ -303,6 +303,44 @@ describe("sync reducer", () => {
     );
   });
 
+  it("carries server sortKey into a follow-up dirty update after move ack", () => {
+    let state = createInitialSyncState("doc_1", "root_1", 3);
+    state = enqueueChange(state, {
+      clientId: "client_move",
+      blockId: "block_move",
+      opType: "move",
+      sortKey: "002000",
+    });
+    state = markBatchInflight(state, "batch_move_1", ["client_move"], false);
+
+    state = enqueueChange(state, {
+      clientId: "client_move",
+      blockId: "block_move",
+      opType: "update",
+      payload: {
+        type: "paragraph",
+        attrs: { clientId: "client_move", blockId: "block_move", sortKey: "002000" },
+        content: [{ type: "text", text: "typed while move inflight" }],
+      },
+    });
+
+    state = resolveBatchSuccess(state, "batch_move_1", [
+      {
+        operation: "move",
+        success: true,
+        blockId: "block_move",
+        sortKey: "001500",
+      },
+    ]);
+
+    expect(state.dirtyOrder).toEqual(["client_move"]);
+    expect(state.entries.client_move.sortKey).toBe("001500");
+    expect((state.entries.client_move.payload as { attrs?: Record<string, unknown> }).attrs).toMatchObject({
+      sortKey: "001500",
+      "data-sort-key": "001500",
+    });
+  });
+
   it("turns a delete made to a newly created block while create is inflight into a follow-up delete", () => {
     let state = createInitialSyncState("doc_1", "root_1", 3);
     state = enqueueChange(state, {

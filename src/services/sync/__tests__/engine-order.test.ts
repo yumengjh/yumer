@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyCreateAck, deriveSyncEntries } from "../engine";
+import { applyCreateAck, applyServerAck, deriveSyncEntries } from "../engine";
 import type { TiptapDoc } from "@/services/tiptap-converter";
 
 describe("deriveSyncEntries order handling", () => {
@@ -459,5 +459,25 @@ describe("deriveSyncEntries order handling", () => {
     expect(patched.content[0].attrs?.["data-block-id"]).toBe("b_new");
     expect(patched.content[0].attrs?.sortKey).toBe("000984");
     expect(patched.content[0].attrs?.["data-sort-key"]).toBe("000984");
+  });
+
+  it("patches server sortKey returned by move ack by block id", () => {
+    const doc: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_existing", blockId: "b_existing", sortKey: "002000" },
+        },
+      ],
+    };
+
+    const patched = applyServerAck(doc, [
+      { blockId: "b_existing", sortKey: "001500" },
+    ]);
+
+    expect(patched.content[0].attrs?.blockId).toBe("b_existing");
+    expect(patched.content[0].attrs?.sortKey).toBe("001500");
+    expect(patched.content[0].attrs?.["data-sort-key"]).toBe("001500");
   });
 });

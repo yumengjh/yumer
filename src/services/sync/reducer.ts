@@ -226,6 +226,26 @@ function withServerBlockId(
   };
 }
 
+function withServerSortKey(entry: SyncEntry, sortKey: string): SyncEntry {
+  const payload = entry.payload
+    ? {
+        ...entry.payload,
+        attrs: {
+          ...((entry.payload.attrs as Record<string, unknown> | undefined) ??
+            {}),
+          sortKey,
+          "data-sort-key": sortKey,
+        },
+      }
+    : entry.payload;
+
+  return {
+    ...entry,
+    sortKey,
+    payload,
+  };
+}
+
 export function resolveBatchSuccess(
   state: SyncReducerState,
   batchId: string,
@@ -288,6 +308,11 @@ export function resolveBatchSuccess(
         result.blockId,
         result.sortKey,
       );
+      continue;
+    }
+
+    if (result.sortKey) {
+      nextEntries[clientId] = withServerSortKey(currentEntry, result.sortKey);
     }
   }
 

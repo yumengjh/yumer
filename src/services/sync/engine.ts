@@ -422,13 +422,27 @@ export function applyCreateAck(
   doc: TiptapDoc,
   mappings: Array<{ clientId: string; blockId: string; sortKey?: string }>,
 ): TiptapDoc {
+  return applyServerAck(doc, mappings);
+}
+
+export function applyServerAck(
+  doc: TiptapDoc,
+  mappings: Array<{ clientId?: string; blockId: string; sortKey?: string }>,
+): TiptapDoc {
   if (!Array.isArray(doc.content) || mappings.length === 0) return doc;
   const ackByClientId = new Map<
     string,
     { blockId: string; sortKey?: string }
   >();
+  const ackByBlockId = new Map<string, { blockId: string; sortKey?: string }>();
   for (const item of mappings) {
-    ackByClientId.set(item.clientId, {
+    if (item.clientId) {
+      ackByClientId.set(item.clientId, {
+        blockId: item.blockId,
+        sortKey: item.sortKey,
+      });
+    }
+    ackByBlockId.set(item.blockId, {
       blockId: item.blockId,
       sortKey: item.sortKey,
     });
@@ -437,8 +451,9 @@ export function applyCreateAck(
   let changed = false;
   const content = doc.content.map((node) => {
     const identity = readIdentityFromAttrs(node.attrs);
-    if (!identity.clientId) return node;
-    const ack = ackByClientId.get(identity.clientId);
+    const ack =
+      (identity.clientId ? ackByClientId.get(identity.clientId) : undefined) ??
+      (identity.blockId ? ackByBlockId.get(identity.blockId) : undefined);
     if (!ack) return node;
     const nextAttrs = { ...(node.attrs ?? {}) };
     let nodeChanged = false;

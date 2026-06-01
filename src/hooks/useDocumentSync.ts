@@ -3,7 +3,7 @@ import type { TiptapDoc } from "@/services/tiptap-converter";
 import { postSyncBatch } from "@/services/sync/api";
 import { selectSyncBatchOperations } from "@/services/sync/batching";
 import { summarizeSyncBatchFailures } from "@/services/sync/batch-failure";
-import { applyCreateAck } from "@/services/sync/engine";
+import { applyServerAck } from "@/services/sync/engine";
 import { collectOrphanedCreateDeletes } from "@/services/sync/orphaned-create";
 import {
   clearPendingCommit,
@@ -316,6 +316,18 @@ export function useDocumentSync({
                 blockId: result.blockId!,
                 sortKey: result.sortKey,
               }));
+            const serverAckMappings = response.results
+              .filter(
+                (result) =>
+                  result.success &&
+                  result.blockId &&
+                  (result.clientId || result.sortKey),
+              )
+              .map((result) => ({
+                clientId: result.clientId,
+                blockId: result.blockId!,
+                sortKey: result.sortKey,
+              }));
 
             const currentSnapshot = snapshotRef.current;
             const orphanedCreateDeletes = collectOrphanedCreateDeletes(
@@ -331,8 +343,8 @@ export function useDocumentSync({
                 );
               });
             }
-            if (currentSnapshot && createMappings.length > 0) {
-              const patched = applyCreateAck(currentSnapshot, createMappings);
+            if (currentSnapshot && serverAckMappings.length > 0) {
+              const patched = applyServerAck(currentSnapshot, serverAckMappings);
               if (onContentPatched && patched !== currentSnapshot) {
                 const applied = onContentPatched(patched);
                 snapshotRef.current =
