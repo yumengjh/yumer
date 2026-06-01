@@ -1,4 +1,4 @@
-import type { CodeCleanupActionKey } from "../code/codeBlockCleanup";
+import type { EditorCleanupActionKey } from "../code/editorCleanup";
 
 export const titleLevelItems = [
   { key: "0", label: "正文", shortcut: "Alt Ctrl 0", size: "body" as const },
@@ -50,6 +50,7 @@ export const codeLanguageItems = [
 export const codeCleanupItems: readonly CodeCleanupMenuItem[] = [
   { key: "removeTrailingBlankLines", label: "删除行尾空行" },
   { key: "removeEmptyCodeBlocks", label: "删除空代码块" },
+  { key: "convertSelectedListsToInline", label: "列表转横排（中文逗号）" },
   { key: "divider-content", type: "divider" },
   { key: "collapseStatusBars", label: "折叠状态栏" },
   { key: "expandStatusBars", label: "展开状态栏" },
@@ -59,7 +60,7 @@ export const codeCleanupItems: readonly CodeCleanupMenuItem[] = [
 ] as const;
 
 export type CodeCleanupMenuItem =
-  | { key: CodeCleanupActionKey; label: string }
+  | { key: EditorCleanupActionKey; label: string }
   | { key: string; type: "divider" };
 
 export const orderedListTypeItems = [

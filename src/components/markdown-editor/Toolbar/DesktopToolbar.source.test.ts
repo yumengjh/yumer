@@ -11,7 +11,7 @@ describe("DesktopToolbar code cleanup integration", () => {
 
     expect(source).toContain('id: "code-cleanup"');
     expect(source).toContain('type: "code-cleanup-picker"');
-    expect(source).toContain('useState<CodeCleanupActionKey>(');
+    expect(source).toContain('useState<EditorCleanupActionKey>(');
     expect(source).toContain('"removeTrailingBlankLines"');
     expect(source).toContain('collapseStatusBars');
     expect(source).toContain('expandStatusBars');
@@ -20,8 +20,8 @@ describe("DesktopToolbar code cleanup integration", () => {
     expect(source).toContain('runCodeCleanupAction(defaultCodeCleanupAction)');
     expect(source).toContain('setDefaultCodeCleanupAction(cleanupItem.key)');
     expect(source).toContain('runCodeCleanupAction(cleanupItem.key)');
-    expect(source).toContain('cleanupItem.type === "divider"');
-    expect(source).toContain('cleanupCodeBlocks(tiptap, action)');
+    expect(source).toContain('isCodeCleanupActionItem(cleanupItem)');
+    expect(source).toContain('runEditorCleanupAction(tiptap, action)');
     expect(source).toContain('result.affectedCount');
   });
 });

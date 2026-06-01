@@ -49,9 +49,9 @@ import TablePicker from "./TablePicker";
 import LinkPickerPopup from "./LinkPickerPopup";
 import SplitDropdown from "./SplitDropdown";
 import {
-  cleanupCodeBlocks,
-  type CodeCleanupActionKey,
-} from "../code/codeBlockCleanup";
+  runEditorCleanupAction,
+  type EditorCleanupActionKey,
+} from "../code/editorCleanup";
 import {
   getToolbarState,
   isToolbarItemActive,
@@ -153,7 +153,7 @@ export default function DesktopToolbar({
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [lastHighlightColor, setLastHighlightColor] = useState(defaultHighlightBlockColor);
   const [lastIndentAction, setLastIndentAction] = useState<"indent" | "outdent">("indent");
-  const [defaultCodeCleanupAction, setDefaultCodeCleanupAction] = useState<CodeCleanupActionKey>(
+  const [defaultCodeCleanupAction, setDefaultCodeCleanupAction] = useState<EditorCleanupActionKey>(
     "removeTrailingBlankLines",
   );
 
@@ -509,10 +509,10 @@ export default function DesktopToolbar({
   );
 
   const runCodeCleanupAction = useCallback(
-    (action: CodeCleanupActionKey) => {
-      const result = cleanupCodeBlocks(tiptap, action);
+    (action: EditorCleanupActionKey) => {
+      const result = runEditorCleanupAction(tiptap, action);
       const messages: Record<
-        CodeCleanupActionKey,
+        EditorCleanupActionKey,
         {
           success: (count: number) => string;
           unchanged: string;
@@ -525,6 +525,10 @@ export default function DesktopToolbar({
         removeEmptyCodeBlocks: {
           success: (count) => `??? ${count} ?????`,
           unchanged: "???????",
+        },
+        convertSelectedListsToInline: {
+          success: (count) => `已将 ${count} 个列表转为横排文本`,
+          unchanged: "选区中没有可转换的列表",
         },
         collapseStatusBars: {
           success: (count) => `??? ${count} ????????`,
