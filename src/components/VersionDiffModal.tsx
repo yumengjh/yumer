@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Modal, Select, Button, Spin, Tag, Empty, message } from "antd";
 import { SwapOutlined, CloseCircleOutlined } from "@ant-design/icons";
 import htmldiff from "htmldiff-js";
@@ -15,6 +15,8 @@ import {
   versionTreeToHtml,
   annotateBlockChanges,
 } from "../services/version-html";
+import DeferredCodeBlockRenderer from "./DeferredCodeBlockRenderer";
+import "@/components/markdown-editor/styles/editor.css";
 import "./VersionDiffModal.css";
 
 interface VersionDiffModalProps {
@@ -41,7 +43,7 @@ export function VersionDiffModal({ open, onClose, docId }: VersionDiffModalProps
   const [contentLoaded, setContentLoaded] = useState(false);
 
   // 内容缓存：version → HTML
-  const [contentCache] = useState(() => new Map<number, string>());
+  const contentCacheRef = useRef(new Map<number, string>());
 
   // Modal 打开时禁止页面滚动
   useEffect(() => {
@@ -54,33 +56,44 @@ export function VersionDiffModal({ open, onClose, docId }: VersionDiffModalProps
   // 加载修订列表
   useEffect(() => {
     if (!open || !docId) return;
-    contentCache.clear();
-    setLoadingRevisions(true);
-    setSelectedVer(null);
-    setSingleHtml("");
-    setContentLoaded(false);
-    setFromVer(null);
-    setToVer(null);
-    setDiffHtml("");
-    setDiffSummary(null);
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      contentCacheRef.current.clear();
+      setLoadingRevisions(true);
+      setSelectedVer(null);
+      setSingleHtml("");
+      setContentLoaded(false);
+      setFromVer(null);
+      setToVer(null);
+      setDiffHtml("");
+      setDiffSummary(null);
 
-    getRevisions(docId, 1, 100)
-      .then((res) => {
-        const sorted = [...res.items].sort((a, b) => b.docVer - a.docVer);
-        setRevisions(sorted);
-        // 默认选中最新版本
-        if (sorted.length > 0) {
-          setSelectedVer(sorted[0].docVer);
-        }
-      })
-      .catch(() => {})
-      .finally(() => setLoadingRevisions(false));
+      getRevisions(docId, 1, 100)
+        .then((res) => {
+          if (cancelled) return;
+          const sorted = [...res.items].sort((a, b) => b.docVer - a.docVer);
+          setRevisions(sorted);
+          // 默认选中最新版本
+          if (sorted.length > 0) {
+            setSelectedVer(sorted[0].docVer);
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (!cancelled) setLoadingRevisions(false);
+        });
+    }, 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [open, docId]);
 
   // 加载单个版本内容
   const loadVersion = useCallback(
     async (ver: number) => {
-      const cached = contentCache.get(ver);
+      const cached = contentCacheRef.current.get(ver);
       if (cached) {
         setSingleHtml(cached);
         return cached;
@@ -89,7 +102,7 @@ export function VersionDiffModal({ open, onClose, docId }: VersionDiffModalProps
       try {
         const resp = await getVersionContent(docId, ver);
         const html = resp.tree ? versionTreeToHtml(resp.tree) : "";
-        contentCache.set(ver, html);
+        contentCacheRef.current.set(ver, html);
         setSingleHtml(html);
         setContentLoaded(true);
         return html;
@@ -101,7 +114,7 @@ export function VersionDiffModal({ open, onClose, docId }: VersionDiffModalProps
         setLoadingSingle(false);
       }
     },
-    [docId, contentCache],
+    [docId],
   );
 
   // 点击版本列表项
@@ -123,15 +136,18 @@ export function VersionDiffModal({ open, onClose, docId }: VersionDiffModalProps
     setDiffSummary(null);
     // 恢复显示当前选中版本的内容
     if (selectedVer !== null) {
-      const cached = contentCache.get(selectedVer);
+      const cached = contentCacheRef.current.get(selectedVer);
       if (cached) setSingleHtml(cached);
     }
-  }, [selectedVer, contentCache]);
+  }, [selectedVer]);
 
   // 初始自动加载最新版本
   useEffect(() => {
     if (selectedVer !== null && !contentLoaded && !loadingSingle) {
-      loadVersion(selectedVer);
+      const timer = window.setTimeout(() => {
+        void loadVersion(selectedVer);
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
   }, [selectedVer, contentLoaded, loadingSingle, loadVersion]);
 
@@ -149,16 +165,16 @@ export function VersionDiffModal({ open, onClose, docId }: VersionDiffModalProps
       const diffResp = await getVersionDiff(docId, fromVer, toVer);
 
       // 转换两个版本为 HTML（优先用缓存）
-      let fromHtml = contentCache.get(fromVer);
+      let fromHtml = contentCacheRef.current.get(fromVer);
       if (!fromHtml && diffResp.fromContent?.tree) {
         fromHtml = versionTreeToHtml(diffResp.fromContent.tree);
-        contentCache.set(fromVer, fromHtml);
+        contentCacheRef.current.set(fromVer, fromHtml);
       }
 
-      let toHtml = contentCache.get(toVer);
+      let toHtml = contentCacheRef.current.get(toVer);
       if (!toHtml && diffResp.toContent?.tree) {
         toHtml = versionTreeToHtml(diffResp.toContent.tree);
-        contentCache.set(toVer, toHtml);
+        contentCacheRef.current.set(toVer, toHtml);
       }
 
       if (fromHtml && toHtml) {
@@ -175,7 +191,7 @@ export function VersionDiffModal({ open, onClose, docId }: VersionDiffModalProps
     } finally {
       setLoadingDiff(false);
     }
-  }, [docId, fromVer, toVer, contentCache]);
+  }, [docId, fromVer, toVer]);
 
   // 版本选项列表
   const versionOptions = useMemo(
@@ -196,6 +212,10 @@ export function VersionDiffModal({ open, onClose, docId }: VersionDiffModalProps
     () => revisions.find((r) => r.docVer === toVer),
     [revisions, toVer],
   );
+  const renderedHtml = diffHtml || singleHtml;
+  const renderedHtmlKey = diffHtml
+    ? `diff-${fromVer ?? "none"}-${toVer ?? "none"}`
+    : `single-${selectedVer ?? "none"}`;
 
   return (
     <Modal
@@ -357,16 +377,22 @@ export function VersionDiffModal({ open, onClose, docId }: VersionDiffModalProps
               <div className="version-diff__loading">
                 <Spin />
               </div>
-            ) : diffHtml ? (
-              <div
-                className="version-diff__diff-view"
-                dangerouslySetInnerHTML={{ __html: diffHtml }}
-              />
-            ) : singleHtml ? (
-              <div
-                className="version-diff__preview"
-                dangerouslySetInnerHTML={{ __html: singleHtml }}
-              />
+            ) : renderedHtml ? (
+              <>
+                <div
+                  className={`version-diff__doc-shell tiptap-card ${
+                    diffHtml ? "version-diff__doc-shell--diff" : ""
+                  }`}
+                >
+                  <div
+                    className={`version-diff__editor-content doc-content tiptap-editor ${
+                      diffHtml ? "version-diff__diff-view" : "version-diff__preview"
+                    }`}
+                    dangerouslySetInnerHTML={{ __html: renderedHtml }}
+                  />
+                </div>
+                <DeferredCodeBlockRenderer key={renderedHtmlKey} />
+              </>
             ) : (
               <Empty
                 description="选择一个版本查看内容"

@@ -1,6 +1,6 @@
 /**
- * 服务端 Block tree → HTML 渲染
- * 使用 Tiptap 官方静态渲染器，避免运行时依赖 jsdom
+ * Server/client block tree to HTML rendering.
+ * Keeps legacy payload.html, backend-rendered html, and Tiptap JSON on one path.
  */
 import { renderToHTMLString } from "@tiptap/static-renderer/pm/html-string";
 import {
@@ -22,10 +22,13 @@ interface Block {
 }
 
 function rewriteImageSrc(html: string): string {
-  return html.replace(/(<img\b[^>]*\bsrc=["'])([^"']+)(["'][^>]*>)/gi, (_match, prefix: string, src: string, suffix: string) => {
-    if (/^(https?:|data:|blob:)/i.test(src)) return `${prefix}${src}${suffix}`;
-    return `${prefix}${resolveApiUrl(src)}${suffix}`;
-  });
+  return html.replace(
+    /(<img\b[^>]*\bsrc=["'])([^"']+)(["'][^>]*>)/gi,
+    (_match, prefix: string, src: string, suffix: string) => {
+      if (/^(https?:|data:|blob:)/i.test(src)) return `${prefix}${src}${suffix}`;
+      return `${prefix}${resolveApiUrl(src)}${suffix}`;
+    },
+  );
 }
 
 function renderCodeBlockPlaceholder(block: Block): string {
@@ -46,8 +49,33 @@ function renderCodeBlockPlaceholder(block: Block): string {
   ].join("");
 }
 
+export function renderBlockToHtml(block: Block): string {
+  if (block.type === "codeBlock") return renderCodeBlockPlaceholder(block);
+
+  const blockHtml = typeof block.html === "string" ? block.html : "";
+  if (blockHtml.trim()) return rewriteImageSrc(blockHtml);
+
+  const legacyHtml =
+    typeof block.payload?.html === "string" ? block.payload.html : "";
+  if (legacyHtml.trim()) return rewriteImageSrc(legacyHtml);
+
+  try {
+    const node = block.payload as unknown as TiptapNode;
+    const doc: TiptapDoc = { type: "doc", content: [node] };
+    return rewriteImageSrc(
+      renderToHTMLString({
+        extensions: serializationExtensions,
+        content: doc,
+      }),
+    );
+  } catch (error) {
+    console.warn("[generate-block-html] block render failed, skipped:", block.blockId, error);
+    return "";
+  }
+}
+
 /**
- * 从 block tree 生成 HTML，兼容旧格式（payload.html）和新格式（Tiptap JSON）
+ * Render a block tree into HTML fragments.
  */
 export function renderBlockTreeToHtml(tree: Block): string {
   const flat: Block[] = [];
@@ -69,32 +97,5 @@ export function renderBlockTreeToHtml(tree: Block): string {
 
   if (contentBlocks.length === 0) return "";
 
-  return contentBlocks
-    .map((b) => {
-      if (b.type === "codeBlock") return renderCodeBlockPlaceholder(b);
-
-      const blockHtml = typeof b.html === "string" ? b.html : "";
-      if (blockHtml.trim()) return rewriteImageSrc(blockHtml);
-
-      const legacyHtml =
-        typeof b.payload?.html === "string" ? b.payload.html : "";
-      if (legacyHtml.trim()) return rewriteImageSrc(legacyHtml);
-
-      try {
-        const node = b.payload as unknown as TiptapNode;
-        const doc: TiptapDoc = { type: "doc", content: [node] };
-        return rewriteImageSrc(renderToHTMLString({
-          extensions: serializationExtensions,
-          content: doc,
-        }));
-      } catch (e) {
-        console.warn(
-          "[generate-block-html] block 渲染失败，已跳过:",
-          b.blockId,
-          e,
-        );
-        return "";
-      }
-    })
-    .join("");
+  return contentBlocks.map(renderBlockToHtml).join("");
 }
