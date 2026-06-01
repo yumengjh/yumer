@@ -1,27 +1,26 @@
 import { useRef, useState } from "react";
 import { Drawer, Button, Divider } from "antd";
+import { EllipsisOutlined, HighlightOutlined } from "@ant-design/icons";
 import {
-  UndoOutlined,
-  RedoOutlined,
-  BoldOutlined,
-  ItalicOutlined,
-  StrikethroughOutlined,
-  UnderlineOutlined,
-  UnorderedListOutlined,
-  OrderedListOutlined,
-  CheckSquareOutlined,
-  CodeOutlined,
-  BgColorsOutlined,
-  TableOutlined,
-  MinusOutlined,
-  EllipsisOutlined,
-  ClearOutlined,
-  AlignLeftOutlined,
-  AlignCenterOutlined,
-  AlignRightOutlined,
-  HighlightOutlined,
-  PictureOutlined,
-} from "@ant-design/icons";
+  UndoIcon,
+  RedoIcon,
+  BoldIcon,
+  ItalicIcon,
+  StrikethroughIcon,
+  UnderlineIcon,
+  UnorderedListIcon,
+  OrderedListIcon,
+  CheckListIcon,
+  CodeIcon,
+  BgColorIcon,
+  TableIcon,
+  DividerIcon,
+  ClearFormatIcon,
+  AlignLeftIcon,
+  AlignCenterIcon,
+  AlignRightIcon,
+  PictureIcon,
+} from "./icons";
 import { useToolbarActions } from "./useToolbarActions";
 import { uploadImage } from "@/services/images";
 import { useMarkdownEditorContext } from "../EditorContext";
@@ -48,18 +47,18 @@ export default function MobileToolbar() {
 
   // 高频操作列表（外层横向滑动区）
   const quickActions = [
-    { id: "undo",         icon: <UndoOutlined />,           label: "撤销" },
-    { id: "redo",         icon: <RedoOutlined />,           label: "重做" },
-    { id: "bold",         icon: <BoldOutlined />,           label: "加粗" },
-    { id: "italic",       icon: <ItalicOutlined />,         label: "斜体" },
-    { id: "strike",       icon: <StrikethroughOutlined />,  label: "删除线" },
-    { id: "underline",    icon: <UnderlineOutlined />,      label: "下划线" },
-    { id: "bullet-list",  icon: <UnorderedListOutlined />,  label: "无序列表" },
-    { id: "ordered-list", icon: <OrderedListOutlined />,    label: "有序列表" },
-    { id: "check-list",   icon: <CheckSquareOutlined />,    label: "任务列表" },
-    { id: "code-block",   icon: <CodeOutlined />,           label: "代码块" },
-    { id: "divider",      icon: <MinusOutlined />,          label: "分割线" },
-    { id: "clearFormat",  icon: <ClearOutlined />,          label: "清除格式" },
+    { id: "undo",         icon: <UndoIcon />,           label: "撤销" },
+    { id: "redo",         icon: <RedoIcon />,           label: "重做" },
+    { id: "bold",         icon: <BoldIcon />,           label: "加粗" },
+    { id: "italic",       icon: <ItalicIcon />,         label: "斜体" },
+    { id: "strike",       icon: <StrikethroughIcon />,  label: "删除线" },
+    { id: "underline",    icon: <UnderlineIcon />,      label: "下划线" },
+    { id: "bullet-list",  icon: <UnorderedListIcon />,  label: "无序列表" },
+    { id: "ordered-list", icon: <OrderedListIcon />,    label: "有序列表" },
+    { id: "check-list",   icon: <CheckListIcon />,      label: "任务列表" },
+    { id: "code-block",   icon: <CodeIcon />,           label: "代码块" },
+    { id: "divider",      icon: <DividerIcon />,        label: "分割线" },
+    { id: "clearFormat",  icon: <ClearFormatIcon />,    label: "清除格式" },
   ];
 
   const handleHeading = (level: string) => {
@@ -201,9 +200,9 @@ export default function MobileToolbar() {
         <div className="drawer-section">
           <h4>排版</h4>
           <div className="drawer-grid">
-            <Button icon={<AlignLeftOutlined />}   type={actions.isActive("align-left")   ? "primary" : "default"} onClick={() => { actions.handleClick("align-left");   setMoreOpen(false); }}>左对齐</Button>
-            <Button icon={<AlignCenterOutlined />} type={actions.isActive("align-center") ? "primary" : "default"} onClick={() => { actions.handleClick("align-center"); setMoreOpen(false); }}>居中</Button>
-            <Button icon={<AlignRightOutlined />}  type={actions.isActive("align-right")  ? "primary" : "default"} onClick={() => { actions.handleClick("align-right");  setMoreOpen(false); }}>右对齐</Button>
+            <Button icon={<AlignLeftIcon />}   type={actions.isActive("align-left")   ? "primary" : "default"} onClick={() => { actions.handleClick("align-left");   setMoreOpen(false); }}>左对齐</Button>
+            <Button icon={<AlignCenterIcon />} type={actions.isActive("align-center") ? "primary" : "default"} onClick={() => { actions.handleClick("align-center"); setMoreOpen(false); }}>居中</Button>
+            <Button icon={<AlignRightIcon />}  type={actions.isActive("align-right")  ? "primary" : "default"} onClick={() => { actions.handleClick("align-right");  setMoreOpen(false); }}>右对齐</Button>
           </div>
         </div>
 
@@ -213,9 +212,9 @@ export default function MobileToolbar() {
           <h4>颜色与插入</h4>
           <div className="drawer-grid">
             <Button icon={<HighlightOutlined />} onClick={() => { actions.setTextColor("#1677ff"); setMoreOpen(false); }}>蓝色文字</Button>
-            <Button icon={<BgColorsOutlined />}  onClick={() => { actions.setBgColor("#FFF2CC");  setMoreOpen(false); }}>高亮背景</Button>
-            <Button icon={<TableOutlined />}     onClick={handleTable}>插入 3×3 表格</Button>
-            <Button icon={<PictureOutlined />}   onClick={() => imageInputRef.current?.click()}>上传图片</Button>
+            <Button icon={<BgColorIcon />}  onClick={() => { actions.setBgColor("#FFF2CC");  setMoreOpen(false); }}>高亮背景</Button>
+            <Button icon={<TableIcon />}     onClick={handleTable}>插入 3×3 表格</Button>
+            <Button icon={<PictureIcon />}   onClick={() => imageInputRef.current?.click()}>上传图片</Button>
           </div>
         </div>
       </Drawer>

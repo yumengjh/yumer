@@ -107,7 +107,7 @@
   border-radius: 4px;
   color: var(--toolbar-icon);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 18px;
   transition:
     background-color 0.15s ease,
     color 0.15s ease;
@@ -435,11 +435,18 @@
 
 /* 工具栏中 antd 下拉菜单的箭头颜色 */
 .toolbar .ant-dropdown-trigger .anticon-down {
-  color: var(--toolbar-dropdown-arrow);
+  color: #999;
+  font-size: 7px;
+  transform: rotate(180deg);
+  transition: transform 0.2s ease, color 0.2s ease;
 }
 
 .toolbar .ant-dropdown-trigger:hover .anticon-down {
-  color: var(--toolbar-dropdown-arrow-hover);
+  color: #666;
+}
+
+.toolbar .ant-dropdown-trigger.is-open .anticon-down {
+  transform: rotate(0deg);
 }
 
 .dropdown-caret {
@@ -447,9 +454,15 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  color: var(--toolbar-dropdown-arrow);
-  transition: color 0.2s;
+  color: #999;
+  font-size: 7px;
+  transform: rotate(180deg);
+  transition: transform 0.2s ease, color 0.2s ease;
   margin-left: 2px;
+}
+
+.dropdown-trigger-button.is-open .dropdown-caret {
+  transform: rotate(0deg);
 }
 
 .dropdown-trigger-button:hover .dropdown-caret {
@@ -511,7 +524,7 @@
 .color-icon-indicator {
   display: block;
   width: 14px;
-  height: 3px;
+  height: 2px;
   border-radius: 1px;
   margin-top: 1px;
 }
@@ -554,7 +567,14 @@
 }
 
 .split-color-button .color-dropdown-arrow {
-  font-size: 9px;
+  font-size: 7px;
+  color: #999;
+  transform: rotate(180deg);
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.split-color-button.is-open .color-dropdown-arrow {
+  transform: rotate(0deg);
 }
 
 /* =====================================================
@@ -589,7 +609,7 @@
   border-radius: 4px 0 0 4px;
   color: var(--toolbar-icon);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 18px;
   transition: background-color 0.15s ease, color 0.15s ease;
 }
 
@@ -640,9 +660,14 @@
 }
 
 .split-dropdown-arrow {
-  font-size: 10px;
-  color: var(--toolbar-dropdown-arrow);
-  transition: color 0.2s;
+  font-size: 7px;
+  color: #999;
+  transform: rotate(180deg);
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.split-dropdown.is-open .split-dropdown-arrow {
+  transform: rotate(0deg);
 }
 
 .split-dropdown-trigger:hover .split-dropdown-arrow {
@@ -805,8 +830,14 @@
 }
 
 .dropdown-arrow {
-  font-size: 12px;
-  color: var(--toolbar-dropdown-arrow);
+  font-size: 7px;
+  color: #999;
+  transform: rotate(180deg);
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.dropdown-trigger-button.is-open .dropdown-arrow {
+  transform: rotate(0deg);
 }
 
 @media (max-width: 720px) {
@@ -822,7 +853,7 @@
     min-width: 26px;
     height: 26px;
     padding: 0 4px;
-    font-size: 13px;
+    font-size: 16px;
   }
 
   .dropdown-trigger-button {
@@ -830,7 +861,7 @@
     height: 26px;
     padding: 0 4px 0 5px;
     gap: 2px;
-    font-size: 13px;
+    font-size: 16px;
   }
 
   .dropdown-trigger-button:has(.heading-text) {

@@ -1,6 +1,6 @@
 import { Dropdown, Tooltip } from "antd";
 import type { ReactNode } from "react";
-import { DownOutlined } from "@ant-design/icons";
+import { ChevronIcon } from "./icons";
 import "./style.css";
 
 interface SplitDropdownProps {
@@ -36,7 +36,7 @@ export default function SplitDropdown({
   onOpenChange,
 }: SplitDropdownProps) {
   return (
-    <div className={`split-dropdown ${active ? "is-active" : ""}`}>
+    <div className={`split-dropdown ${active ? "is-active" : ""} ${open ? "is-open" : ""}`}>
       <Tooltip placement="bottom" title={label} trigger="hover" mouseEnterDelay={0.5}>
         <button
           type="button"
@@ -76,7 +76,7 @@ export default function SplitDropdown({
             e.stopPropagation();
           }}
         >
-          <DownOutlined className="split-dropdown-arrow" />
+          <ChevronIcon className="split-dropdown-arrow" />
         </button>
       </Dropdown>
     </div>

@@ -6,8 +6,8 @@ import {
   ArrowDownOutlined,
   ClearOutlined,
   PlusCircleOutlined,
-  LinkOutlined,
 } from "@ant-design/icons";
+import { LinkIcon } from "../Toolbar/icons";
 import type { MenuProps } from "antd";
 
 interface CreateBlockMenuItemsOptions {
@@ -38,7 +38,7 @@ export function createBlockMenuItems({
   ];
 
   if (headingAnchorId) {
-    items.push({ key: "copyAnchorLink", icon: <LinkOutlined />, label: "复制锚点链接" });
+    items.push({ key: "copyAnchorLink", icon: <LinkIcon />, label: "复制锚点链接" });
   }
 
   items.push(

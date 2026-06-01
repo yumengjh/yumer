@@ -4,32 +4,40 @@ import { Dropdown, Tooltip, App, ColorPicker, Divider } from "antd";
 import type { Editor } from "@tiptap/react";
 import type { Selection } from "prosemirror-state";
 import {
-  UndoOutlined,
-  RedoOutlined,
-  ClearOutlined,
-  EditOutlined,
-  BoldOutlined,
-  ItalicOutlined,
-  StrikethroughOutlined,
-  UnderlineOutlined,
-  AlignLeftOutlined,
-  AlignCenterOutlined,
-  AlignRightOutlined,
-  UnorderedListOutlined,
-  OrderedListOutlined,
-  CheckSquareOutlined,
-  LinkOutlined,
-  CodeOutlined,
-  DownOutlined,
-  BgColorsOutlined,
-  TableOutlined,
-  PictureOutlined,
-  MinusOutlined,
-  FormatPainterOutlined,
   PlusOutlined,
   DeleteOutlined,
   CheckOutlined,
 } from "@ant-design/icons";
+import {
+  UndoIcon,
+  RedoIcon,
+  ClearFormatIcon,
+  FormatPainterIcon,
+  CursorIcon,
+  BoldIcon,
+  ItalicIcon,
+  StrikethroughIcon,
+  UnderlineIcon,
+  TextColorIcon,
+  BgColorIcon,
+  AlignLeftIcon,
+  AlignCenterIcon,
+  AlignRightIcon,
+  UnorderedListIcon,
+  OrderedListIcon,
+  CheckListIcon,
+  LinkIcon,
+  CodeIcon,
+  ChevronIcon,
+  TableIcon,
+  PictureIcon,
+  DividerIcon,
+  QuoteIcon,
+  LineHeightIcon,
+  HighlightBlockIcon,
+  IndentIcon,
+  OutdentIcon,
+} from "./icons";
 import { useMarkdownEditorContext } from "../EditorContext";
 import {
   titleLevelItems,
@@ -72,61 +80,10 @@ interface DesktopToolbarProps {
   enabledItemIds?: ReadonlySet<string>;
 }
 
-function QuoteIcon() {
-  return (
-    <svg width="1em" height="1em" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M4.583 17.321C3.553 16.227 3 15 3 13.011c0-3.5 2.457-6.637 6.03-8.188l.893 1.378c-3.335 1.804-3.987 4.145-4.247 5.621.537-.278 1.24-.375 1.929-.311 1.804.167 3.226 1.648 3.226 3.489a3.5 3.5 0 0 1-3.5 3.5 3.871 3.871 0 0 1-2.748-1.179zm10 0C13.553 16.227 13 15 13 13.011c0-3.5 2.457-6.637 6.03-8.188l.893 1.378c-3.335 1.804-3.987 4.145-4.247 5.621.537-.278 1.24-.375 1.929-.311 1.804.167 3.226 1.648 3.226 3.489a3.5 3.5 0 0 1-3.5 3.5 3.871 3.871 0 0 1-2.748-1.179z" />
-    </svg>
-  );
-}
-
 function isCodeCleanupActionItem(
   item: CodeCleanupMenuItem,
 ): item is Extract<CodeCleanupMenuItem, { label: string }> {
   return "label" in item;
-}
-
-function LineHeightIcon() {
-  return (
-    <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="3" y1="6" x2="21" y2="6" />
-      <line x1="3" y1="12" x2="21" y2="12" />
-      <line x1="3" y1="18" x2="21" y2="18" />
-    </svg>
-  );
-}
-
-function HighlightBlockIcon() {
-  return (
-    <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="3" width="18" height="18" rx="2" fill="currentColor" opacity="0.15" />
-      <line x1="7" y1="8" x2="17" y2="8" />
-      <line x1="7" y1="12" x2="14" y2="12" />
-      <line x1="7" y1="16" x2="11" y2="16" />
-    </svg>
-  );
-}
-
-function IndentIcon() {
-  return (
-    <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="3" y1="4" x2="21" y2="4" />
-      <line x1="11" y1="9" x2="21" y2="9" />
-      <line x1="7" y1="14" x2="21" y2="14" />
-      <line x1="11" y1="19" x2="21" y2="19" />
-    </svg>
-  );
-}
-
-function OutdentIcon() {
-  return (
-    <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="3" y1="4" x2="21" y2="4" />
-      <line x1="3" y1="9" x2="13" y2="9" />
-      <line x1="3" y1="14" x2="17" y2="14" />
-      <line x1="3" y1="19" x2="13" y2="19" />
-    </svg>
-  );
 }
 
 export default function DesktopToolbar({
@@ -151,6 +108,7 @@ export default function DesktopToolbar({
   const [tooltipOpen, setTooltipOpen] = useState<Record<string, boolean>>({});
   const [copiedMarks, setCopiedMarks] = useState<Array<{ type: string; attrs?: Record<string, any> }>>([]);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [openColorPicker, setOpenColorPicker] = useState<string | null>(null);
   const [lastHighlightColor, setLastHighlightColor] = useState(defaultHighlightBlockColor);
   const [lastIndentAction, setLastIndentAction] = useState<"indent" | "outdent">("indent");
   const [defaultCodeCleanupAction, setDefaultCodeCleanupAction] = useState<EditorCleanupActionKey>(
@@ -571,13 +529,13 @@ export default function DesktopToolbar({
   };
 
   const alignItems = [
-    { key: "left", label: "左对齐", icon: <AlignLeftOutlined /> },
-    { key: "center", label: "居中", icon: <AlignCenterOutlined /> },
-    { key: "right", label: "右对齐", icon: <AlignRightOutlined /> },
+    { key: "left", label: "左对齐", icon: <AlignLeftIcon /> },
+    { key: "center", label: "居中", icon: <AlignCenterIcon /> },
+    { key: "right", label: "右对齐", icon: <AlignRightIcon /> },
     {
       key: "justify",
       label: "两端对齐",
-      icon: <AlignLeftOutlined style={{ transform: "scaleX(-1)" }} />,
+      icon: <AlignLeftIcon style={{ transform: "scaleX(-1)" }} />,
     },
   ].map((item) => ({
     key: item.key,
@@ -588,12 +546,12 @@ export default function DesktopToolbar({
   const getCurrentAlignment = (): { label: string; icon: ReactNode; key: string } => {
     const align = toolbarState.textAlign;
     const alignMap: Record<string, { label: string; icon: ReactNode }> = {
-      left: { label: "左对齐", icon: <AlignLeftOutlined /> },
-      center: { label: "居中", icon: <AlignCenterOutlined /> },
-      right: { label: "右对齐", icon: <AlignRightOutlined /> },
+      left: { label: "左对齐", icon: <AlignLeftIcon /> },
+      center: { label: "居中", icon: <AlignCenterIcon /> },
+      right: { label: "右对齐", icon: <AlignRightIcon /> },
       justify: {
         label: "两端对齐",
-        icon: <AlignLeftOutlined style={{ transform: "scaleX(-1)" }} />,
+        icon: <AlignLeftIcon style={{ transform: "scaleX(-1)" }} />,
       },
     };
     return { ...(alignMap[align] || alignMap.left), key: align };
@@ -609,12 +567,12 @@ export default function DesktopToolbar({
 
   const toolbarGroups: ToolbarItem[][] = [
     [
-      { id: "undo", label: "撤销", content: <UndoOutlined /> },
-      { id: "redo", label: "重做", content: <RedoOutlined /> },
-      { id: "clearFormat", label: "清除格式", content: <ClearOutlined /> },
-      { id: "format-painter", label: "格式刷", content: <FormatPainterOutlined />, type: "format-painter" },
+      { id: "undo", label: "撤销", content: <UndoIcon /> },
+      { id: "redo", label: "重做", content: <RedoIcon /> },
+      { id: "clearFormat", label: "清除格式", content: <ClearFormatIcon /> },
+      { id: "format-painter", label: "格式刷", content: <FormatPainterIcon />, type: "format-painter" },
     ],
-    [{ id: "cursor", label: "光标", content: <EditOutlined /> }],
+    [{ id: "cursor", label: "光标", content: <CursorIcon /> }],
     [
       {
         id: "text-mode",
@@ -631,15 +589,15 @@ export default function DesktopToolbar({
       {
         id: "code-cleanup",
         label: "\u4ee3\u7801\u6e05\u7406",
-        content: <ClearOutlined />,
+        content: <ClearFormatIcon />,
         type: "code-cleanup-picker",
       },
     ],
     [
-      { id: "bold", label: "加粗", content: <BoldOutlined /> },
-      { id: "italic", label: "斜体", content: <ItalicOutlined /> },
-      { id: "strike", label: "删除线", content: <StrikethroughOutlined /> },
-      { id: "underline", label: "下划线", content: <UnderlineOutlined /> },
+      { id: "bold", label: "加粗", content: <BoldIcon /> },
+      { id: "italic", label: "斜体", content: <ItalicIcon /> },
+      { id: "strike", label: "删除线", content: <StrikethroughIcon /> },
+      { id: "underline", label: "下划线", content: <UnderlineIcon /> },
     ],
     [
       {
@@ -647,7 +605,7 @@ export default function DesktopToolbar({
         label: "文字颜色",
         content: (
           <span className="color-icon-wrap">
-            <EditOutlined />
+            <TextColorIcon />
             <span className="color-icon-indicator" style={{ backgroundColor: selectedColor }} />
           </span>
         ),
@@ -658,7 +616,7 @@ export default function DesktopToolbar({
         label: "背景颜色",
         content: (
           <span className="color-icon-wrap">
-            <BgColorsOutlined />
+            <BgColorIcon />
             <span className="color-icon-indicator" style={{ backgroundColor: selectedBgColor }} />
           </span>
         ),
@@ -703,13 +661,13 @@ export default function DesktopToolbar({
       },
     ],
     [
-      { id: "bullet-list", label: "无序列表", content: <UnorderedListOutlined /> },
+      { id: "bullet-list", label: "无序列表", content: <UnorderedListIcon /> },
       {
         id: "ordered-list",
         label: "有序列表",
         content: (
           <span className="dropdown-icon-text">
-            <OrderedListOutlined />
+            <OrderedListIcon />
             <span className="text-label">
               {orderedListTypeItems.find((item) => item.key === getCurrentOrderedListType())
                 ?.label || "1."}
@@ -718,20 +676,20 @@ export default function DesktopToolbar({
         ),
         type: "dropdown",
       },
-      { id: "check-list", label: "待办列表", content: <CheckSquareOutlined /> },
+      { id: "check-list", label: "待办列表", content: <CheckListIcon /> },
     ],
     [
       { id: "blockquote", label: "引用", content: <QuoteIcon /> },
-      { id: "divider", label: "分割线", content: <MinusOutlined /> },
-      { id: "image", label: "图片", content: <PictureOutlined /> },
+      { id: "divider", label: "分割线", content: <DividerIcon /> },
+      { id: "image", label: "图片", content: <PictureIcon /> },
       {
         id: "code-language",
         label: "代码语言",
-        content: <CodeOutlined />,
+        content: <CodeIcon />,
         type: "dropdown",
       },
-      { id: "link", label: "链接", content: <LinkOutlined />, type: "link-picker" },
-      { id: "table", label: "表格", content: <TableOutlined />, type: "dropdown" },
+      { id: "link", label: "链接", content: <LinkIcon />, type: "link-picker" },
+      { id: "table", label: "表格", content: <TableIcon />, type: "dropdown" },
     ],
   ];
 
@@ -1017,7 +975,7 @@ export default function DesktopToolbar({
               const currentColor = isBgColor ? selectedBgColor : selectedColor;
               const handleSelect = isBgColor ? handleBgColorSelect : handleColorSelect;
               return (
-                <div className="split-color-button" key={item.id}>
+                <div className={`split-color-button ${openColorPicker === item.id ? "is-open" : ""}`} key={item.id}>
                   <Tooltip title={item.label} trigger="hover" mouseEnterDelay={0.5}>
                     <button
                       type="button"
@@ -1047,7 +1005,7 @@ export default function DesktopToolbar({
                       }}
                     >
                       <span className="color-icon-wrap">
-                        {isBgColor ? <BgColorsOutlined /> : <EditOutlined />}
+                        {isBgColor ? <BgColorIcon /> : <TextColorIcon />}
                         <span className="color-icon-indicator" style={{ backgroundColor: currentColor }} />
                       </span>
                     </button>
@@ -1057,6 +1015,7 @@ export default function DesktopToolbar({
                     align={{ offset: [0, 4] }}
                     classNames={{ root: "toolbar-color-dropdown" }}
                     onOpenChange={(open) => {
+                      setOpenColorPicker(open ? item.id : null);
                       if (open) {
                         if (tiptap) {
                           savedSelectionRef.current = tiptap.state.selection;
@@ -1120,7 +1079,7 @@ export default function DesktopToolbar({
                         <div className="color-picker-section">
                           <div className="color-picker-header-advanced">
                             <div className="color-picker-header">
-                              <BgColorsOutlined style={{ fontSize: "12px" }} />
+                              <BgColorIcon style={{ fontSize: "12px" }} />
                               <span>更多颜色</span>
                             </div>
                             <div className="color-picker-advanced">
@@ -1153,14 +1112,14 @@ export default function DesktopToolbar({
                       disabled={!editorReady}
                       aria-label={`${item.label} - 选择颜色`}
                     >
-                      <DownOutlined className="color-dropdown-arrow" />
+                      <ChevronIcon className="color-dropdown-arrow" />
                     </button>
                   </Dropdown>
                 </div>
               );
             })() : item.type === "highlight-block-picker" ? (() => {
               return (
-                <div className="split-color-button" key={item.id}>
+                <div className={`split-color-button ${openColorPicker === item.id ? "is-open" : ""}`} key={item.id}>
                   <Tooltip title={item.label} trigger="hover" mouseEnterDelay={0.5}>
                     <button
                       type="button"
@@ -1188,6 +1147,9 @@ export default function DesktopToolbar({
                     placement="bottomLeft"
                     align={{ offset: [0, 4] }}
                     classNames={{ root: "toolbar-color-dropdown" }}
+                    onOpenChange={(open) => {
+                      setOpenColorPicker(open ? item.id : null);
+                    }}
                     popupRender={() => (
                       <div className="color-picker-dropdown" style={{ padding: "8px 10px" }}>
                         <div className="color-picker-section">
@@ -1217,14 +1179,14 @@ export default function DesktopToolbar({
                       disabled={!editorReady}
                       aria-label={`${item.label} - 选择颜色`}
                     >
-                      <DownOutlined className="color-dropdown-arrow" />
+                      <ChevronIcon className="color-dropdown-arrow" />
                     </button>
                   </Dropdown>
                 </div>
               );
             })() : item.type === "indent-picker" ? (() => {
               return (
-                <div className="split-color-button" key={item.id}>
+                <div className={`split-color-button ${openColorPicker === item.id ? "is-open" : ""}`} key={item.id}>
                   <Tooltip title={item.label} trigger="hover" mouseEnterDelay={0.5}>
                     <button
                       type="button"
@@ -1247,6 +1209,9 @@ export default function DesktopToolbar({
                     placement="bottomLeft"
                     align={{ offset: [0, 4] }}
                     classNames={{ root: "toolbar-color-dropdown" }}
+                    onOpenChange={(open) => {
+                      setOpenColorPicker(open ? item.id : null);
+                    }}
                     popupRender={() => (
                       <div className="ant-dropdown-menu" style={{ borderRadius: "4px", border: "1px solid var(--app-border)", boxShadow: "none" }}>
                         <div
@@ -1282,7 +1247,7 @@ export default function DesktopToolbar({
                       disabled={!editorReady}
                       aria-label={`${item.label} - 选择操作`}
                     >
-                      <DownOutlined className="color-dropdown-arrow" />
+                      <ChevronIcon className="color-dropdown-arrow" />
                     </button>
                   </Dropdown>
                 </div>

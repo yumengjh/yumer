@@ -1,13 +1,15 @@
 ﻿import {
-  CheckSquareOutlined,
-  CodeOutlined,
   FileTextOutlined,
   MessageOutlined,
-  MinusOutlined,
-  OrderedListOutlined,
-  TableOutlined,
-  UnorderedListOutlined,
 } from "@ant-design/icons";
+import {
+  UnorderedListIcon,
+  OrderedListIcon,
+  CheckListIcon,
+  CodeIcon,
+  DividerIcon,
+  TableIcon,
+} from "../Toolbar/icons";
 import type { MenuProps } from "antd";
 
 export type BlockInsertType =
@@ -33,13 +35,13 @@ export const BLOCK_INSERT_MENU_ITEMS: NonNullable<MenuProps["items"]> = [
   { key: "heading2", label: "标题 2" },
   { key: "heading3", label: "标题 3" },
   { type: "divider" },
-  { key: "bulletList", icon: <UnorderedListOutlined />, label: "无序列表" },
-  { key: "orderedList", icon: <OrderedListOutlined />, label: "有序列表" },
-  { key: "taskList", icon: <CheckSquareOutlined />, label: "代办列表" },
+  { key: "bulletList", icon: <UnorderedListIcon />, label: "无序列表" },
+  { key: "orderedList", icon: <OrderedListIcon />, label: "有序列表" },
+  { key: "taskList", icon: <CheckListIcon />, label: "代办列表" },
   { key: "blockquote", icon: <MessageOutlined />, label: "引用" },
-  { key: "codeBlock", icon: <CodeOutlined />, label: "代码块" },
-  { key: "divider", icon: <MinusOutlined />, label: "分割线" },
-  { key: "table", icon: <TableOutlined />, label: "表格" },
+  { key: "codeBlock", icon: <CodeIcon />, label: "代码块" },
+  { key: "divider", icon: <DividerIcon />, label: "分割线" },
+  { key: "table", icon: <TableIcon />, label: "表格" },
 ];
 
 export function getBlockInsertMenuKeys(items: NonNullable<MenuProps["items"]>): string[] {
