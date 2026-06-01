@@ -52,17 +52,19 @@ describe("resolveRestoreBlockId", () => {
 });
 
 describe("shouldPersistLastEditPosition", () => {
-  it("allows metadata writes while content sync is still dirty because persistence is independent", () => {
+  it("waits for content sync before automatic metadata writes", () => {
     expect(
       shouldPersistLastEditPosition({
         hasQueuedPosition: true,
         loadingDoc: false,
         inFlight: false,
+        autoRecord: true,
+        contentSyncStatus: "dirty",
         queuedBlockId: "block_b",
         lastPersistedBlockId: "block_a",
         force: false,
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("blocks writes when a write is in flight", () => {
@@ -71,6 +73,8 @@ describe("shouldPersistLastEditPosition", () => {
         hasQueuedPosition: true,
         loadingDoc: false,
         inFlight: false,
+        autoRecord: true,
+        contentSyncStatus: "idle",
         queuedBlockId: "block_b",
         lastPersistedBlockId: "block_b",
         force: false,
@@ -82,6 +86,8 @@ describe("shouldPersistLastEditPosition", () => {
         hasQueuedPosition: true,
         loadingDoc: false,
         inFlight: true,
+        autoRecord: true,
+        contentSyncStatus: "idle",
         queuedBlockId: "block_c",
         lastPersistedBlockId: "block_b",
         force: false,
@@ -95,6 +101,8 @@ describe("shouldPersistLastEditPosition", () => {
         hasQueuedPosition: true,
         loadingDoc: true,
         inFlight: false,
+        autoRecord: true,
+        contentSyncStatus: "idle",
         queuedBlockId: "block_c",
         lastPersistedBlockId: "block_b",
         force: false,
@@ -108,11 +116,28 @@ describe("shouldPersistLastEditPosition", () => {
         hasQueuedPosition: true,
         loadingDoc: false,
         inFlight: false,
+        autoRecord: false,
+        contentSyncStatus: "idle",
         queuedBlockId: "block_c",
         lastPersistedBlockId: "block_c",
         force: true,
       }),
     ).toBe(true);
+  });
+
+  it("blocks automatic writes when disabled locally", () => {
+    expect(
+      shouldPersistLastEditPosition({
+        hasQueuedPosition: true,
+        loadingDoc: false,
+        inFlight: false,
+        autoRecord: false,
+        contentSyncStatus: "idle",
+        queuedBlockId: "block_c",
+        lastPersistedBlockId: "block_b",
+        force: false,
+      }),
+    ).toBe(false);
   });
 });
 

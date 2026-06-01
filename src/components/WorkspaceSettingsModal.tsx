@@ -16,6 +16,12 @@ import {
   type EditorToolbarPreferences,
   type FloatingToolbarItemId,
 } from "@/services/editor-toolbar-preferences";
+import {
+  DEFAULT_EDITOR_SYNC_PREFERENCES,
+  DOCUMENT_SYNC_DELAY_MAX_MS,
+  DOCUMENT_SYNC_DELAY_MIN_MS,
+  type EditorSyncPreferences,
+} from "@/services/editor-sync-preferences";
 
 interface WorkspaceSettingsModalProps {
   open: boolean;
@@ -28,10 +34,12 @@ interface WorkspaceSettingsModalProps {
   };
   effectiveSettings: AppSettings;
   toolbarPreferences?: EditorToolbarPreferences;
+  syncPreferences?: EditorSyncPreferences;
   onClose: () => void;
   onScopeChange: (scope: SettingsScope) => void;
   onPriorityChange: (priority: SettingsPriority) => void;
   onToolbarPreferencesChange?: (preferences: EditorToolbarPreferences) => void;
+  onSyncPreferencesChange?: (preferences: EditorSyncPreferences) => void;
   onSubmit: (settings: UserSettings | WorkspaceSettings) => Promise<void> | void;
 }
 
@@ -43,10 +51,12 @@ export function WorkspaceSettingsModal({
   settingsByScope,
   effectiveSettings,
   toolbarPreferences = DEFAULT_EDITOR_TOOLBAR_PREFERENCES,
+  syncPreferences = DEFAULT_EDITOR_SYNC_PREFERENCES,
   onClose,
   onScopeChange,
   onPriorityChange,
   onToolbarPreferencesChange,
+  onSyncPreferencesChange,
   onSubmit,
 }: WorkspaceSettingsModalProps) {
   const [form] = Form.useForm<AppSettings>();
@@ -59,6 +69,13 @@ export function WorkspaceSettingsModal({
   const patchToolbarPreferences = (patch: Partial<EditorToolbarPreferences>) => {
     onToolbarPreferencesChange?.({
       ...toolbarPreferences,
+      ...patch,
+    });
+  };
+
+  const patchSyncPreferences = (patch: Partial<EditorSyncPreferences>) => {
+    onSyncPreferencesChange?.({
+      ...syncPreferences,
       ...patch,
     });
   };
@@ -139,11 +156,39 @@ export function WorkspaceSettingsModal({
         </div>
 
         <div>
-          <Typography.Text strong>本地工具栏</Typography.Text>
+          <Typography.Text strong>本地偏好</Typography.Text>
           <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 8 }}>
-            这些选项只保存在当前浏览器，用来控制选区悬浮工具栏和固定工具栏是否同时显示。
+            这些选项只保存在当前浏览器，用来控制同步节奏、位置记录和工具栏行为。
           </Typography.Paragraph>
           <Space direction="vertical" size={10} style={{ width: "100%" }}>
+            <Typography.Text strong>本地同步</Typography.Text>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <span>文档同步灵敏度</span>
+              <InputNumber
+                min={DOCUMENT_SYNC_DELAY_MIN_MS}
+                max={DOCUMENT_SYNC_DELAY_MAX_MS}
+                step={100}
+                addonAfter="ms"
+                value={syncPreferences.documentSyncDelayMs}
+                onChange={(value) =>
+                  patchSyncPreferences({
+                    documentSyncDelayMs:
+                      typeof value === "number" ? value : syncPreferences.documentSyncDelayMs,
+                  })
+                }
+                style={{ width: 140 }}
+              />
+            </div>
+            <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
+              数值越小越灵敏；记录编辑位置会在文档同步空闲后再延迟发送。
+            </Typography.Paragraph>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <span>自动记录编辑位置</span>
+              <Switch
+                checked={syncPreferences.autoRememberEditPosition}
+                onChange={(checked) => patchSyncPreferences({ autoRememberEditPosition: checked })}
+              />
+            </div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
               <span>选中内容时显示悬浮工具栏</span>
               <Switch

@@ -55,6 +55,11 @@ import {
   writeEditorToolbarPreferences,
   type EditorToolbarPreferences,
 } from "@/services/editor-toolbar-preferences";
+import {
+  readEditorSyncPreferences,
+  writeEditorSyncPreferences,
+  type EditorSyncPreferences,
+} from "@/services/editor-sync-preferences";
 import { generateHTML } from "@tiptap/core";
 import { serializationExtensions } from "@/services/tiptap-extensions";
 import type { TiptapDoc } from "@/services/tiptap-converter";
@@ -358,6 +363,9 @@ function EditorContent() {
   const [toolbarPreferences, setToolbarPreferences] = useState<EditorToolbarPreferences>(() =>
     readEditorToolbarPreferences(),
   );
+  const [syncPreferences, setSyncPreferences] = useState<EditorSyncPreferences>(() =>
+    readEditorSyncPreferences(),
+  );
   const [settingsScope, setSettingsScope] = useState<SettingsScope>("user");
   const [settingsSaving, setSettingsSaving] = useState(false);
   const syncEngineEnabled = process.env.NEXT_PUBLIC_SYNC_ENGINE_ENABLED === "true";
@@ -403,6 +411,8 @@ function EditorContent() {
       return doc;
     },
   });
+  const syncFlush = sync.flush;
+  const syncUiSaveStatus = sync.uiSaveStatus;
   const localSnapshot = useLocalDocumentSnapshot({
     docId: currentDoc?.docId ?? null,
     content: tiptapContent,
@@ -667,9 +677,18 @@ function EditorContent() {
     if (currentDoc) {
       setHasUnsavedChanges(true);
       setSaveStatus("dirty");
-      void queueEditorPosition("selection", false);
+      if (syncPreferences.autoRememberEditPosition) {
+        void queueEditorPosition("selection", false);
+      }
     }
-  }, [currentDoc, loadingDoc, queueEditorPosition, setHasUnsavedChanges, setSaveStatus]);
+  }, [
+    currentDoc,
+    loadingDoc,
+    queueEditorPosition,
+    setHasUnsavedChanges,
+    setSaveStatus,
+    syncPreferences.autoRememberEditPosition,
+  ]);
 
   const handleTitleChange = useCallback(async (newTitle: string) => {
     if (!currentDoc) return;
@@ -716,24 +735,31 @@ function EditorContent() {
     if (!syncEngineEnabled) return;
     if (!currentDoc) return;
 
-    if (sync.uiSaveStatus === "dirty" || sync.uiSaveStatus === "flushing" || sync.uiSaveStatus === "error") {
-      setSaveStatus(sync.uiSaveStatus);
+    if (syncUiSaveStatus === "dirty" || syncUiSaveStatus === "flushing" || syncUiSaveStatus === "error") {
+      setSaveStatus(syncUiSaveStatus);
       return;
     }
 
     setSaveStatus(hasUnsavedChanges ? "draft-synced" : lastSavedAt ? "saved" : "loaded");
-  }, [currentDoc, hasUnsavedChanges, lastSavedAt, setSaveStatus, sync.uiSaveStatus, syncEngineEnabled]);
+  }, [currentDoc, hasUnsavedChanges, lastSavedAt, setSaveStatus, syncUiSaveStatus, syncEngineEnabled]);
 
   useEffect(() => {
     if (!syncEngineEnabled) return;
     if (typeof content === "string") return;
     if (loadingDoc) return;
-    if (sync.uiSaveStatus !== "dirty") return;
+    if (syncUiSaveStatus !== "dirty") return;
     const timer = window.setTimeout(() => {
-      void sync.flush("autosync");
-    }, 1000);
+      void syncFlush("autosync");
+    }, syncPreferences.documentSyncDelayMs);
     return () => window.clearTimeout(timer);
-  }, [content, loadingDoc, sync, sync.uiSaveStatus, syncEngineEnabled]);
+  }, [
+    content,
+    loadingDoc,
+    syncFlush,
+    syncUiSaveStatus,
+    syncEngineEnabled,
+    syncPreferences.documentSyncDelayMs,
+  ]);
 
   useEffect(() => {
     if (!syncEngineEnabled || !currentDoc || !queuedLastEditPosition) return;
@@ -741,12 +767,15 @@ function EditorContent() {
       hasQueuedPosition: true,
       loadingDoc,
       inFlight: lastEditPersistInflightRef.current,
+      autoRecord: syncPreferences.autoRememberEditPosition,
+      contentSyncStatus: syncUiSaveStatus,
       queuedBlockId: queuedLastEditPosition.blockId,
       lastPersistedBlockId: lastPersistedEditBlockIdRef.current,
       force: forceRememberPositionRef.current,
     })) return;
 
     const queuedPosition = queuedLastEditPosition;
+    const delayMs = Math.max(2200, syncPreferences.documentSyncDelayMs + 1400);
     const timer = window.setTimeout(() => {
       lastEditPersistInflightRef.current = true;
       void updateDocumentLastEditPosition({
@@ -766,14 +795,17 @@ function EditorContent() {
         .finally(() => {
           lastEditPersistInflightRef.current = false;
         });
-    }, 1200);
+    }, delayMs);
 
     return () => window.clearTimeout(timer);
   }, [
     currentDoc,
     loadingDoc,
     queuedLastEditPosition,
+    syncUiSaveStatus,
     syncEngineEnabled,
+    syncPreferences.autoRememberEditPosition,
+    syncPreferences.documentSyncDelayMs,
   ]);
 
   const handleManualSave = useCallback(async () => {
@@ -928,6 +960,15 @@ function EditorContent() {
     writeEditorToolbarPreferences(next);
   }, []);
 
+  const handleSyncPreferencesChange = useCallback((next: EditorSyncPreferences) => {
+    setSyncPreferences(next);
+    writeEditorSyncPreferences(next);
+    if (!next.autoRememberEditPosition) {
+      setQueuedLastEditPosition(null);
+      forceRememberPositionRef.current = false;
+    }
+  }, []);
+
   useEffect(() => {
     if (
       !workspaceId ||
@@ -982,6 +1023,7 @@ function EditorContent() {
             }}
             effectiveSettings={activeSettingsState.effectiveSettings}
             toolbarPreferences={toolbarPreferences}
+            syncPreferences={syncPreferences}
             settingsSaving={settingsSaving}
             onSettingsScopeChange={setSettingsScope}
             onSettingsPriorityChange={(priority) => {
@@ -995,6 +1037,7 @@ function EditorContent() {
               );
             }}
             onToolbarPreferencesChange={handleToolbarPreferencesChange}
+            onSyncPreferencesChange={handleSyncPreferencesChange}
             onSaveSettings={async (scope, nextSettings) => {
               setSettingsSaving(true);
               try {

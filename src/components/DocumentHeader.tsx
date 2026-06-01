@@ -58,6 +58,7 @@ import {
   DEFAULT_FILTER_KEYS,
 } from "@/services/local-snapshot-filter";
 import type { EditorToolbarPreferences } from "@/services/editor-toolbar-preferences";
+import type { EditorSyncPreferences } from "@/services/editor-sync-preferences";
 import { computeLineDiff } from "@/services/json-diff";
 import "./DocumentHeader.css";
 
@@ -80,10 +81,12 @@ interface DocumentHeaderProps {
   };
   effectiveSettings: AppSettings;
   toolbarPreferences: EditorToolbarPreferences;
+  syncPreferences: EditorSyncPreferences;
   settingsSaving?: boolean;
   onSettingsScopeChange: (scope: SettingsScope) => void;
   onSettingsPriorityChange: (priority: SettingsPriority) => void;
   onToolbarPreferencesChange: (preferences: EditorToolbarPreferences) => void;
+  onSyncPreferencesChange: (preferences: EditorSyncPreferences) => void;
   onSaveSettings: (
     scope: SettingsScope,
     settings: UserSettings | WorkspaceSettings,
@@ -247,10 +250,12 @@ export function DocumentHeader({
   settingsByScope,
   effectiveSettings,
   toolbarPreferences,
+  syncPreferences,
   settingsSaving = false,
   onSettingsScopeChange,
   onSettingsPriorityChange,
   onToolbarPreferencesChange,
+  onSyncPreferencesChange,
   onSaveSettings,
   localSnapshotState,
   onRefreshLocalSnapshot,
@@ -894,10 +899,12 @@ export function DocumentHeader({
         settingsByScope={settingsByScope}
         effectiveSettings={effectiveSettings}
         toolbarPreferences={toolbarPreferences}
+        syncPreferences={syncPreferences}
         onClose={() => setSettingsOpen(false)}
         onScopeChange={onSettingsScopeChange}
         onPriorityChange={onSettingsPriorityChange}
         onToolbarPreferencesChange={onToolbarPreferencesChange}
+        onSyncPreferencesChange={onSyncPreferencesChange}
         onSubmit={async (nextSettings) => {
           await onSaveSettings(settingsScope, nextSettings);
           setSettingsOpen(false);

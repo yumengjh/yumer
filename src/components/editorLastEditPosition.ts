@@ -17,12 +17,18 @@ export function shouldPersistLastEditPosition(input: {
   hasQueuedPosition: boolean;
   loadingDoc: boolean;
   inFlight: boolean;
+  autoRecord: boolean;
+  contentSyncStatus?: "idle" | "dirty" | "flushing" | "error" | "saved";
   queuedBlockId: string | null;
   lastPersistedBlockId: string | null;
   force: boolean;
 }): boolean {
   if (!input.hasQueuedPosition) return false;
+  if (!input.autoRecord && !input.force) return false;
   if (input.loadingDoc || input.inFlight) return false;
+  if (input.contentSyncStatus === "dirty" || input.contentSyncStatus === "flushing") {
+    return false;
+  }
   if (!input.queuedBlockId) return false;
   return true;
 }
@@ -36,6 +42,7 @@ export function resolvePendingRestoreTarget(input: {
     blockId: string;
     previousBlockId?: string | null;
     nextBlockId?: string | null;
+    updatedAt?: string;
   } | null;
   restoredDocId: string | null;
   pendingRestoreBlockId: string | null;
