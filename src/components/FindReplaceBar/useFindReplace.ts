@@ -153,6 +153,18 @@ function createFindReplacePlugin(): Plugin<DecorationSet> {
   });
 }
 
+function getPluginKeyName(key: PluginKey | undefined): string | undefined {
+  return (key as unknown as { key?: string } | undefined)?.key;
+}
+
+function hasFindReplacePlugin(editor: Editor): boolean {
+  const findReplaceKeyName = getPluginKeyName(FIND_REPLACE_KEY);
+  return editor.state.plugins.some((plugin) => {
+    const key = plugin.spec.key;
+    return key === FIND_REPLACE_KEY || getPluginKeyName(key) === findReplaceKeyName;
+  });
+}
+
 export function useFindReplace({
   editor,
   highlightColor = "#fff3a8",
@@ -165,13 +177,22 @@ export function useFindReplace({
   const [currentIndex, setCurrentIndex] = useState(-1);
   const registeredEditorRef = useRef<Editor | null>(null);
   const colorsRef = useRef({ highlightColor, activeHighlightColor });
-  colorsRef.current = { highlightColor, activeHighlightColor };
+
+  useEffect(() => {
+    colorsRef.current = { highlightColor, activeHighlightColor };
+  }, [highlightColor, activeHighlightColor]);
 
   // ── 注册 plugin ──
   useEffect(() => {
     if (!editor) return;
     if (registeredEditorRef.current === editor) return;
     registeredEditorRef.current = editor;
+
+    if (hasFindReplacePlugin(editor)) {
+      return () => {
+        registeredEditorRef.current = null;
+      };
+    }
 
     const plugin = createFindReplacePlugin();
     editor.registerPlugin(plugin);

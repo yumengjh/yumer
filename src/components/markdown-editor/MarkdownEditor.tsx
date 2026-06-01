@@ -44,6 +44,7 @@ import { ImageBlock } from "./extensions/imageBlock";
 import ImageBlockView from "./ImageBlockView";
 import { BlockIdAttribute } from "./extensions/blockIdAttribute";
 import { HeadingAnchor } from "./extensions/headingAnchor";
+import { MultiCursor } from "./extensions/multiCursor";
 import TaskItemView from "./TaskItemView";
 import { EditorContextProvider } from "./EditorContext";
 import Toolbar from "./Toolbar";
@@ -479,6 +480,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
         }),
         BlockIdAttribute,
         HeadingAnchor,
+        MultiCursor,
       ],
       content: content || "<p></p>",
       immediatelyRender: false,
