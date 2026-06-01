@@ -59,4 +59,34 @@ describe("editor content normalization", () => {
 
     expect(stripUnsupportedSyncAttrs(doc)).toBe(doc);
   });
+
+  it("promotes legacy data identity aliases before stripping them", () => {
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: {
+            "data-block-id": "server-1",
+            "data-client-id": "client-1",
+            "data-sort-key": "001000",
+          },
+        },
+      ],
+    };
+
+    expect(stripUnsupportedSyncAttrs(doc)).toEqual({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: {
+            blockId: "server-1",
+            clientId: "client-1",
+            sortKey: "001000",
+          },
+        },
+      ],
+    });
+  });
 });

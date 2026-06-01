@@ -31,16 +31,27 @@ export function stripUnsupportedSyncAttrs(value: unknown): unknown {
       typeof rawChild === "object" &&
       !Array.isArray(rawChild)
     ) {
+      const rawAttrs = rawChild as Record<string, unknown>;
       const attrs: Record<string, unknown> = {};
       let attrsChanged = false;
-      for (const [attrKey, attrValue] of Object.entries(
-        rawChild as Record<string, unknown>,
-      )) {
+      for (const [attrKey, attrValue] of Object.entries(rawAttrs)) {
         if (UNSUPPORTED_SYNC_ATTR_KEYS.has(attrKey)) {
           attrsChanged = true;
           continue;
         }
         attrs[attrKey] = attrValue;
+      }
+      if (attrs.blockId == null && typeof rawAttrs["data-block-id"] === "string") {
+        attrs.blockId = rawAttrs["data-block-id"];
+        attrsChanged = true;
+      }
+      if (attrs.clientId == null && typeof rawAttrs["data-client-id"] === "string") {
+        attrs.clientId = rawAttrs["data-client-id"];
+        attrsChanged = true;
+      }
+      if (attrs.sortKey == null && typeof rawAttrs["data-sort-key"] === "string") {
+        attrs.sortKey = rawAttrs["data-sort-key"];
+        attrsChanged = true;
       }
       out[key] = attrsChanged ? attrs : rawChild;
       if (attrsChanged) changed = true;
