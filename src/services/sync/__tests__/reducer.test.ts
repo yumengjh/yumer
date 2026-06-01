@@ -154,6 +154,36 @@ describe("sync reducer", () => {
     expect(state.syncState).toBe("idle");
   });
 
+  it("keeps an entry dirty when one backend result for the same block fails", () => {
+    let state = createInitialSyncState("doc_1", "root_1", 3);
+    state = enqueueChange(state, {
+      clientId: "client_move_update",
+      blockId: "b_move_update",
+      opType: "update",
+      sortKey: "002000",
+      payload: { type: "paragraph", content: [{ type: "text", text: "changed" }] },
+    });
+    state = markBatchInflight(state, "batch_partial", ["client_move_update"], false);
+
+    state = resolveBatchSuccess(state, "batch_partial", [
+      {
+        operation: "update",
+        success: true,
+        blockId: "b_move_update",
+      },
+      {
+        operation: "move",
+        success: false,
+        blockId: "b_move_update",
+        error: "Parent block not found",
+      },
+    ]);
+
+    expect(state.entries.client_move_update).toBeDefined();
+    expect(state.dirtyOrder).toEqual(["client_move_update"]);
+    expect(state.syncState).toBe("dirty");
+  });
+
   it("treats delete-not-found as idempotent success to stop retry loop", () => {
     let state = createInitialSyncState("doc_1", "root_1", 3);
     state = enqueueChange(state, {

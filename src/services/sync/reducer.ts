@@ -250,6 +250,18 @@ export function resolveBatchSuccess(
     }
   }
 
+  const failedClientIds = new Set<string>();
+  for (let index = 0; index < results.length; index += 1) {
+    const result = results[index];
+    const byIndex = inflightEntries[index];
+    if (result.success || isDeleteNotFound(byIndex, result)) continue;
+
+    const clientId = getAckedClientId(result, byIndex, inflightEntries);
+    if (clientId) {
+      failedClientIds.add(clientId);
+    }
+  }
+
   for (let index = 0; index < results.length; index += 1) {
     const result = results[index];
     const byIndex = inflightEntries[index];
@@ -262,6 +274,7 @@ export function resolveBatchSuccess(
 
     const currentEntry = nextEntries[clientId];
     if (!currentEntry) continue;
+    if (failedClientIds.has(clientId)) continue;
 
     const inflightRevision = state.inflightEntryRevisions[clientId];
     if (currentEntry.revision === inflightRevision) {
