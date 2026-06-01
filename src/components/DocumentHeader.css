@@ -494,8 +494,7 @@
   flex-shrink: 0;
 }
 
-.header-btn-save,
-.header-btn-export {
+.header-btn-save {
   /* 使用全局 .ant-btn-default 样式 */
 }
 
@@ -586,5 +585,13 @@
 }
 
 .header-btn-discard {
-  min-width: 88px;
+  min-width: 52px;
+}
+
+.header-btn-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 8px;
+  border-right: 1px solid var(--header-border);
 }

@@ -4,6 +4,7 @@ import type { MenuProps } from "antd";
 import {
   SearchOutlined,
   SaveOutlined,
+  DeleteOutlined,
   CheckCircleOutlined,
   ExclamationCircleOutlined,
   LogoutOutlined,
@@ -50,7 +51,6 @@ import { downloadDocumentExport, type DocumentExportFormat } from "@/services/do
 import { getDocumentSyncState } from "@/services/sync/api";
 import { GcDebugModal } from "./GcDebugModal";
 import { SyncDebugModal } from "./SyncDebugModal";
-import { ThemeSwitcher } from "./ThemeSwitcher";
 import {
   loadFilterKeys,
   saveFilterKeys,
@@ -719,43 +719,49 @@ export function DocumentHeader({
       {currentDoc && (
         <div className="header-end">
           <div className="header-end__primary header-end--desktop">
-            <Button
-              size="small"
-              className="header-btn-save"
-              icon={<SaveOutlined />}
-              loading={saving}
-              onClick={onSave}
-              disabled={saving || saveStatus === "flushing"}
-            >
-              保存
-            </Button>
-            <Button
-              size="small"
-              className="header-btn-remember-position"
-              icon={<PushpinOutlined />}
-              loading={rememberingPosition}
-              onClick={() => void onRememberPosition()}
-            >
-              记住当前位置
-            </Button>
-            {currentContentSource === "draft" ? (
+            <div className="header-btn-group">
               <Button
                 size="small"
-                className="header-btn-discard"
-                loading={discardingDraft}
-                onClick={onDiscardDraft}
+                className="header-btn-save"
+                icon={<SaveOutlined />}
+                loading={saving}
+                onClick={onSave}
+                disabled={saving || saveStatus === "flushing"}
               >
-                取消草稿
+                保存
               </Button>
-            ) : null}
-            <Button
-              size="small"
-              icon={<SendOutlined />}
-              loading={publishing}
-              onClick={handlePublish}
-            >
-              发布
-            </Button>
+              {currentContentSource === "draft" ? (
+                <Button
+                  size="small"
+                  className="header-btn-discard"
+                  icon={<DeleteOutlined />}
+                  loading={discardingDraft}
+                  onClick={onDiscardDraft}
+                >
+                  弃稿
+                </Button>
+              ) : null}
+            </div>
+            <Tooltip title="记住当前位置">
+              <button
+                type="button"
+                className="header-icon-btn"
+                onClick={() => void onRememberPosition()}
+                aria-label="记住当前位置"
+              >
+                <PushpinOutlined />
+              </button>
+            </Tooltip>
+            <Tooltip title="发布">
+              <button
+                type="button"
+                className="header-icon-btn"
+                onClick={handlePublish}
+                aria-label="发布"
+              >
+                <SendOutlined />
+              </button>
+            </Tooltip>
             <Tooltip
               title={
                 currentDoc.visibility === "public"
@@ -763,26 +769,26 @@ export function DocumentHeader({
                   : "仅公开文档需要刷新公开页缓存"
               }
             >
-              <Button
-                size="small"
-                className="header-btn-revalidate"
-                icon={<ReloadOutlined />}
-                loading={revalidating}
+              <button
+                type="button"
+                className="header-icon-btn"
                 onClick={handleManualRevalidate}
                 disabled={currentDoc.visibility !== "public" || revalidating}
                 aria-label="刷新公开页缓存"
-              />
+              >
+                <ReloadOutlined />
+              </button>
             </Tooltip>
             <Dropdown placement="bottomLeft" trigger={["click"]} menu={{ items: exportMenuItems }}>
-              <Button
-                size="small"
-                className="header-btn-export"
-                icon={<DownloadOutlined />}
-                loading={Boolean(exportingFormat)}
-                disabled={Boolean(exportingFormat)}
-              >
-                导出
-              </Button>
+              <Tooltip title="导出">
+                <button
+                  type="button"
+                  className="header-icon-btn"
+                  aria-label="导出"
+                >
+                  <DownloadOutlined />
+                </button>
+              </Tooltip>
             </Dropdown>
             {currentDoc.publishedHead ? (
               <span className="header-published" title={`已发布版本 ${currentDoc.publishedHead}`}>
@@ -814,11 +820,9 @@ export function DocumentHeader({
                 <TagsOutlined />
               </button>
             </Tooltip>
-            <ThemeSwitcher />
           </nav>
 
           <div className="header-end--mobile">
-            <ThemeSwitcher />
             <Button
               size="small"
               icon={<SaveOutlined />}
@@ -827,6 +831,15 @@ export function DocumentHeader({
               disabled={saving || saveStatus === "flushing"}
               aria-label="保存"
             />
+            {currentContentSource === "draft" ? (
+              <Button
+                size="small"
+                icon={<DeleteOutlined />}
+                loading={discardingDraft}
+                onClick={onDiscardDraft}
+                aria-label="弃稿"
+              />
+            ) : null}
             <Button
               size="small"
               icon={<PushpinOutlined />}
@@ -834,16 +847,6 @@ export function DocumentHeader({
               onClick={() => void onRememberPosition()}
               aria-label="记住当前位置"
             />
-            {currentContentSource === "draft" ? (
-              <Button
-                size="small"
-                loading={discardingDraft}
-                onClick={onDiscardDraft}
-                aria-label="取消草稿"
-              >
-                取消草稿
-              </Button>
-            ) : null}
             <Button
               size="small"
               icon={<SendOutlined />}

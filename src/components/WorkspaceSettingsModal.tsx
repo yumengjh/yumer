@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo } from "react";
 import { Checkbox, Form, InputNumber, Modal, Radio, Space, Switch, Typography } from "antd";
+import { ThemeSwitcher } from "./ThemeSwitcher";
 import type {
   SettingsPriority,
   SettingsScope,
@@ -103,6 +104,18 @@ export function WorkspaceSettingsModal({
               : "空间设置：影响当前空间下文档的默认展示与编辑体验，其中展示区设置只支持空间级控制。"}
           </Typography.Paragraph>
         </div>
+
+        {scope === "user" && (
+          <div>
+            <Typography.Text strong>主题</Typography.Text>
+            <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 8 }}>
+              选择编辑器的外观主题，仅对你的个人界面生效。
+            </Typography.Paragraph>
+            <div style={{ marginTop: 8 }}>
+              <ThemeSwitcher />
+            </div>
+          </div>
+        )}
 
         <div>
           <Typography.Text strong>应用优先级</Typography.Text>
