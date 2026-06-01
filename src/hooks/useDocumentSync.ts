@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TiptapDoc } from "@/services/tiptap-converter";
 import { postSyncBatch } from "@/services/sync/api";
 import { selectSyncBatchOperations } from "@/services/sync/batching";
+import { summarizeSyncBatchFailures } from "@/services/sync/batch-failure";
 import { applyCreateAck } from "@/services/sync/engine";
 import { collectOrphanedCreateDeletes } from "@/services/sync/orphaned-create";
 import {
@@ -279,6 +280,7 @@ export function useDocumentSync({
               needsReload: response.needsReload,
               resultCount: response.results.length,
             });
+            const batchFailure = summarizeSyncBatchFailures(response.results);
 
             if (response.needsReload) {
               updateSyncState((prev) =>
@@ -338,6 +340,18 @@ export function useDocumentSync({
               } else {
                 snapshotRef.current = patched;
               }
+            }
+            if (batchFailure) {
+              updateSyncState((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      syncState: "error",
+                      lastError: batchFailure,
+                    }
+                  : prev,
+              );
+              return;
             }
           } catch (error) {
             const message = error instanceof Error ? error.message : "同步失败";
