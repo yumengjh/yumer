@@ -272,7 +272,7 @@ export function SetupModal({ open, onComplete }: SetupModalProps) {
                     <List.Item.Meta
                       avatar={
                         <Avatar
-                          style={{ backgroundColor: "#1677ff" }}
+                          style={{ backgroundColor: "#00b96b" }}
                           icon={<FolderOutlined />}
                         >
                           {ws.icon || ws.name[0]}

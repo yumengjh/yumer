@@ -4,12 +4,12 @@ import type { ThemeConfig } from "antd";
 export const lightTheme: ThemeConfig = {
   token: {
     // 主色调
-    colorPrimary: "#1677ff",
-    colorLink: "#1677ff",
+    colorPrimary: "#00b96b",
+    colorLink: "#00b96b",
     colorSuccess: "#52c41a",
     colorWarning: "#faad14",
     colorError: "#ff4d4f",
-    colorInfo: "#1677ff",
+    colorInfo: "#00b96b",
 
     // 背景色
     colorBgContainer: "#ffffff",
@@ -53,16 +53,16 @@ export const lightTheme: ThemeConfig = {
   components: {
     // 按钮
     Button: {
-      colorPrimary: "#1677ff",
+      colorPrimary: "#00b96b",
       algorithm: true,
     },
     // 输入框
     Input: {
       colorBgContainer: "#ffffff",
       colorBorder: "#d9d9d9",
-      hoverBorderColor: "#1677ff",
-      activeBorderColor: "#1677ff",
-      activeShadow: "0 0 0 2px rgba(5, 145, 255, 0.1)",
+      hoverBorderColor: "#00b96b",
+      activeBorderColor: "#00b96b",
+      activeShadow: "0 0 0 2px rgba(0, 185, 107, 0.1)",
       colorTextPlaceholder: "rgba(0, 0, 0, 0.25)",
       colorBgContainerDisabled: "rgba(0, 0, 0, 0.04)",
     },
@@ -70,8 +70,8 @@ export const lightTheme: ThemeConfig = {
     Select: {
       colorBgContainer: "#ffffff",
       colorBorder: "#d9d9d9",
-      hoverBorderColor: "#1677ff",
-      optionSelectedBg: "#e6f4ff",
+      hoverBorderColor: "#00b96b",
+      optionSelectedBg: "#e6fff4",
       optionActiveBg: "rgba(0, 0, 0, 0.04)",
     },
     // 下拉菜单 - 使用 Menu 组件的 token
@@ -113,10 +113,10 @@ export const lightTheme: ThemeConfig = {
     // 标签页
     Tabs: {
       colorBgContainer: "#ffffff",
-      inkBarColor: "#1677ff",
-      itemActiveColor: "#1677ff",
-      itemHoverColor: "#4096ff",
-      itemSelectedColor: "#1677ff",
+      inkBarColor: "#00b96b",
+      itemActiveColor: "#00b96b",
+      itemHoverColor: "#2ed68a",
+      itemSelectedColor: "#00b96b",
       cardBg: "#ffffff",
     },
     // 提示框
@@ -134,18 +134,18 @@ export const lightTheme: ThemeConfig = {
     },
     // 开关
     Switch: {
-      colorPrimary: "#1677ff",
-      colorPrimaryHover: "#4096ff",
+      colorPrimary: "#00b96b",
+      colorPrimaryHover: "#2ed68a",
     },
-    // 复选框 - 柔和绿色
+    // 复选框
     Checkbox: {
-      colorPrimary: "#52c41a",
-      colorPrimaryHover: "#73d13d",
+      colorPrimary: "#00b96b",
+      colorPrimaryHover: "#2ed68a",
     },
     // 单选框
     Radio: {
-      colorPrimary: "#1677ff",
-      colorPrimaryHover: "#4096ff",
+      colorPrimary: "#00b96b",
+      colorPrimaryHover: "#2ed68a",
     },
   },
 };
@@ -154,12 +154,12 @@ export const lightTheme: ThemeConfig = {
 export const darkTheme: ThemeConfig = {
   token: {
     // 主色调
-    colorPrimary: "#4096ff",
-    colorLink: "#4096ff",
+    colorPrimary: "#4dd497",
+    colorLink: "#4dd497",
     colorSuccess: "#49aa19",
     colorWarning: "#d89614",
     colorError: "#dc4446",
-    colorInfo: "#4096ff",
+    colorInfo: "#4dd497",
 
     // 背景色
     colorBgContainer: "#141414",
@@ -203,16 +203,16 @@ export const darkTheme: ThemeConfig = {
   components: {
     // 按钮
     Button: {
-      colorPrimary: "#4096ff",
+      colorPrimary: "#4dd497",
       algorithm: true,
     },
     // 输入框
     Input: {
       colorBgContainer: "#141414",
       colorBorder: "#424242",
-      hoverBorderColor: "#4096ff",
-      activeBorderColor: "#4096ff",
-      activeShadow: "0 0 0 2px rgba(64, 150, 255, 0.2)",
+      hoverBorderColor: "#4dd497",
+      activeBorderColor: "#4dd497",
+      activeShadow: "0 0 0 2px rgba(77, 212, 151, 0.2)",
       colorTextPlaceholder: "rgba(255, 255, 255, 0.25)",
       colorBgContainerDisabled: "rgba(255, 255, 255, 0.04)",
     },
@@ -220,8 +220,8 @@ export const darkTheme: ThemeConfig = {
     Select: {
       colorBgContainer: "#141414",
       colorBorder: "#424242",
-      hoverBorderColor: "#4096ff",
-      optionSelectedBg: "#111a2c",
+      hoverBorderColor: "#4dd497",
+      optionSelectedBg: "#0a2e1a",
       optionActiveBg: "rgba(255, 255, 255, 0.08)",
     },
     // 下拉菜单
@@ -263,10 +263,10 @@ export const darkTheme: ThemeConfig = {
     // 标签页
     Tabs: {
       colorBgContainer: "#141414",
-      inkBarColor: "#4096ff",
-      itemActiveColor: "#4096ff",
-      itemHoverColor: "#69b1ff",
-      itemSelectedColor: "#4096ff",
+      inkBarColor: "#4dd497",
+      itemActiveColor: "#4dd497",
+      itemHoverColor: "#7fe4b3",
+      itemSelectedColor: "#4dd497",
       cardBg: "#141414",
     },
     // 提示框
@@ -284,18 +284,18 @@ export const darkTheme: ThemeConfig = {
     },
     // 开关
     Switch: {
-      colorPrimary: "#4096ff",
-      colorPrimaryHover: "#69b1ff",
+      colorPrimary: "#4dd497",
+      colorPrimaryHover: "#7fe4b3",
     },
-    // 复选框 - 柔和绿色
+    // 复选框
     Checkbox: {
-      colorPrimary: "#49aa19",
-      colorPrimaryHover: "#6abe39",
+      colorPrimary: "#4dd497",
+      colorPrimaryHover: "#7fe4b3",
     },
     // 单选框
     Radio: {
-      colorPrimary: "#4096ff",
-      colorPrimaryHover: "#69b1ff",
+      colorPrimary: "#4dd497",
+      colorPrimaryHover: "#7fe4b3",
     },
   },
 };

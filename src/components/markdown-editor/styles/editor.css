@@ -1563,7 +1563,7 @@ pre.code-block-view {
 }
 
 .highlight-block-swatch.is-active {
-  border-color: #1677ff;
+  border-color: #00b96b;
 }
 
 .tiptap-editor :where(.highlight-block-view, div[data-highlight-block]) p {

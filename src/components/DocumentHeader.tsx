@@ -749,7 +749,6 @@ export function DocumentHeader({
               </Button>
             ) : null}
             <Button
-              type="primary"
               size="small"
               icon={<SendOutlined />}
               loading={publishing}
@@ -846,7 +845,6 @@ export function DocumentHeader({
               </Button>
             ) : null}
             <Button
-              type="primary"
               size="small"
               icon={<SendOutlined />}
               loading={publishing}

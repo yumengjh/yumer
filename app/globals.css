@@ -24,20 +24,20 @@
 /* 主要按钮 - 绿色 */
 .ant-btn-primary {
   color: #fff !important;
-  border-color: #52c41a !important;
-  background: #52c41a !important;
+  border-color: #00b96b !important;
+  background: #00b96b !important;
 }
 
 .ant-btn-primary:hover {
   color: #fff !important;
-  border-color: #73d13d !important;
-  background: #73d13d !important;
+  border-color: #2ed68a !important;
+  background: #2ed68a !important;
 }
 
 .ant-btn-primary:active {
   color: #fff !important;
-  border-color: #389e0d !important;
-  background: #389e0d !important;
+  border-color: #009d5b !important;
+  background: #009d5b !important;
 }
 
 /* 危险按钮 */
