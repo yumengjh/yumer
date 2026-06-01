@@ -134,11 +134,20 @@ export interface MarkdownEditorProps {
 }
 
 function EditorSkeleton() {
-  return <AppLoader
-    variant="inline"
-    label="正在加载文档…"
-    words={["读取文档", "同步内容", "加载块数据", "渲染文档", "读取文档"]}
-  />;
+  return (
+    <div className="skeleton-container">
+      <div className="skeleton-item skeleton-title" />
+      <div className="skeleton-item skeleton-text" />
+      <div className="skeleton-item skeleton-text" />
+      <div className="skeleton-item skeleton-text-mid" />
+      <div className="skeleton-item skeleton-text" />
+      <div className="skeleton-item skeleton-text-short" />
+      <div className="skeleton-item skeleton-text" />
+      <div className="skeleton-item skeleton-text" />
+      <div className="skeleton-item skeleton-text-mid" />
+      <div className="skeleton-item skeleton-text-short" />
+    </div>
+  );
 }
 
 function readTopLevelBlockIds(editor: Editor): string[] {
