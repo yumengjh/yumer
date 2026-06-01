@@ -35,6 +35,7 @@ import { DocumentSearchModal } from "./DocumentSearchModal";
 import { CreateDocumentModal } from "./CreateDocumentModal";
 import { useAuth } from "../contexts/AuthContext";
 import type { LocalSnapshotState } from "@/hooks/useLocalDocumentSnapshot";
+import type { TiptapDoc } from "@/services/tiptap-converter";
 import type {
   AppSettings,
   SettingsPriority,
@@ -57,12 +58,33 @@ import {
   deepFilterKeys,
   DEFAULT_FILTER_KEYS,
 } from "@/services/local-snapshot-filter";
+import {
+  compareLocalSnapshotBlocks,
+  type LocalSnapshotBlockChange,
+} from "@/services/local-snapshot-compare";
+import {
+  buildJsonStructureDiff,
+  type JsonStructureDiffHunk,
+} from "@/services/json-structure-diff";
 import type { EditorToolbarPreferences } from "@/services/editor-toolbar-preferences";
 import type { EditorSyncPreferences } from "@/services/editor-sync-preferences";
-import { computeLineDiff } from "@/services/json-diff";
 import "./DocumentHeader.css";
 
 const PUBLIC_DOC_REVALIDATE_SECRET_KEY = "publicDocRevalidateSecret";
+const EMPTY_LOCAL_SNAPSHOT_BLOCK_COMPARE: ReturnType<typeof compareLocalSnapshotBlocks> = {
+  matches: true,
+  summary: {
+    totalBefore: 0,
+    totalAfter: 0,
+    unchanged: 0,
+    added: 0,
+    deleted: 0,
+    modified: 0,
+    moved: 0,
+    metadataOnly: 0,
+  },
+  changes: [],
+};
 
 interface DocumentHeaderProps {
   onSave: () => void | Promise<void>;
@@ -99,10 +121,12 @@ interface DocumentHeaderProps {
   onManualSaveSnapshot: () => Promise<void>;
   autoSaveSnapshotEnabled: boolean;
   onAutoSaveSnapshotChange: (enabled: boolean) => void;
-  currentDocumentJson: string | null;
+  currentDocumentContent: TiptapDoc | null;
   /** 打开/关闭查找替换栏 */
   onToggleFindReplace?: () => void;
 }
+
+type LocalSnapshotCompareMode = "blocks" | "split" | "unified";
 
 type VisibleSaveStatus = Exclude<SaveStatus, "idle">;
 
@@ -222,6 +246,80 @@ function describePublishRevalidation(result: PublicDocRevalidationResult): strin
     : `发布成功，但公开页缓存刷新失败：${detail}`;
 }
 
+function stringifyFilteredDoc(content: TiptapDoc | null, filterKeys: Set<string>): string | null {
+  if (!content) return null;
+  try {
+    return JSON.stringify(deepFilterKeys(content, filterKeys), null, 2);
+  } catch {
+    return null;
+  }
+}
+
+function describeBlockPosition(change: LocalSnapshotBlockChange): string {
+  const from = change.beforeIndex === null ? "新增" : `#${change.beforeIndex + 1}`;
+  const to = change.afterIndex === null ? "删除" : `#${change.afterIndex + 1}`;
+  return `${from} → ${to}`;
+}
+
+function blockChangeLabel(kind: LocalSnapshotBlockChange["kind"]): string {
+  const map: Record<LocalSnapshotBlockChange["kind"], string> = {
+    added: "新增",
+    deleted: "删除",
+    modified: "修改",
+    moved: "移动",
+    "metadata-only": "仅元数据",
+  };
+  return map[kind];
+}
+
+function blockChangeKey(change: LocalSnapshotBlockChange): string {
+  return `${change.kind}-${change.blockKey}-${change.beforeIndex ?? "new"}-${change.afterIndex ?? "gone"}`;
+}
+
+function formatJsonLines(value: unknown): string[] {
+  try {
+    return JSON.stringify(value, null, 2).split("\n");
+  } catch {
+    return [String(value)];
+  }
+}
+
+function buildBlockJsonHunks(
+  change: LocalSnapshotBlockChange,
+  ignoredKeys: Set<string>,
+): JsonStructureDiffHunk[] {
+  const visibleIgnoredKeys = change.kind === "metadata-only" ? new Set<string>() : ignoredKeys;
+
+  if (change.kind === "added") {
+    return [
+      {
+        path: "$",
+        lines: formatJsonLines(deepFilterKeys(change.after, visibleIgnoredKeys)).map((text) => ({
+          kind: "added",
+          text,
+        })),
+      },
+    ];
+  }
+
+  if (change.kind === "deleted") {
+    return [
+      {
+        path: "$",
+        lines: formatJsonLines(deepFilterKeys(change.before, visibleIgnoredKeys)).map((text) => ({
+          kind: "removed",
+          text,
+        })),
+      },
+    ];
+  }
+
+  return buildJsonStructureDiff(change.before, change.after, {
+    ignoredKeys: visibleIgnoredKeys,
+    maxHunks: 80,
+  }).hunks;
+}
+
 function showManualRevalidationMessage(result: ManualPublicDocRevalidationResult) {
   const bodyText = stringifyRevalidationBody(result.body);
   if (result.ok) {
@@ -265,7 +363,7 @@ export function DocumentHeader({
   onManualSaveSnapshot,
   autoSaveSnapshotEnabled,
   onAutoSaveSnapshotChange,
-  currentDocumentJson,
+  currentDocumentContent,
   onToggleFindReplace,
 }: DocumentHeaderProps) {
   const {
@@ -296,7 +394,9 @@ export function DocumentHeader({
   const [manualSnapshotSaving, setManualSnapshotSaving] = useState(false);
   const [compareFilterKeys, setCompareFilterKeys] = useState<string[]>(() => loadFilterKeys());
   const [compareFilterInput, setCompareFilterInput] = useState("");
-  const [diffMode, setDiffMode] = useState<"split" | "unified">("split");
+  const [diffMode, setDiffMode] = useState<LocalSnapshotCompareMode>("blocks");
+  const [expandedBlockChangeKey, setExpandedBlockChangeKey] = useState<string | null>(null);
+  const [showMetadataChanges, setShowMetadataChanges] = useState(false);
 
   const handleAddCompareFilter = useCallback(() => {
     const key = compareFilterInput.trim();
@@ -322,20 +422,62 @@ export function DocumentHeader({
   }, []);
 
   const compareFilterKeySet = useMemo(() => new Set(compareFilterKeys), [compareFilterKeys]);
+  const shouldComputeSnapshotBlockCompare =
+    localSnapshotCompareOpen || localSnapshotState.status === "mismatch";
+
+  const snapshotBlockCompare = useMemo(
+    () => {
+      if (
+        !shouldComputeSnapshotBlockCompare ||
+        !localSnapshotState.storedSnapshot ||
+        !currentDocumentContent
+      ) {
+        return EMPTY_LOCAL_SNAPSHOT_BLOCK_COMPARE;
+      }
+      return compareLocalSnapshotBlocks(
+        localSnapshotState.storedSnapshot?.content ?? null,
+        currentDocumentContent,
+        { ignoredKeys: compareFilterKeySet },
+      );
+    },
+    [
+      localSnapshotState.storedSnapshot,
+      currentDocumentContent,
+      compareFilterKeySet,
+      shouldComputeSnapshotBlockCompare,
+    ],
+  );
 
   const snapshotFilteredMatch = useMemo(() => {
     const snapshot = localSnapshotState.storedSnapshot;
-    if (!snapshot || !currentDocumentJson) return false;
+    if (!snapshot || !currentDocumentContent) return false;
     if (localSnapshotState.status !== "mismatch") return false;
-    try {
-      const snapshotText = JSON.stringify(deepFilterKeys(snapshot.content, compareFilterKeySet), null, 2);
-      const parsed = JSON.parse(currentDocumentJson);
-      const currentText = JSON.stringify(deepFilterKeys(parsed, compareFilterKeySet), null, 2);
-      return snapshotText === currentText;
-    } catch {
-      return false;
-    }
-  }, [localSnapshotState, currentDocumentJson, compareFilterKeySet]);
+    return snapshotBlockCompare.matches;
+  }, [localSnapshotState.status, localSnapshotState.storedSnapshot, currentDocumentContent, snapshotBlockCompare]);
+
+  const expandedBlockChange = useMemo(
+    () =>
+      expandedBlockChangeKey
+        ? snapshotBlockCompare.changes.find((change) => blockChangeKey(change) === expandedBlockChangeKey) ?? null
+        : null,
+    [expandedBlockChangeKey, snapshotBlockCompare.changes],
+  );
+
+  const expandedBlockHunks = useMemo(
+    () =>
+      expandedBlockChange
+        ? buildBlockJsonHunks(expandedBlockChange, compareFilterKeySet)
+        : [],
+    [expandedBlockChange, compareFilterKeySet],
+  );
+
+  const visibleSnapshotBlockChanges = useMemo(
+    () =>
+      showMetadataChanges
+        ? snapshotBlockCompare.changes
+        : snapshotBlockCompare.changes.filter((change) => change.kind !== "metadata-only"),
+    [showMetadataChanges, snapshotBlockCompare.changes],
+  );
 
   useEffect(() => {
     refreshDocs().catch(() => {});
@@ -975,7 +1117,7 @@ export function DocumentHeader({
           <Button
             type="primary"
             onClick={() => setLocalSnapshotCompareOpen(true)}
-            disabled={!localSnapshotState.storedSnapshot || !currentDocumentJson}
+            disabled={!localSnapshotState.storedSnapshot || !currentDocumentContent}
           >
             一键对比
           </Button>
@@ -1007,37 +1149,35 @@ export function DocumentHeader({
       <Modal
         open={localSnapshotCompareOpen}
         title="本地快照 vs 当前文档"
-        onCancel={() => setLocalSnapshotCompareOpen(false)}
+        onCancel={() => {
+          setExpandedBlockChangeKey(null);
+          setLocalSnapshotCompareOpen(false);
+        }}
         footer={null}
         width={960}
         destroyOnClose
       >
         <div className="header-local-snapshot-compare">
           {(() => {
-            const snapshotText = localSnapshotState.storedSnapshot
-              ? JSON.stringify(
-                  deepFilterKeys(localSnapshotState.storedSnapshot.content, compareFilterKeySet),
-                  null,
-                  2,
-                )
-              : null;
-            const currentText = (() => {
-              if (!currentDocumentJson) return null;
-              if (compareFilterKeySet.size === 0) return currentDocumentJson;
-              try {
-                const parsed = JSON.parse(currentDocumentJson);
-                return JSON.stringify(deepFilterKeys(parsed, compareFilterKeySet), null, 2);
-              } catch {
-                return currentDocumentJson;
-              }
-            })();
             const rawMatch = localSnapshotState.storedSnapshot?.hash === localSnapshotState.currentHash;
-            const filteredMatch = snapshotText !== null && currentText !== null && snapshotText === currentText;
+            const filteredMatch = snapshotBlockCompare.matches;
             const matchLabel = rawMatch
               ? "一致"
               : filteredMatch
                 ? "一致（已过滤）"
                 : "不一致";
+            const snapshotText =
+              diffMode !== "split"
+                ? null
+                : stringifyFilteredDoc(localSnapshotState.storedSnapshot?.content ?? null, compareFilterKeySet);
+            const currentText =
+              diffMode !== "split"
+                ? null
+                : stringifyFilteredDoc(currentDocumentContent, compareFilterKeySet);
+            const visibleBlockChanges = visibleSnapshotBlockChanges.slice(0, 500);
+            const hiddenMetadataChangeCount = showMetadataChanges
+              ? 0
+              : snapshotBlockCompare.summary.metadataOnly;
 
             return (
               <>
@@ -1077,6 +1217,13 @@ export function DocumentHeader({
                   <div className="header-local-snapshot-compare__mode-switch">
                     <Button
                       size="small"
+                      type={diffMode === "blocks" ? "primary" : "default"}
+                      onClick={() => setDiffMode("blocks")}
+                    >
+                      块级
+                    </Button>
+                    <Button
+                      size="small"
                       type={diffMode === "split" ? "primary" : "default"}
                       onClick={() => setDiffMode("split")}
                     >
@@ -1087,36 +1234,160 @@ export function DocumentHeader({
                       type={diffMode === "unified" ? "primary" : "default"}
                       onClick={() => setDiffMode("unified")}
                     >
-                      Diff
+                      结构Diff
                     </Button>
                   </div>
                 </div>
-                {diffMode === "unified" ? (() => {
-                  const diffLines = computeLineDiff(snapshotText ?? "", currentText ?? "");
-                  const added = diffLines.filter((l) => l.kind === "added").length;
-                  const removed = diffLines.filter((l) => l.kind === "removed").length;
-                  return (
-                    <div className="header-local-snapshot-compare__diff">
-                      <div className="header-local-snapshot-compare__diff-stats">
-                        <span className="header-local-snapshot-compare__diff-stat-removed">-{removed}</span>
-                        <span className="header-local-snapshot-compare__diff-stat-added">+{added}</span>
-                      </div>
-                      <pre className="header-local-snapshot-compare__diff-code">
-                        {diffLines.map((line, idx) => (
-                          <div
-                            key={idx}
-                            className={`header-local-snapshot-compare__diff-line header-local-snapshot-compare__diff-line--${line.kind}`}
-                          >
-                            <span className="header-local-snapshot-compare__diff-prefix">
-                              {line.kind === "added" ? "+" : line.kind === "removed" ? "-" : " "}
-                            </span>
-                            {line.text}
-                          </div>
-                        ))}
-                      </pre>
+                {diffMode === "blocks" ? (
+                  <div className="header-local-snapshot-compare__blocks">
+                    <div className="header-local-snapshot-compare__block-summary">
+                      <Tag>本地 {snapshotBlockCompare.summary.totalBefore}</Tag>
+                      <Tag>当前 {snapshotBlockCompare.summary.totalAfter}</Tag>
+                      <Tag color="success">未变 {snapshotBlockCompare.summary.unchanged}</Tag>
+                      <Tag color="green">+{snapshotBlockCompare.summary.added} 新增</Tag>
+                      <Tag color="red">-{snapshotBlockCompare.summary.deleted} 删除</Tag>
+                      <Tag color="orange">~{snapshotBlockCompare.summary.modified} 修改</Tag>
+                      <Tag color="blue">↕{snapshotBlockCompare.summary.moved} 移动</Tag>
+                      <Tag color="purple">{snapshotBlockCompare.summary.metadataOnly} 仅元数据</Tag>
+                      <Switch
+                        size="small"
+                        checked={showMetadataChanges}
+                        onChange={setShowMetadataChanges}
+                        checkedChildren="显示元数据变更"
+                        unCheckedChildren="隐藏元数据"
+                      />
+                      {hiddenMetadataChangeCount > 0 && (
+                        <span className="header-local-snapshot-compare__muted">
+                          已隐藏 {hiddenMetadataChangeCount} 个仅元数据变更
+                        </span>
+                      )}
                     </div>
-                  );
-                })() : (
+                    {visibleSnapshotBlockChanges.length === 0 ? (
+                      <div className="header-local-snapshot-compare__empty">
+                        {snapshotBlockCompare.changes.length === 0
+                          ? "过滤后没有发现块级差异。"
+                          : "只存在已隐藏的仅元数据变更。打开“显示元数据变更”可查看。"}
+                      </div>
+                    ) : (
+                      <div className="header-local-snapshot-compare__change-list">
+                        {visibleBlockChanges.map((change) => {
+                          const key = blockChangeKey(change);
+                          const expanded = key === expandedBlockChangeKey;
+                          return (
+                            <div key={key} className="header-local-snapshot-compare__change-item">
+                              <button
+                                type="button"
+                                className={`header-local-snapshot-compare__change header-local-snapshot-compare__change--${change.kind}`}
+                                onClick={() => setExpandedBlockChangeKey(expanded ? null : key)}
+                              >
+                                <span className="header-local-snapshot-compare__change-kind">
+                                  {blockChangeLabel(change.kind)}
+                                </span>
+                                <span className="header-local-snapshot-compare__change-label">
+                                  {change.label}
+                                </span>
+                                <span className="header-local-snapshot-compare__change-position">
+                                  {describeBlockPosition(change)}
+                                </span>
+                              </button>
+                              {expanded && (
+                                <div className="header-local-snapshot-compare__hunks">
+                                  {expandedBlockHunks.length === 0 ? (
+                                    <div className="header-local-snapshot-compare__empty">
+                                      过滤后这个块没有 JSON 字段差异。
+                                    </div>
+                                  ) : (
+                                    expandedBlockHunks.map((hunk) => (
+                                      <pre
+                                        key={hunk.path}
+                                        className="header-local-snapshot-compare__hunk"
+                                      >
+                                        <div className="header-local-snapshot-compare__hunk-header">
+                                          @@ {hunk.path} @@
+                                        </div>
+                                        {hunk.lines.map((line, index) => (
+                                          <div
+                                            key={`${line.kind}-${index}-${line.text}`}
+                                            className={`header-local-snapshot-compare__hunk-line header-local-snapshot-compare__hunk-line--${line.kind}`}
+                                          >
+                                            <span className="header-local-snapshot-compare__diff-prefix">
+                                              {line.kind === "added" ? "+" : "-"}
+                                            </span>
+                                            {line.text}
+                                          </div>
+                                        ))}
+                                      </pre>
+                                    ))
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                        {visibleSnapshotBlockChanges.length > visibleBlockChanges.length && (
+                          <div className="header-local-snapshot-compare__empty">
+                            还有 {visibleSnapshotBlockChanges.length - visibleBlockChanges.length} 条变更未渲染，避免大文档一次性创建过多 DOM。
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : diffMode === "unified" ? (
+                  <div className="header-local-snapshot-compare__structured-diff">
+                    {visibleSnapshotBlockChanges.length === 0 ? (
+                      <div className="header-local-snapshot-compare__empty">
+                        {snapshotBlockCompare.changes.length === 0
+                          ? "过滤后没有发现 JSON 差异。"
+                          : "只存在已隐藏的仅元数据变更。打开“显示元数据变更”可查看。"}
+                      </div>
+                    ) : (
+                      visibleBlockChanges.map((change) => {
+                        const hunks = buildBlockJsonHunks(change, compareFilterKeySet);
+                        return (
+                          <div
+                            key={blockChangeKey(change)}
+                            className="header-local-snapshot-compare__structured-file"
+                          >
+                            <div className="header-local-snapshot-compare__structured-file-header">
+                              <span>{blockChangeLabel(change.kind)}</span>
+                              <strong>{change.label}</strong>
+                              <span>{describeBlockPosition(change)}</span>
+                            </div>
+                            {hunks.length === 0 ? (
+                              <div className="header-local-snapshot-compare__empty">
+                                过滤后这个块没有 JSON 字段差异。
+                              </div>
+                            ) : (
+                              hunks.map((hunk) => (
+                                <pre key={hunk.path} className="header-local-snapshot-compare__hunk">
+                                  <div className="header-local-snapshot-compare__hunk-header">
+                                    @@ {hunk.path} @@
+                                  </div>
+                                  {hunk.lines.map((line, index) => (
+                                    <div
+                                      key={`${line.kind}-${index}-${line.text}`}
+                                      className={`header-local-snapshot-compare__hunk-line header-local-snapshot-compare__hunk-line--${line.kind}`}
+                                    >
+                                      <span className="header-local-snapshot-compare__diff-prefix">
+                                        {line.kind === "added" ? "+" : "-"}
+                                      </span>
+                                      {line.text}
+                                    </div>
+                                  ))}
+                                </pre>
+                              ))
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                    {visibleSnapshotBlockChanges.length > visibleBlockChanges.length && (
+                      <div className="header-local-snapshot-compare__empty">
+                        还有 {visibleSnapshotBlockChanges.length - visibleBlockChanges.length} 条变更未渲染，避免大文档一次性创建过多 DOM。
+                      </div>
+                    )}
+                  </div>
+                ) : (
                   <div className="header-local-snapshot-compare__grid">
                     <section className="header-local-snapshot-compare__pane">
                       <h4>本地快照</h4>

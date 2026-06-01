@@ -374,6 +374,183 @@
   flex-shrink: 0;
 }
 
+.header-local-snapshot-compare__blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.header-local-snapshot-compare__block-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--header-border);
+}
+
+.header-local-snapshot-compare__muted {
+  color: var(--header-icon);
+  font-size: 12px;
+}
+
+.header-local-snapshot-compare__change-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 60vh;
+  overflow: auto;
+  border: 1px solid var(--header-border);
+  border-radius: 8px;
+  background: var(--color-bg-container);
+}
+
+.header-local-snapshot-compare__change-item {
+  border-bottom: 1px solid var(--header-border);
+}
+
+.header-local-snapshot-compare__change-item:last-child {
+  border-bottom: none;
+}
+
+.header-local-snapshot-compare__change {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr) 96px;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.header-local-snapshot-compare__change:hover {
+  background: var(--color-bg-elevated);
+}
+
+.header-local-snapshot-compare__hunks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 12px 12px 12px;
+}
+
+.header-local-snapshot-compare__hunk {
+  margin: 0;
+  overflow: auto;
+  border-radius: 8px;
+  border: 1px solid var(--header-border);
+  background: var(--color-bg-container);
+  color: var(--header-text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+}
+
+.header-local-snapshot-compare__hunk-header {
+  padding: 6px 10px;
+  background: var(--color-bg-elevated);
+  color: var(--header-icon);
+  border-bottom: 1px solid var(--header-border);
+}
+
+.header-local-snapshot-compare__hunk-line {
+  display: flex;
+  padding: 0 10px;
+  white-space: pre;
+}
+
+.header-local-snapshot-compare__hunk-line--added {
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--color-success);
+}
+
+.header-local-snapshot-compare__hunk-line--removed {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--color-error);
+}
+
+.header-local-snapshot-compare__structured-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 60vh;
+  overflow: auto;
+}
+
+.header-local-snapshot-compare__structured-file {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--header-border);
+  border-radius: 8px;
+  background: var(--color-bg-elevated);
+}
+
+.header-local-snapshot-compare__structured-file-header {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) 96px;
+  gap: 10px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.header-local-snapshot-compare__structured-file-header strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--header-text);
+}
+
+.header-local-snapshot-compare__structured-file-header span {
+  color: var(--header-icon);
+}
+
+.header-local-snapshot-compare__change-kind {
+  font-weight: 600;
+}
+
+.header-local-snapshot-compare__change--added .header-local-snapshot-compare__change-kind {
+  color: var(--color-success);
+}
+
+.header-local-snapshot-compare__change--deleted .header-local-snapshot-compare__change-kind {
+  color: var(--color-error);
+}
+
+.header-local-snapshot-compare__change--modified .header-local-snapshot-compare__change-kind,
+.header-local-snapshot-compare__change--metadata-only .header-local-snapshot-compare__change-kind {
+  color: var(--color-warning);
+}
+
+.header-local-snapshot-compare__change-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--header-text);
+}
+
+.header-local-snapshot-compare__change-position {
+  color: var(--header-icon);
+  text-align: right;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+}
+
+.header-local-snapshot-compare__empty {
+  padding: 18px 12px;
+  border: 1px dashed var(--header-border);
+  border-radius: 8px;
+  color: var(--header-icon);
+  background: var(--color-bg-elevated);
+  text-align: center;
+}
+
 .header-local-snapshot-compare__diff {
   display: flex;
   flex-direction: column;

@@ -425,15 +425,6 @@ function EditorContent() {
     enabled: Boolean(currentDoc?.docId && tiptapContent),
     autoSave: autoSaveSnapshotEnabled,
   });
-  const currentDocumentJson = useMemo(() => {
-    if (!tiptapContent) return null;
-    try {
-      return JSON.stringify(tiptapContent, null, 2);
-    } catch {
-      return null;
-    }
-  }, [tiptapContent]);
-
   useEffect(() => {
     contentRef.current = content;
   }, [content]);
@@ -1088,7 +1079,7 @@ function EditorContent() {
               setAutoSaveSnapshotEnabled(enabled);
               localStorage.setItem("yuediter:local-snapshot:auto-save", String(enabled));
             }}
-            currentDocumentJson={currentDocumentJson}
+            currentDocumentContent={tiptapContent}
             onToggleFindReplace={() => setFindReplaceOpen((prev) => !prev)}
           />
           <FindReplaceBar
