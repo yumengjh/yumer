@@ -33,6 +33,7 @@ import {
 } from "@/services/document";
 import { useDocumentSync } from "@/hooks/useDocumentSync";
 import { hashEditorDoc, shouldApplyRemoteContent } from "@/services/sync/hash";
+import { readIdentityFromAttrs } from "@/services/sync/identity";
 import { shouldEnableLegacyAutoSave } from "@/services/save-policy";
 import {
   DEFAULT_USER_SETTINGS,
@@ -279,21 +280,26 @@ function mergeAckAttrsIntoCurrentEditorDoc(current: TiptapDoc, ackDoc: TiptapDoc
   if (!Array.isArray(current.content) || !Array.isArray(ackDoc.content)) return current;
 
   const ackByClientId = new Map<string, Record<string, unknown>>();
+  const ackByBlockId = new Map<string, Record<string, unknown>>();
   for (const node of ackDoc.content) {
     const attrs = node.attrs as Record<string, unknown> | undefined;
-    const clientId = attrs?.clientId;
-    if (typeof clientId === "string") {
-      ackByClientId.set(clientId, attrs ?? {});
+    const identity = readIdentityFromAttrs(attrs);
+    if (identity.clientId) {
+      ackByClientId.set(identity.clientId, attrs ?? {});
+    }
+    if (identity.blockId) {
+      ackByBlockId.set(identity.blockId, attrs ?? {});
     }
   }
 
   let changed = false;
   const content = current.content.map((node) => {
     const attrs = node.attrs as Record<string, unknown> | undefined;
-    const clientId = attrs?.clientId;
-    if (typeof clientId !== "string") return node;
+    const identity = readIdentityFromAttrs(attrs);
 
-    const ackAttrs = ackByClientId.get(clientId);
+    const ackAttrs =
+      (identity.clientId ? ackByClientId.get(identity.clientId) : undefined) ??
+      (identity.blockId ? ackByBlockId.get(identity.blockId) : undefined);
     if (!ackAttrs) return node;
 
     const nextAttrs = { ...(attrs ?? {}) };

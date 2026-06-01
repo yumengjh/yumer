@@ -72,9 +72,9 @@ describe("sync snapshot advancement", () => {
 
     const next = advanceSyncSnapshot(state, previous, current);
 
-    expect(next.state.dirtyOrder).toEqual(["client_1"]);
+    expect(next.state.dirtyOrder).toEqual(["block_1"]);
     expect(next.state.syncState).toBe("dirty");
-    expect((next.state.entries.client_1.payload as { content?: Array<{ text?: string }> }).content?.[0]?.text).toBe(
+    expect((next.state.entries.block_1.payload as { content?: Array<{ text?: string }> }).content?.[0]?.text).toBe(
       "new text just typed",
     );
     expect(next.snapshot.content?.[0].content?.[0].text).toBe("new text just typed");
@@ -111,6 +111,51 @@ describe("sync snapshot advancement", () => {
       opType: "create",
       sortKey: "001000",
     });
+  });
+
+  it("enqueues moves for existing blocks that only have server block ids", () => {
+    const state = createInitialSyncState("doc_1", "root_1", 1);
+    const previous: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { blockId: "block_paragraph", sortKey: "027000" },
+          content: [{ type: "text", text: "paragraph" }],
+        },
+        {
+          type: "codeBlock",
+          attrs: { blockId: "block_code", sortKey: "027500" },
+          content: [{ type: "text", text: "code" }],
+        },
+      ],
+    };
+    const current: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "codeBlock",
+          attrs: { blockId: "block_code", sortKey: "027500" },
+          content: [{ type: "text", text: "code" }],
+        },
+        {
+          type: "paragraph",
+          attrs: { blockId: "block_paragraph", sortKey: "027000" },
+          content: [{ type: "text", text: "paragraph" }],
+        },
+      ],
+    };
+
+    const next = advanceSyncSnapshot(state, previous, current);
+
+    expect(next.state.dirtyOrder).toEqual(["block_code"]);
+    expect(next.state.entries.block_code).toMatchObject({
+      clientId: "block_code",
+      blockId: "block_code",
+      opType: "move",
+      sortKey: "013500",
+    });
+    expect(next.snapshot.content?.[0].attrs?.sortKey).toBe("013500");
   });
 
   it("persists generated sortKeys into the local snapshot for sequential blank-line creation", () => {

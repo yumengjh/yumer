@@ -92,15 +92,23 @@ type IndexedNode = {
   sortKey: string;
 };
 
+function getSyncIdentityKey(identity: {
+  blockId?: string;
+  clientId?: string;
+}): string | null {
+  return identity.blockId ?? identity.clientId ?? null;
+}
+
 function indexTopLevel(doc: TiptapDoc): Record<string, IndexedNode> {
   const indexed: Record<string, IndexedNode> = {};
   const nodes = Array.isArray(doc.content) ? doc.content : [];
   for (let i = 0; i < nodes.length; i += 1) {
     const node = nodes[i];
     const identity = readIdentityFromAttrs(node.attrs);
-    if (!identity.clientId) continue;
-    indexed[identity.clientId] = {
-      clientId: identity.clientId,
+    const identityKey = getSyncIdentityKey(identity);
+    if (!identityKey) continue;
+    indexed[identityKey] = {
+      clientId: identityKey,
       blockId: identity.blockId ?? null,
       node,
       index: i,
@@ -116,12 +124,13 @@ export function analyzeSortKeyIntegrity(
   const duplicates = new Map<string, string[]>();
   const nonMonotonic: SortKeyCorruptionReport["nonMonotonic"] = [];
   const nodes = Array.isArray(doc?.content) ? doc.content : [];
-  let previous: { clientId: string; sortKey: string; parsed: number } | null =
+  let previous: { identityKey: string; sortKey: string; parsed: number } | null =
     null;
 
   for (const node of nodes) {
     const identity = readIdentityFromAttrs(node.attrs);
-    if (!identity.clientId) continue;
+    const identityKey = getSyncIdentityKey(identity);
+    if (!identityKey) continue;
     const sortKey =
       typeof node.attrs?.sortKey === "string" &&
       node.attrs.sortKey.trim() !== ""
@@ -130,20 +139,20 @@ export function analyzeSortKeyIntegrity(
     if (!sortKey) continue;
 
     const clients = duplicates.get(sortKey) ?? [];
-    clients.push(identity.clientId);
+    clients.push(identityKey);
     duplicates.set(sortKey, clients);
 
     const parsed = parseSortKey(sortKey);
     if (parsed == null) continue;
     if (previous && previous.parsed >= parsed) {
       nonMonotonic.push({
-        previousClientId: previous.clientId,
+        previousClientId: previous.identityKey,
         previousSortKey: previous.sortKey,
-        clientId: identity.clientId,
+        clientId: identityKey,
         sortKey,
       });
     }
-    previous = { clientId: identity.clientId, sortKey, parsed };
+    previous = { identityKey, sortKey, parsed };
   }
 
   return {

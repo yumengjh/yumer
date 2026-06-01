@@ -17,13 +17,11 @@ function applyLocalSortKeys(
 
   let changed = false;
   const content = snapshot.content.map((node) => {
-    const clientId =
-      typeof node.attrs?.clientId === "string"
-        ? node.attrs.clientId
-        : undefined;
-    if (!clientId) return node;
+    const identity = readIdentityFromAttrs(node.attrs);
+    const identityKey = identity.blockId ?? identity.clientId;
+    if (!identityKey) return node;
 
-    const entry = state.entries[clientId];
+    const entry = state.entries[identityKey];
     if (!entry?.sortKey) return node;
     if (node.attrs?.sortKey === entry.sortKey) return node;
 

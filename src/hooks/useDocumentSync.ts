@@ -52,6 +52,13 @@ function readSortKey(node: TiptapDoc["content"][number]): string | null {
   return typeof value === "string" && value.trim() !== "" ? value : null;
 }
 
+function readSyncEntryKeys(node: TiptapDoc["content"][number]): string[] {
+  const keys = [readBlockId(node), readClientId(node)].filter(
+    (value): value is string => Boolean(value),
+  );
+  return [...new Set(keys)];
+}
+
 function withEntrySortKey(entry: SyncEntry, sortKey: string): SyncEntry {
   return {
     ...entry,
@@ -124,8 +131,9 @@ function rebasePendingCreatesToSnapshotOrder(
 
   const visualOrder = new Map<string, number>();
   snapshot.content.forEach((node, order) => {
-    const clientId = readClientId(node);
-    if (clientId) visualOrder.set(clientId, order);
+    for (const key of readSyncEntryKeys(node)) {
+      visualOrder.set(key, order);
+    }
   });
 
   return {
