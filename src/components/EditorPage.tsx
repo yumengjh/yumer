@@ -32,9 +32,13 @@ import {
   updateDocumentLastEditPosition,
 } from "@/services/document";
 import { useDocumentSync } from "@/hooks/useDocumentSync";
-import { hashEditorDoc, shouldApplyRemoteContent } from "@/services/sync/hash";
 import { readIdentityFromAttrs } from "@/services/sync/identity";
-import { shouldEnableLegacyAutoSave } from "@/services/save-policy";
+import {
+  isNoopCommitError,
+  shouldEnableLegacyAutoSave,
+  shouldReloadAfterManualSave,
+  shouldSkipManualCommit,
+} from "@/services/save-policy";
 import {
   DEFAULT_USER_SETTINGS,
   DEFAULT_WORKSPACE_SETTINGS,
@@ -61,6 +65,11 @@ import {
   writeEditorSyncPreferences,
   type EditorSyncPreferences,
 } from "@/services/editor-sync-preferences";
+import {
+  readManualSaveMode,
+  writeManualSaveMode,
+  type ManualSaveMode,
+} from "@/services/manual-save-preferences";
 import { generateHTML } from "@tiptap/core";
 import { serializationExtensions } from "@/services/tiptap-extensions";
 import type { TiptapDoc } from "@/services/tiptap-converter";
@@ -345,6 +354,7 @@ function EditorContent() {
     updateDoc,
     workspaceId,
     setWorkspace,
+    saveStatus,
     setSaveStatus,
     markSavedAt,
     hasUnsavedChanges,
@@ -362,6 +372,7 @@ function EditorContent() {
   const [showTOC, setShowTOC] = useState(false);
   const [findReplaceOpen, setFindReplaceOpen] = useState(false);
   const [manualSaving, setManualSaving] = useState(false);
+  const [manualSaveMode, setManualSaveMode] = useState<ManualSaveMode>(() => readManualSaveMode());
   const [discardingDraft, setDiscardingDraft] = useState(false);
   const [settingsState, setSettingsState] = useState<SettingsState>(() =>
     buildSettingsState({ priority: "workspace-first" }),
@@ -425,6 +436,7 @@ function EditorContent() {
     enabled: Boolean(currentDoc?.docId && tiptapContent),
     autoSave: autoSaveSnapshotEnabled,
   });
+  const ignoreNextLocalSnapshotChange = localSnapshot.ignoreNextContentChange;
   useEffect(() => {
     contentRef.current = content;
   }, [content]);
@@ -737,8 +749,12 @@ function EditorContent() {
       return;
     }
 
+    if (saveStatus === "no-draft" && !hasUnsavedChanges && syncUiSaveStatus === "saved") {
+      return;
+    }
+
     setSaveStatus(hasUnsavedChanges ? "draft-synced" : lastSavedAt ? "saved" : "loaded");
-  }, [currentDoc, hasUnsavedChanges, lastSavedAt, setSaveStatus, syncUiSaveStatus, syncEngineEnabled]);
+  }, [currentDoc, hasUnsavedChanges, lastSavedAt, saveStatus, setSaveStatus, syncUiSaveStatus, syncEngineEnabled]);
 
   useEffect(() => {
     if (!syncEngineEnabled) return;
@@ -805,14 +821,28 @@ function EditorContent() {
     syncPreferences.documentSyncDelayMs,
   ]);
 
-  const handleManualSave = useCallback(async () => {
+  const handleManualSaveModeChange = useCallback((mode: ManualSaveMode) => {
+    writeManualSaveMode(mode);
+    setManualSaveMode(mode);
+  }, []);
+
+  const handleManualSave = useCallback(async (mode: ManualSaveMode = manualSaveMode) => {
     if (!currentDoc || manualSaving) return;
 
     setManualSaving(true);
     try {
-      if (!syncEngineEnabled || typeof content === "string") {
+      const isJsonDocument = typeof content !== "string";
+      const skipCommit = shouldSkipManualCommit({
+        syncEngineEnabled,
+        isJsonDocument,
+        hasUnsavedChanges,
+        contentDirty,
+      });
+      let noDraftToSave = skipCommit;
+
+      if (!skipCommit && (!syncEngineEnabled || typeof content === "string")) {
         await saveLegacyContent(content);
-      } else {
+      } else if (!skipCommit) {
         const latestEditorContent = editorRef.current?.getJSON() as TiptapDoc | undefined;
         if (latestEditorContent?.type === "doc") {
           setContent(latestEditorContent);
@@ -825,39 +855,32 @@ function EditorContent() {
           return;
         }
       }
-      await commitVersion(currentDoc.docId, "手动保存");
-      if (syncEngineEnabled && typeof content !== "string") {
-        const editorContentAtReload = editorRef.current?.getJSON() as TiptapDoc | undefined;
-        const hashAtReloadStart = editorContentAtReload?.type === "doc"
-          ? hashEditorDoc(editorContentAtReload)
-          : null;
+      if (!skipCommit) {
+        try {
+          await commitVersion(currentDoc.docId, "手动保存");
+        } catch (error) {
+          if (!isNoopCommitError(error)) {
+            throw error;
+          }
+          noDraftToSave = true;
+        }
+      }
+      if (noDraftToSave) {
+        setContentDirty(false);
+        setHasUnsavedChanges(false);
+        markSavedAt(null);
+        setSaveStatus("no-draft");
+        return;
+      }
+      if (shouldReloadAfterManualSave({
+        syncEngineEnabled,
+        isJsonDocument,
+        manualSaveMode: mode,
+      })) {
         const loaded = await loadContent(currentDoc.docId);
         const loadedContent = loaded.content || BLANK_CONTENT;
-        const currentEditorContent = editorRef.current?.getJSON() as TiptapDoc | undefined;
-        const currentHash = currentEditorContent?.type === "doc" && hashAtReloadStart
-          ? hashEditorDoc(currentEditorContent)
-          : hashAtReloadStart;
-        const responseHash = typeof loadedContent === "object" && loadedContent.type === "doc" && hashAtReloadStart
-          ? hashEditorDoc(loadedContent)
-          : hashAtReloadStart;
-
-        if (
-          hashAtReloadStart &&
-          currentHash &&
-          responseHash &&
-          shouldApplyRemoteContent({
-            hashAtDispatch: hashAtReloadStart,
-            currentEditorHash: currentHash,
-            responseHash,
-          })
-        ) {
-          setContent(loadedContent);
-        } else if (hashAtReloadStart) {
-          setSaveStatus("error");
-          setHasUnsavedChanges(true);
-          message.warning("保存响应已过期，当前编辑内容未被覆盖。请检查同步状态后重试。");
-          return;
-        }
+        ignoreNextLocalSnapshotChange();
+        setContent(loadedContent);
       }
       setContentDirty(false);
       setHasUnsavedChanges(false);
@@ -874,7 +897,10 @@ function EditorContent() {
     sync,
     currentDoc,
     content,
+    contentDirty,
+    hasUnsavedChanges,
     manualSaving,
+    manualSaveMode,
     markSavedAt,
     setHasUnsavedChanges,
     setSaveStatus,
@@ -882,7 +908,7 @@ function EditorContent() {
     saveLegacyContent,
     loadContent,
     tiptapContent,
-    message,
+    ignoreNextLocalSnapshotChange,
   ]);
 
   const handleDiscardDraft = useCallback(async () => {
@@ -1024,6 +1050,8 @@ function EditorContent() {
         <>
           <DocumentHeader
             onSave={handleManualSave}
+            manualSaveMode={manualSaveMode}
+            onManualSaveModeChange={handleManualSaveModeChange}
             onRememberPosition={handleRememberPosition}
             onDiscardDraft={handleDiscardDraft}
             saving={manualSaving}

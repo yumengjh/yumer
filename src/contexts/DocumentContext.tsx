@@ -28,7 +28,7 @@ export const DASH_PATH = "/dash";
 export const DASH_EDIT_PATH = `${DASH_PATH}/edit`;
 const WORKSPACE_KEY = "currentWorkspaceId";
 
-export type SaveStatus = "idle" | "loaded" | "dirty" | "flushing" | "draft-synced" | "saved" | "error";
+export type SaveStatus = "idle" | "loaded" | "dirty" | "flushing" | "draft-synced" | "saved" | "no-draft" | "error";
 
 export function getEditorPath(docId?: string | null): Route {
   return (docId ? `${DASH_EDIT_PATH}/${encodeDocId(docId)}` : DASH_PATH) as Route;

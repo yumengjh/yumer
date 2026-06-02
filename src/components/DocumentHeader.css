@@ -688,6 +688,15 @@
   /* 使用全局 .ant-btn-default 样式 */
 }
 
+.header-save-split {
+  display: inline-flex;
+}
+
+.header-btn-save-mode {
+  width: 28px;
+  padding-inline: 0;
+}
+
 .header-btn-revalidate {
   width: 32px;
   padding-inline: 0;

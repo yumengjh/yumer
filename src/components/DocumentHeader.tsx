@@ -25,6 +25,7 @@ import {
   PushpinOutlined,
   DatabaseOutlined,
   FileSearchOutlined,
+  DownOutlined,
 } from "@ant-design/icons";
 import { useDocument, type SaveStatus } from "../contexts/DocumentContext";
 import { VersionDiffModal } from "./VersionDiffModal";
@@ -72,6 +73,7 @@ import {
 } from "@/services/local-snapshot-diff-explorer";
 import type { EditorToolbarPreferences } from "@/services/editor-toolbar-preferences";
 import type { EditorSyncPreferences } from "@/services/editor-sync-preferences";
+import type { ManualSaveMode } from "@/services/manual-save-preferences";
 import "./DocumentHeader.css";
 
 const PUBLIC_DOC_REVALIDATE_SECRET_KEY = "publicDocRevalidateSecret";
@@ -91,7 +93,9 @@ const EMPTY_LOCAL_SNAPSHOT_BLOCK_COMPARE: ReturnType<typeof compareLocalSnapshot
 };
 
 interface DocumentHeaderProps {
-  onSave: () => void | Promise<void>;
+  onSave: (mode: ManualSaveMode) => void | Promise<void>;
+  manualSaveMode: ManualSaveMode;
+  onManualSaveModeChange: (mode: ManualSaveMode) => void;
   onRememberPosition: () => void | Promise<void>;
   onDiscardDraft: () => void;
   saving?: boolean;
@@ -166,6 +170,11 @@ function SyncStatus({
     saved: {
       icon: <CheckCircleOutlined />,
       text: timeLabel ? `${timeLabel} 已保存为最新版本` : "已保存为最新版本",
+      mod: "saved",
+    },
+    "no-draft": {
+      icon: <CheckCircleOutlined />,
+      text: "没有草稿需要保存",
       mod: "saved",
     },
     error: { icon: <ExclamationCircleOutlined />, text: "保存失败", mod: "error" },
@@ -356,6 +365,8 @@ function showManualRevalidationMessage(result: ManualPublicDocRevalidationResult
 
 export function DocumentHeader({
   onSave,
+  manualSaveMode,
+  onManualSaveModeChange,
   onRememberPosition,
   onDiscardDraft,
   saving = false,
@@ -676,7 +687,7 @@ export function DocumentHeader({
           okText: "先保存并导出",
           cancelText: "直接导出",
           onOk: async () => {
-            await Promise.resolve(onSave());
+            await Promise.resolve(onSave(manualSaveMode));
             await exportDocumentNow(format);
           },
           onCancel: () => {
@@ -688,7 +699,7 @@ export function DocumentHeader({
 
       await exportDocumentNow(format);
     },
-    [currentDoc, exportDocumentNow, exportingFormat, onSave, saveStatus, saving],
+    [currentDoc, exportDocumentNow, exportingFormat, manualSaveMode, onSave, saveStatus, saving],
   );
 
   const handleManualRevalidate = useCallback(async () => {
@@ -800,6 +811,28 @@ export function DocumentHeader({
     : undefined;
 
   const visibleSaveStatus: VisibleSaveStatus | null = saveStatus === "idle" ? null : saveStatus;
+  const saveModeLabel = manualSaveMode === "reload" ? "保存并刷新" : "保存";
+  const saveModeTooltip =
+    manualSaveMode === "reload"
+      ? "保存后重新拉取完整内容"
+      : "仅提交增量同步结果，不重新拉取完整内容";
+  const saveModeMenuItems: MenuProps["items"] = [
+    {
+      key: "incremental",
+      label: "仅保存",
+      icon: manualSaveMode === "incremental" ? <CheckCircleOutlined /> : null,
+    },
+    {
+      key: "reload",
+      label: "保存并重新拉取完整内容",
+      icon: manualSaveMode === "reload" ? <CheckCircleOutlined /> : null,
+    },
+  ];
+  const handleSaveModeMenuClick: MenuProps["onClick"] = ({ key }) => {
+    if (key === "incremental" || key === "reload") {
+      onManualSaveModeChange(key);
+    }
+  };
 
   return (
     <header className="document-header">
@@ -928,16 +961,32 @@ export function DocumentHeader({
         <div className="header-end">
           <div className="header-end__primary header-end--desktop">
             <div className="header-btn-group">
-              <Button
-                size="small"
-                className="header-btn-save"
-                icon={<SaveOutlined />}
-                loading={saving}
-                onClick={onSave}
-                disabled={saving || saveStatus === "flushing"}
-              >
-                保存
-              </Button>
+              <Button.Group className="header-save-split">
+                <Button
+                  size="small"
+                  className="header-btn-save"
+                  icon={<SaveOutlined />}
+                  loading={saving}
+                  onClick={() => void onSave(manualSaveMode)}
+                  disabled={saving || saveStatus === "flushing"}
+                  title={saveModeTooltip}
+                >
+                  {saveModeLabel}
+                </Button>
+                <Dropdown
+                  placement="bottomRight"
+                  trigger={["click"]}
+                  menu={{ items: saveModeMenuItems, onClick: handleSaveModeMenuClick }}
+                >
+                  <Button
+                    size="small"
+                    className="header-btn-save-mode"
+                    icon={<DownOutlined />}
+                    disabled={saving || saveStatus === "flushing"}
+                    aria-label="选择保存方式"
+                  />
+                </Dropdown>
+              </Button.Group>
               {currentContentSource === "draft" ? (
                 <Button
                   size="small"
@@ -1035,9 +1084,9 @@ export function DocumentHeader({
               size="small"
               icon={<SaveOutlined />}
               loading={saving}
-              onClick={onSave}
+              onClick={() => void onSave(manualSaveMode)}
               disabled={saving || saveStatus === "flushing"}
-              aria-label="保存"
+              aria-label={saveModeLabel}
             />
             {currentContentSource === "draft" ? (
               <Button

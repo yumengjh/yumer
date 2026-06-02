@@ -9,6 +9,7 @@ import {
   type LocalSnapshotStore,
 } from "@/services/local-snapshot";
 import { hashEditorDoc } from "@/services/sync/hash";
+import { shouldCaptureLocalSnapshotChange } from "@/services/local-snapshot-policy";
 
 export type LocalSnapshotStatus = "idle" | "checking" | "missing" | "saved" | "mismatch" | "saving" | "error";
 
@@ -49,6 +50,7 @@ export function useLocalDocumentSnapshot({
   const lastObservedHashRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
   const hasEditedRef = useRef(false);
+  const suppressNextCaptureRef = useRef(false);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -112,6 +114,11 @@ export function useLocalDocumentSnapshot({
     },
     [snapshotWriter],
   );
+
+  const ignoreNextContentChange = useCallback(() => {
+    snapshotWriter.cancel();
+    suppressNextCaptureRef.current = true;
+  }, [snapshotWriter]);
 
   useEffect(() => {
     return () => {
@@ -199,12 +206,39 @@ export function useLocalDocumentSnapshot({
       return;
     }
 
+    const suppressCapture = suppressNextCaptureRef.current;
+    suppressNextCaptureRef.current = false;
+
+    if (suppressCapture) {
+      lastObservedHashRef.current = currentHash;
+      hasEditedRef.current = false;
+      setState((current) => {
+        if (!current.storedSnapshot) {
+          return {
+            ...current,
+            status: "missing",
+            currentHash,
+            error: null,
+          };
+        }
+
+        const compare = compareSnapshotToContent(current.storedSnapshot, content);
+        return {
+          ...current,
+          status: compare.matches ? "saved" : "mismatch",
+          currentHash: compare.currentHash,
+          error: null,
+        };
+      });
+      return;
+    }
+
     // \u54c8\u5e0c\u53d8\u5316\uff1a\u6807\u8bb0\u4e3a\u5df2\u7f16\u8f91\uff0c\u540e\u7eed\u53d8\u5316\u624d\u81ea\u52a8\u4fdd\u5b58
     const wasEdited = hasEditedRef.current;
     lastObservedHashRef.current = currentHash;
     hasEditedRef.current = true;
 
-    if (autoSave && wasEdited) {
+    if (shouldCaptureLocalSnapshotChange({ autoSave, wasEdited, suppressCapture: false })) {
       scheduleSnapshotWrite(docId, content);
     }
   }, [content, docId, enabled, autoSave, scheduleSnapshotWrite, snapshotWriter, store]);
@@ -277,5 +311,6 @@ export function useLocalDocumentSnapshot({
     copyStoredSnapshot,
     copyCurrentSnapshot,
     manualSave,
+    ignoreNextContentChange,
   };
 }
