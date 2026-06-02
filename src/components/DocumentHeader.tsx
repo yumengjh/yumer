@@ -126,6 +126,7 @@ interface DocumentHeaderProps {
   autoSaveSnapshotEnabled: boolean;
   onAutoSaveSnapshotChange: (enabled: boolean) => void;
   currentDocumentContent: TiptapDoc | null;
+  onRevertedToVersion?: () => void | Promise<void>;
   /** 打开/关闭查找替换栏 */
   onToggleFindReplace?: () => void;
 }
@@ -383,6 +384,7 @@ export function DocumentHeader({
   autoSaveSnapshotEnabled,
   onAutoSaveSnapshotChange,
   currentDocumentContent,
+  onRevertedToVersion,
   onToggleFindReplace,
 }: DocumentHeaderProps) {
   const {
@@ -1080,6 +1082,7 @@ export function DocumentHeader({
           open={diffOpen}
           onClose={() => setDiffOpen(false)}
           docId={currentDoc.docId}
+          onReverted={onRevertedToVersion}
         />
       )}
       <DocumentSidebar

@@ -915,6 +915,25 @@ function EditorContent() {
     setSaveStatus,
   ]);
 
+  const handleReloadAfterRevert = useCallback(async () => {
+    if (!currentDoc) return;
+
+    await selectDoc(currentDoc.docId);
+    const loaded = await loadContent(currentDoc.docId);
+    setContent(loaded.content || BLANK_CONTENT);
+    setContentDirty(false);
+    setHasUnsavedChanges(false);
+    markSavedAt(null);
+    setSaveStatus("loaded");
+  }, [
+    currentDoc,
+    loadContent,
+    markSavedAt,
+    selectDoc,
+    setHasUnsavedChanges,
+    setSaveStatus,
+  ]);
+
   const handleSetupComplete = useCallback(
     (wsId: string) => {
       setWorkspace(wsId);
@@ -1080,6 +1099,7 @@ function EditorContent() {
               localStorage.setItem("yuediter:local-snapshot:auto-save", String(enabled));
             }}
             currentDocumentContent={tiptapContent}
+            onRevertedToVersion={handleReloadAfterRevert}
             onToggleFindReplace={() => setFindReplaceOpen((prev) => !prev)}
           />
           <FindReplaceBar

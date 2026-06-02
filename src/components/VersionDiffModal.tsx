@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Modal, Select, Button, Spin, Tag, Empty, message } from "antd";
@@ -8,13 +8,14 @@ import {
   getRevisions,
   getVersionContent,
   getVersionDiff,
+  getEditContent,
+  revertDocument,
   type Revision,
   type DiffSummary,
+  type DiffRef,
+  type RevertDraftStrategy,
 } from "../services/document";
-import {
-  versionTreeToHtml,
-  annotateBlockChanges,
-} from "../services/version-html";
+import { versionTreeToHtml, annotateBlockChanges } from "../services/version-html";
 import DeferredCodeBlockRenderer from "./DeferredCodeBlockRenderer";
 import "@/components/markdown-editor/styles/editor.css";
 import "./VersionDiffModal.css";
@@ -23,86 +24,77 @@ interface VersionDiffModalProps {
   open: boolean;
   onClose: () => void;
   docId: string;
+  onReverted?: () => void | Promise<void>;
 }
 
-export function VersionDiffModal({ open, onClose, docId }: VersionDiffModalProps) {
+type RefKey = "draft" | `revision:${number}`;
+
+type DraftMeta = {
+  exists: boolean;
+  updatedAt?: string | null;
+  baseDocVer?: number | null;
+};
+
+function refToKey(ref: DiffRef): RefKey {
+  return ref.kind === "draft" ? "draft" : (`revision:${ref.version ?? 0}` as RefKey);
+}
+
+function keyToRef(key: RefKey): DiffRef {
+  if (key === "draft") return { kind: "draft" };
+  return { kind: "revision", version: Number(key.split(":")[1]) };
+}
+
+export function VersionDiffModal({ open, onClose, docId, onReverted }: VersionDiffModalProps) {
   const [revisions, setRevisions] = useState<Revision[]>([]);
   const [loadingRevisions, setLoadingRevisions] = useState(false);
+  const [draftMeta, setDraftMeta] = useState<DraftMeta>({ exists: false });
 
-  // 单版本查看
-  const [selectedVer, setSelectedVer] = useState<number | null>(null);
+  const [selectedKey, setSelectedKey] = useState<RefKey | null>(null);
   const [singleHtml, setSingleHtml] = useState("");
   const [loadingSingle, setLoadingSingle] = useState(false);
 
-  // Diff 对比
-  const [fromVer, setFromVer] = useState<number | null>(null);
-  const [toVer, setToVer] = useState<number | null>(null);
+  const [fromKey, setFromKey] = useState<RefKey | null>(null);
+  const [toKey, setToKey] = useState<RefKey | null>(null);
   const [diffHtml, setDiffHtml] = useState("");
   const [diffSummary, setDiffSummary] = useState<DiffSummary | null>(null);
+  const [noVisibleDiff, setNoVisibleDiff] = useState(false);
   const [loadingDiff, setLoadingDiff] = useState(false);
   const [contentLoaded, setContentLoaded] = useState(false);
+  const [revertTargetVersion, setRevertTargetVersion] = useState<number | null>(null);
+  const [reverting, setReverting] = useState(false);
 
-  // 内容缓存：version → HTML
-  const contentCacheRef = useRef(new Map<number, string>());
+  const contentCacheRef = useRef(new Map<string, string>());
 
-  // Modal 打开时禁止页面滚动
   useEffect(() => {
-    if (open) {
-      document.body.style.overflow = "hidden";
-      return () => { document.body.style.overflow = ""; };
-    }
+    if (!open) return;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = "";
+    };
   }, [open]);
 
-  // 加载修订列表
-  useEffect(() => {
-    if (!open || !docId) return;
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      contentCacheRef.current.clear();
-      setLoadingRevisions(true);
-      setSelectedVer(null);
-      setSingleHtml("");
-      setContentLoaded(false);
-      setFromVer(null);
-      setToVer(null);
-      setDiffHtml("");
-      setDiffSummary(null);
-
-      getRevisions(docId, 1, 100)
-        .then((res) => {
-          if (cancelled) return;
-          const sorted = [...res.items].sort((a, b) => b.docVer - a.docVer);
-          setRevisions(sorted);
-          // 默认选中最新版本
-          if (sorted.length > 0) {
-            setSelectedVer(sorted[0].docVer);
-          }
-        })
-        .catch(() => {})
-        .finally(() => {
-          if (!cancelled) setLoadingRevisions(false);
-        });
-    }, 0);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [open, docId]);
-
-  // 加载单个版本内容
-  const loadVersion = useCallback(
-    async (ver: number) => {
-      const cached = contentCacheRef.current.get(ver);
+  const loadContent = useCallback(
+    async (key: RefKey) => {
+      const cacheKey = key;
+      const cached = contentCacheRef.current.get(cacheKey);
       if (cached) {
         setSingleHtml(cached);
+        setContentLoaded(true);
         return cached;
       }
+
       setLoadingSingle(true);
       try {
-        const resp = await getVersionContent(docId, ver);
-        const html = resp.tree ? versionTreeToHtml(resp.tree) : "";
-        contentCacheRef.current.set(ver, html);
+        let html = "";
+        if (key === "draft") {
+          const resp = await getEditContent(docId);
+          html = resp.tree ? versionTreeToHtml(resp.tree) : "";
+        } else {
+          const version = keyToRef(key).version;
+          const resp = await getVersionContent(docId, version as number);
+          html = resp.tree ? versionTreeToHtml(resp.tree) : "";
+        }
+        contentCacheRef.current.set(cacheKey, html);
         setSingleHtml(html);
         setContentLoaded(true);
         return html;
@@ -117,72 +109,148 @@ export function VersionDiffModal({ open, onClose, docId }: VersionDiffModalProps
     [docId],
   );
 
-  // 点击版本列表项
-  const handleSelectVersion = useCallback(
-    (ver: number) => {
-      setSelectedVer(ver);
+  useEffect(() => {
+    if (!open || !docId) return;
+    let cancelled = false;
+
+    const resetState = () => {
+      contentCacheRef.current.clear();
+      setSelectedKey(null);
+      setSingleHtml("");
       setContentLoaded(false);
-      // 清除 diff 状态，回到单版本预览模式
+      setFromKey(null);
+      setToKey(null);
       setDiffHtml("");
       setDiffSummary(null);
-      loadVersion(ver);
+      setNoVisibleDiff(false);
+      setRevertTargetVersion(null);
+      setDraftMeta({ exists: false });
+    };
+
+    resetState();
+    setLoadingRevisions(true);
+
+    Promise.all([getRevisions(docId, 1, 100), getEditContent(docId)])
+      .then(([revisionResp, editResp]) => {
+        if (cancelled) return;
+        const sorted = [...revisionResp.items].sort((a, b) => b.docVer - a.docVer);
+        const hasDraft = Boolean(editResp.draft?.exists);
+        const nextDraftMeta: DraftMeta = {
+          exists: hasDraft,
+          updatedAt: editResp.draft?.updatedAt ?? null,
+          baseDocVer: editResp.draft?.baseDocVer ?? null,
+        };
+        setRevisions(sorted);
+        setDraftMeta(nextDraftMeta);
+
+        const latestRevisionKey = sorted.length > 0 ? (`revision:${sorted[0].docVer}` as RefKey) : null;
+        setSelectedKey(hasDraft ? "draft" : latestRevisionKey);
+
+        if (hasDraft && latestRevisionKey) {
+          setFromKey(latestRevisionKey);
+          setToKey("draft");
+        } else if (sorted.length >= 2) {
+          setFromKey(`revision:${sorted[1].docVer}` as RefKey);
+          setToKey(`revision:${sorted[0].docVer}` as RefKey);
+        } else if (latestRevisionKey) {
+          setFromKey(latestRevisionKey);
+          setToKey(latestRevisionKey);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRevisions([]);
+          setDraftMeta({ exists: false });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingRevisions(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, docId]);
+
+  const handleSelectItem = useCallback(
+    (key: RefKey) => {
+      setSelectedKey(key);
+      setContentLoaded(false);
+      setDiffHtml("");
+      setDiffSummary(null);
+      setNoVisibleDiff(false);
+      void loadContent(key);
     },
-    [loadVersion],
+    [loadContent],
   );
 
-  // 取消对比
   const handleCancelDiff = useCallback(() => {
     setDiffHtml("");
     setDiffSummary(null);
-    // 恢复显示当前选中版本的内容
-    if (selectedVer !== null) {
-      const cached = contentCacheRef.current.get(selectedVer);
-      if (cached) setSingleHtml(cached);
+    setNoVisibleDiff(false);
+    if (selectedKey) {
+      const cached = contentCacheRef.current.get(selectedKey);
+      if (cached !== undefined) setSingleHtml(cached);
     }
-  }, [selectedVer]);
+  }, [selectedKey]);
 
-  // 初始自动加载最新版本
   useEffect(() => {
-    if (selectedVer !== null && !contentLoaded && !loadingSingle) {
-      const timer = window.setTimeout(() => {
-        void loadVersion(selectedVer);
-      }, 0);
-      return () => window.clearTimeout(timer);
-    }
-  }, [selectedVer, contentLoaded, loadingSingle, loadVersion]);
+    if (!selectedKey || contentLoaded || loadingSingle) return;
+    const timer = window.setTimeout(() => {
+      void loadContent(selectedKey);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [selectedKey, contentLoaded, loadingSingle, loadContent]);
 
-  // 执行 Diff 对比
   const handleCompare = useCallback(async () => {
-    if (fromVer === null || toVer === null) return;
-    if (fromVer > toVer) {
+    if (!fromKey || !toKey || fromKey === toKey) return;
+    const fromRef = keyToRef(fromKey);
+    const toRef = keyToRef(toKey);
+    if (
+      fromRef.kind === "revision" &&
+      toRef.kind === "revision" &&
+      typeof fromRef.version === "number" &&
+      typeof toRef.version === "number" &&
+      fromRef.version > toRef.version
+    ) {
       message.warning("起始版本不能大于目标版本，请检查选择顺序");
       return;
     }
+
     setLoadingDiff(true);
     setDiffHtml("");
     setDiffSummary(null);
+    setNoVisibleDiff(false);
     try {
-      const diffResp = await getVersionDiff(docId, fromVer, toVer);
+      const diffResp = await getVersionDiff(docId, fromRef, toRef);
+      const hasVisibleChanges =
+        diffResp.summary.added > 0 ||
+        diffResp.summary.deleted > 0 ||
+        diffResp.summary.modified > 0 ||
+        diffResp.summary.moved > 0 ||
+        diffResp.summary.reordered > 0 ||
+        diffResp.summary.indentChanged > 0;
 
-      // 转换两个版本为 HTML（优先用缓存）
-      let fromHtml = contentCacheRef.current.get(fromVer);
+      const fromCacheKey = refToKey(diffResp.fromRef);
+      const toCacheKey = refToKey(diffResp.toRef);
+
+      let fromHtml = contentCacheRef.current.get(fromCacheKey);
       if (!fromHtml && diffResp.fromContent?.tree) {
         fromHtml = versionTreeToHtml(diffResp.fromContent.tree);
-        contentCacheRef.current.set(fromVer, fromHtml);
+        contentCacheRef.current.set(fromCacheKey, fromHtml);
       }
 
-      let toHtml = contentCacheRef.current.get(toVer);
+      let toHtml = contentCacheRef.current.get(toCacheKey);
       if (!toHtml && diffResp.toContent?.tree) {
         toHtml = versionTreeToHtml(diffResp.toContent.tree);
-        contentCacheRef.current.set(toVer, toHtml);
+        contentCacheRef.current.set(toCacheKey, toHtml);
       }
 
-      if (fromHtml && toHtml) {
-        // htmldiff-js 产生合并 diff（ins/del 内联标记）
+      if (!hasVisibleChanges) {
+        setNoVisibleDiff(true);
+      } else if (fromHtml && toHtml) {
         const merged = htmldiff.execute(fromHtml, toHtml);
-        // 注入块级变更高亮
-        const annotated = annotateBlockChanges(merged, diffResp.changes);
-        setDiffHtml(annotated);
+        setDiffHtml(annotateBlockChanges(merged, diffResp.changes));
       }
 
       setDiffSummary(diffResp.summary);
@@ -191,31 +259,100 @@ export function VersionDiffModal({ open, onClose, docId }: VersionDiffModalProps
     } finally {
       setLoadingDiff(false);
     }
-  }, [docId, fromVer, toVer]);
+  }, [docId, fromKey, toKey]);
 
-  // 版本选项列表
-  const versionOptions = useMemo(
-    () =>
-      revisions.map((r) => ({
-        value: r.docVer,
+  const getRefLabel = useCallback(
+    (key: RefKey | null) => {
+      if (!key) return "";
+      if (key === "draft") return "草稿";
+      const version = keyToRef(key).version as number;
+      return `v${version}`;
+    },
+    [],
+  );
+
+  const getRefTime = useCallback(
+    (key: RefKey | null) => {
+      if (!key) return "";
+      if (key === "draft") {
+        return draftMeta.updatedAt ? formatTime(draftMeta.updatedAt) : "";
+      }
+      const version = keyToRef(key).version as number;
+      return revisions.find((r) => r.docVer === version)?.createdAt
+        ? formatTime(revisions.find((r) => r.docVer === version)!.createdAt)
+        : "";
+    },
+    [draftMeta.updatedAt, revisions],
+  );
+
+  const getRefMessage = useCallback(
+    (key: RefKey | null) => {
+      if (!key) return "";
+      if (key === "draft") {
+        return draftMeta.baseDocVer ? `基于 v${draftMeta.baseDocVer}` : "未保存草稿";
+      }
+      const version = keyToRef(key).version as number;
+      return revisions.find((r) => r.docVer === version)?.message ?? "";
+    },
+    [draftMeta.baseDocVer, revisions],
+  );
+
+  const versionOptions = useMemo(() => {
+    const options: Array<{ value: RefKey; label: string }> = [];
+    if (draftMeta.exists) {
+      options.push({
+        value: "draft",
+        label: draftMeta.updatedAt ? `草稿 — ${formatTime(draftMeta.updatedAt)}` : "草稿",
+      });
+    }
+    options.push(
+      ...revisions.map((r) => ({
+        value: `revision:${r.docVer}` as RefKey,
         label: `v${r.docVer} — ${formatTime(r.createdAt)}`,
       })),
-    [revisions],
-  );
+    );
+    return options;
+  }, [draftMeta.exists, draftMeta.updatedAt, revisions]);
 
-  // 从/to 版本条信息
-  const fromRevision = useMemo(
-    () => revisions.find((r) => r.docVer === fromVer),
-    [revisions, fromVer],
-  );
-  const toRevision = useMemo(
-    () => revisions.find((r) => r.docVer === toVer),
-    [revisions, toVer],
-  );
   const renderedHtml = diffHtml || singleHtml;
   const renderedHtmlKey = diffHtml
-    ? `diff-${fromVer ?? "none"}-${toVer ?? "none"}`
-    : `single-${selectedVer ?? "none"}`;
+    ? `diff-${fromKey ?? "none"}-${toKey ?? "none"}`
+    : `single-${selectedKey ?? "none"}`;
+  const selectedRevisionVersion =
+    selectedKey && selectedKey !== "draft" ? (keyToRef(selectedKey).version as number) : null;
+  const canRevertSelectedVersion =
+    selectedRevisionVersion !== null && selectedRevisionVersion !== revisions[0]?.docVer;
+
+  const executeRevert = useCallback(
+    async (draftStrategy?: RevertDraftStrategy) => {
+      if (selectedRevisionVersion === null) return;
+
+      setReverting(true);
+      try {
+        await revertDocument(docId, selectedRevisionVersion, draftStrategy);
+        if (draftStrategy === "preserve") {
+          message.success(`已保存草稿并回退到 v${selectedRevisionVersion}`);
+        } else if (draftStrategy === "discard") {
+          message.success(`已丢弃草稿并回退到 v${selectedRevisionVersion}`);
+        } else {
+          message.success(`已回退到 v${selectedRevisionVersion}`);
+        }
+        setRevertTargetVersion(null);
+        await onReverted?.();
+        onClose();
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : "回退失败，请重试");
+      } finally {
+        setReverting(false);
+      }
+    },
+    [docId, onClose, onReverted, selectedRevisionVersion],
+  );
+
+  const openRevertDialog = useCallback(() => {
+    if (!canRevertSelectedVersion || selectedRevisionVersion === null) return;
+    setRevertTargetVersion(selectedRevisionVersion);
+  }, [canRevertSelectedVersion, selectedRevisionVersion]);
 
   return (
     <Modal
@@ -230,7 +367,6 @@ export function VersionDiffModal({ open, onClose, docId }: VersionDiffModalProps
       zIndex={1100}
     >
       <div className="version-diff">
-        {/* 左侧版本列表 */}
         <aside className="version-diff__sidebar">
           <div className="version-diff__sidebar-header">
             版本历史 {revisions.length > 0 ? `(${revisions.length})` : ""}
@@ -240,48 +376,55 @@ export function VersionDiffModal({ open, onClose, docId }: VersionDiffModalProps
               <div className="version-diff__loading">
                 <Spin />
               </div>
-            ) : revisions.length === 0 ? (
+            ) : versionOptions.length === 0 ? (
               <div className="version-diff__empty">暂无版本</div>
             ) : (
-              revisions.map((rev) => (
-                <div
-                  key={rev.docVer}
-                  className={`version-diff__sidebar-item ${
-                    selectedVer === rev.docVer
-                      ? "version-diff__sidebar-item--active"
-                      : ""
-                  }`}
-                  onClick={() => handleSelectVersion(rev.docVer)}
-                >
-                  <span className="version-diff__sidebar-ver">
-                    v{rev.docVer}
-                  </span>
-                  <div className="version-diff__sidebar-info">
-                    <div className="version-diff__sidebar-time">
-                      {formatTime(rev.createdAt)}
+              <>
+                {draftMeta.exists && (
+                  <div
+                    className={`version-diff__sidebar-item ${
+                      selectedKey === "draft" ? "version-diff__sidebar-item--active" : ""
+                    }`}
+                    onClick={() => handleSelectItem("draft")}
+                  >
+                    <span className="version-diff__sidebar-ver">草稿</span>
+                    <div className="version-diff__sidebar-info">
+                      <div className="version-diff__sidebar-time">{getRefTime("draft")}</div>
+                      <div className="version-diff__sidebar-msg">{getRefMessage("draft")}</div>
                     </div>
-                    {rev.message && (
-                      <div className="version-diff__sidebar-msg">
-                        {rev.message}
-                      </div>
-                    )}
                   </div>
-                </div>
-              ))
+                )}
+                {revisions.map((rev) => {
+                  const key = `revision:${rev.docVer}` as RefKey;
+                  return (
+                    <div
+                      key={rev.docVer}
+                      className={`version-diff__sidebar-item ${
+                        selectedKey === key ? "version-diff__sidebar-item--active" : ""
+                      }`}
+                      onClick={() => handleSelectItem(key)}
+                    >
+                      <span className="version-diff__sidebar-ver">v{rev.docVer}</span>
+                      <div className="version-diff__sidebar-info">
+                        <div className="version-diff__sidebar-time">{formatTime(rev.createdAt)}</div>
+                        {rev.message && <div className="version-diff__sidebar-msg">{rev.message}</div>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </>
             )}
           </div>
         </aside>
 
-        {/* 右侧主区域 */}
         <main className="version-diff__main">
-          {/* 工具栏 */}
           <div className="version-diff__toolbar">
             <span className="version-diff__toolbar-label">从</span>
             <Select
               size="small"
-              placeholder="选择版本"
-              value={fromVer}
-              onChange={setFromVer}
+              placeholder="选择版本或草稿"
+              value={fromKey}
+              onChange={setFromKey}
               options={versionOptions}
               style={{ minWidth: 180 }}
               showSearch
@@ -291,9 +434,9 @@ export function VersionDiffModal({ open, onClose, docId }: VersionDiffModalProps
             <span className="version-diff__toolbar-label">到</span>
             <Select
               size="small"
-              placeholder="选择版本"
-              value={toVer}
-              onChange={setToVer}
+              placeholder="选择版本或草稿"
+              value={toKey}
+              onChange={setToKey}
               options={versionOptions}
               style={{ minWidth: 180 }}
               showSearch
@@ -304,7 +447,7 @@ export function VersionDiffModal({ open, onClose, docId }: VersionDiffModalProps
               size="small"
               onClick={handleCompare}
               loading={loadingDiff}
-              disabled={fromVer === null || toVer === null || fromVer === toVer}
+              disabled={fromKey === null || toKey === null || fromKey === toKey}
             >
               对比
             </Button>
@@ -328,60 +471,51 @@ export function VersionDiffModal({ open, onClose, docId }: VersionDiffModalProps
                 )}
                 {diffSummary.moved > 0 && (
                   <Tag className="version-diff__summary-tag version-diff__summary-tag--moved">
-                    ↕{diffSummary.moved} 移动
+                    →{diffSummary.moved} 移动
                   </Tag>
                 )}
-                <Button
-                  size="small"
-                  icon={<CloseCircleOutlined />}
-                  onClick={handleCancelDiff}
-                >
+                <Button size="small" icon={<CloseCircleOutlined />} onClick={handleCancelDiff}>
                   取消对比
                 </Button>
               </div>
             )}
           </div>
 
-          {/* 版本信息条 */}
-          {selectedVer !== null && !diffHtml && (
+          {selectedKey !== null && !diffHtml && (
             <div className="version-diff__version-bar">
-              <strong>v{selectedVer}</strong>
-              <span>
-                {revisions.find((r) => r.docVer === selectedVer)?.createdAt
-                  ? formatTime(
-                      revisions.find((r) => r.docVer === selectedVer)!.createdAt,
-                    )
-                  : ""}
-              </span>
-              <span>
-                {revisions.find((r) => r.docVer === selectedVer)?.message || ""}
-              </span>
+              <strong>{getRefLabel(selectedKey)}</strong>
+              <span>{getRefTime(selectedKey)}</span>
+              <span>{getRefMessage(selectedKey)}</span>
+              {canRevertSelectedVersion && (
+                <Button size="small" danger onClick={openRevertDialog}>
+                  回退到此版本
+                </Button>
+              )}
             </div>
           )}
 
-          {fromRevision && toRevision && diffHtml && (
+          {fromKey && toKey && diffHtml && (
             <div className="version-diff__version-bar">
-              <strong>v{fromRevision.docVer}</strong>
-              <span>{formatTime(fromRevision.createdAt)}</span>
-              <span style={{ margin: "0 4px", color: "var(--app-text-muted)" }}>
-                →
-              </span>
-              <strong>v{toRevision.docVer}</strong>
-              <span>{formatTime(toRevision.createdAt)}</span>
+              <strong>{getRefLabel(fromKey)}</strong>
+              <span>{getRefTime(fromKey)}</span>
+              <span style={{ margin: "0 4px", color: "var(--app-text-muted)" }}>→</span>
+              <strong>{getRefLabel(toKey)}</strong>
+              <span>{getRefTime(toKey)}</span>
             </div>
           )}
 
-          {/* 内容区 */}
           <div className="version-diff__content">
             {loadingSingle || loadingDiff ? (
               <div className="version-diff__loading">
                 <Spin />
               </div>
+            ) : noVisibleDiff ? (
+              <Empty description="所选草稿与版本没有可见差异" style={{ marginTop: 120 }} />
             ) : renderedHtml ? (
               <>
                 <div
                   className={`version-diff__doc-shell tiptap-card ${
-                    diffHtml ? "version-diff__doc-shell--diff" : ""
+                    diffHtml ? "version-diff__doc-shell--diff" : "version-diff__preview"
                   }`}
                 >
                   <div
@@ -394,14 +528,60 @@ export function VersionDiffModal({ open, onClose, docId }: VersionDiffModalProps
                 <DeferredCodeBlockRenderer key={renderedHtmlKey} />
               </>
             ) : (
-              <Empty
-                description="选择一个版本查看内容"
-                style={{ marginTop: 120 }}
-              />
+              <Empty description="选择一个版本或草稿查看内容" style={{ marginTop: 120 }} />
             )}
           </div>
         </main>
       </div>
+      <Modal
+        open={revertTargetVersion !== null}
+        title={draftMeta.exists ? `回退到 v${revertTargetVersion ?? ""}` : "确认回退"}
+        onCancel={() => setRevertTargetVersion(null)}
+        footer={
+          draftMeta.exists
+            ? [
+                <Button key="cancel" onClick={() => setRevertTargetVersion(null)} disabled={reverting}>
+                  取消
+                </Button>,
+                <Button
+                  key="discard"
+                  onClick={() => void executeRevert("discard")}
+                  loading={reverting}
+                >
+                  丢弃草稿并回退
+                </Button>,
+                <Button
+                  key="preserve"
+                  type="primary"
+                  onClick={() => void executeRevert("preserve")}
+                  loading={reverting}
+                >
+                  保存草稿并回退
+                </Button>,
+              ]
+            : [
+                <Button key="cancel" onClick={() => setRevertTargetVersion(null)} disabled={reverting}>
+                  取消
+                </Button>,
+                <Button
+                  key="confirm"
+                  type="primary"
+                  danger
+                  onClick={() => void executeRevert()}
+                  loading={reverting}
+                >
+                  确认回退
+                </Button>,
+              ]
+        }
+        destroyOnHidden
+      >
+        {draftMeta.exists ? (
+          <p>当前存在草稿。请选择先保存草稿还是丢弃草稿，然后回退到 v{revertTargetVersion ?? ""}。</p>
+        ) : (
+          <p>回退会生成一个新的保存版本：回退到 v{revertTargetVersion ?? ""}。</p>
+        )}
+      </Modal>
     </Modal>
   );
 }

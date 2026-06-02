@@ -231,6 +231,19 @@ export async function commitVersion(
   await apiPost(`/documents/${docId}/commit`, { message });
 }
 
+export type RevertDraftStrategy = "preserve" | "discard";
+
+export async function revertDocument(
+  docId: string,
+  version: number,
+  draftStrategy?: RevertDraftStrategy,
+): Promise<Document> {
+  return apiPost<Document>(`/documents/${docId}/revert`, {
+    version,
+    ...(draftStrategy ? { draftStrategy } : {}),
+  });
+}
+
 export async function publishDocument(
   docId: string,
 ): Promise<PublishDocumentResult> {
@@ -691,6 +704,14 @@ export interface RevisionsResponse {
   pageSize: number;
 }
 
+export type DiffRefKind = "revision" | "draft";
+
+export interface DiffRef {
+  kind: DiffRefKind;
+  version?: number | null;
+  label?: string;
+}
+
 export interface DiffChange {
   type: "added" | "deleted" | "modified" | "moved" | "reordered" | "indent-changed";
   blockId: string;
@@ -726,8 +747,10 @@ export interface DiffSummary {
 
 export interface DiffResponse {
   docId: string;
-  fromVer: number;
-  toVer: number;
+  fromVer: number | null;
+  toVer: number | null;
+  fromRef: { kind: DiffRefKind; label: string; version?: number | null };
+  toRef: { kind: DiffRefKind; label: string; version?: number | null };
   summary: DiffSummary;
   changes: DiffChange[];
   fromContent: { tree: Block; totalBlocks: number; returnedBlocks: number; hasMore: boolean };
@@ -755,10 +778,17 @@ export async function getVersionContent(
 
 export async function getVersionDiff(
   docId: string,
-  fromVer: number,
-  toVer: number,
+  from: DiffRef,
+  to: DiffRef,
 ): Promise<DiffResponse> {
-  return apiGet<DiffResponse>(
-    `/documents/${docId}/diff?fromVer=${fromVer}&toVer=${toVer}`,
-  );
+  const query = new URLSearchParams();
+  query.set("fromKind", from.kind);
+  query.set("toKind", to.kind);
+  if (from.kind === "revision" && typeof from.version === "number") {
+    query.set("fromVer", String(from.version));
+  }
+  if (to.kind === "revision" && typeof to.version === "number") {
+    query.set("toVer", String(to.version));
+  }
+  return apiGet<DiffResponse>(`/documents/${docId}/diff?${query.toString()}`);
 }
