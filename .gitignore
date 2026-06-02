@@ -34,3 +34,5 @@ package-lock.json
 
 # Local git worktrees
 .worktrees/
+
+graphify-out/
