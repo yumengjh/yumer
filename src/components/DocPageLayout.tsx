@@ -13,10 +13,11 @@ interface DocPageLayoutProps {
   icon?: string;
   children: ReactNode;
   sidebar: ReactNode;
+  footer?: ReactNode;
   workspaceId?: string;
 }
 
-export function DocPageLayout({ title, icon, children, sidebar, workspaceId }: DocPageLayoutProps) {
+export function DocPageLayout({ title, icon, children, sidebar, footer, workspaceId }: DocPageLayoutProps) {
   const [tocOpen, setTocOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [settingsState, setSettingsState] = useState<SettingsState>(() =>
@@ -121,6 +122,7 @@ export function DocPageLayout({ title, icon, children, sidebar, workspaceId }: D
           </div>
         )}
       </div>
+      {footer}
     </div>
   );
 }
