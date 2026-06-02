@@ -1,28 +1,43 @@
-.version-diff-modal .ant-modal {
-  max-width: 100vw !important;
+.version-diff-modal-wrap {
+  padding: 0 !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+}
+
+.version-diff-modal.ant-modal,
+.ant-modal.version-diff-modal {
+  width: 100% !important;
+  max-width: 100% !important;
   top: 0 !important;
   padding: 0 !important;
+  margin: 0 !important;
+  height: 100vh !important;
+  padding-bottom: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
 }
 
 .version-diff-modal .ant-modal-content {
-  border-radius: 0;
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  border-radius: 0 !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  margin: 0 !important;
+  padding: 0 !important;
 }
 
 .version-diff-modal .ant-modal-header {
   padding-top: 8px !important;
   padding-bottom: 8px !important;
   margin-bottom: 0 !important;
+  flex-shrink: 0;
 }
 
 .version-diff-modal .ant-modal-body {
   padding: 0 !important;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
+  overflow: hidden !important;
 }
 
 .version-diff-modal .ant-modal-close {
@@ -31,7 +46,8 @@
 
 .version-diff {
   display: flex;
-  height: 100%;
+  width: 100%;
+  height: calc(100vh - 40px);
   overflow: hidden;
 }
 
@@ -43,6 +59,7 @@
   flex-direction: column;
   background: var(--color-bg-muted);
   overflow: hidden;
+  min-height: 0;
 }
 
 .version-diff__sidebar-header {
@@ -130,6 +147,7 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -215,7 +233,6 @@
 
 .version-diff__doc-shell--diff {
   width: min(100%, 900px);
-  padding-left: 34px;
 }
 
 .version-diff__editor-content {
@@ -237,13 +254,6 @@
   box-shadow: inset 0 -1px 0 rgba(46, 160, 67, 0.32);
 }
 
-.version-diff__diff-view ins::before,
-.version-diff__preview ins::before {
-  content: "+";
-  margin-right: 3px;
-  font-weight: 700;
-}
-
 .version-diff__diff-view del,
 .version-diff__preview del {
   background: rgba(207, 34, 46, 0.13);
@@ -252,13 +262,6 @@
   padding: 1px 4px;
   border-radius: 3px;
   box-shadow: inset 0 -1px 0 rgba(207, 34, 46, 0.24);
-}
-
-.version-diff__diff-view del::before,
-.version-diff__preview del::before {
-  content: "-";
-  margin-right: 3px;
-  font-weight: 700;
 }
 
 .version-diff__editor-content :where(
@@ -270,101 +273,38 @@
   .diff-block-indent-changed
 ) {
   position: relative;
-  padding: 6px 12px;
+  padding: 8px 12px;
   margin: 10px 0;
-  border-radius: 5px;
+  border-radius: 2px;
   border-left: 4px solid transparent;
   box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06);
 }
 
-.version-diff__editor-content :where(
-  .diff-block-added,
-  .diff-block-deleted,
-  .diff-block-modified,
-  .diff-block-moved,
-  .diff-block-reordered,
-  .diff-block-indent-changed
-)::before {
-  position: absolute;
-  left: -31px;
-  top: 8px;
-  width: 20px;
-  height: 20px;
-  border-radius: 4px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1;
-}
-
 .version-diff__editor-content :where(.diff-block-added) {
-  background: rgba(46, 160, 67, 0.08);
   border-left-color: #2ea043;
 }
 
-.version-diff__editor-content :where(.diff-block-added)::before {
-  content: "+";
-  background: #2ea043;
-  color: #fff;
-}
-
 .version-diff__editor-content :where(.diff-block-deleted) {
-  background: rgba(207, 34, 46, 0.08);
   border-left-color: #cf222e;
-  opacity: 0.86;
-}
-
-.version-diff__editor-content :where(.diff-block-deleted)::before {
-  content: "-";
-  background: #cf222e;
-  color: #fff;
 }
 
 .version-diff__editor-content :where(.diff-block-modified) {
-  background: rgba(217, 119, 6, 0.08);
   border-left-color: #d97706;
 }
 
-.version-diff__editor-content :where(.diff-block-modified)::before {
-  content: "~";
-  background: #d97706;
-  color: #fff;
-}
-
 .version-diff__editor-content :where(.diff-block-moved) {
-  background: rgba(9, 105, 218, 0.08);
+  background: rgba(9, 105, 218, 0.04);
   border-left-color: #0969da;
 }
 
-.version-diff__editor-content :where(.diff-block-moved)::before {
-  content: ">";
-  background: #0969da;
-  color: #fff;
-}
-
 .version-diff__editor-content :where(.diff-block-reordered) {
-  background: rgba(130, 80, 223, 0.08);
+  background: rgba(130, 80, 223, 0.04);
   border-left-color: #8250df;
 }
 
-.version-diff__editor-content :where(.diff-block-reordered)::before {
-  content: "#";
-  background: #8250df;
-  color: #fff;
-}
-
 .version-diff__editor-content :where(.diff-block-indent-changed) {
-  background: rgba(82, 82, 82, 0.08);
+  background: rgba(82, 82, 82, 0.04);
   border-left-color: #666;
-}
-
-.version-diff__editor-content :where(.diff-block-indent-changed)::before {
-  content: "|";
-  background: #666;
-  color: #fff;
 }
 
 .version-diff__empty {

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Modal, Select, Button, Spin, Tag, Empty, message } from "antd";
@@ -360,9 +360,11 @@ export function VersionDiffModal({ open, onClose, docId, onReverted }: VersionDi
       onCancel={onClose}
       footer={null}
       title="版本对比"
-      width="100vw"
+      width="100%"
+      style={{ top: 0, padding: 0, margin: 0, maxWidth: "100%", height: "100vh" }}
       styles={{ body: { padding: 0 } }}
       className="version-diff-modal"
+      wrapClassName="version-diff-modal-wrap"
       destroyOnHidden
       zIndex={1100}
     >
