@@ -38,14 +38,18 @@ describe("GcDebugModal policy visibility", () => {
     expect(source).toContain("Drawer");
     expect(source).toContain("selectedCandidate");
     expect(source).toContain("基本信息");
-    expect(source).toContain("兼容字段");
     expect(source).toContain("扫描范围");
 
-    // Compat fields still present
-    expect(source).toContain("riskAssessment");
-    expect(source).toContain("plannedAction");
-    expect(source).toContain("requiredChecks");
-    expect(source).toContain("readiness");
+    // Legacy risk/readiness transition fields are intentionally removed.
+    expect(source).not.toContain("riskAssessment");
+    expect(source).not.toContain("plannedAction");
+    expect(source).not.toContain("requiredChecks");
+    expect(source).not.toContain("readiness");
+    expect(source).not.toContain("Readiness");
+    expect(source).not.toContain("Risk");
+    expect(source).not.toContain("兼容字段");
+    expect(source).not.toContain("仍需补验证");
+    expect(source).not.toContain("风险分");
   });
 
   it("renders candidate pool explorer with state/action filters", () => {
@@ -74,6 +78,28 @@ describe("GcDebugModal policy visibility", () => {
     expect(source).toContain("rootRefId");
     expect(source).toContain("rootRefKey");
     expect(source).toContain("ROOT_REF_TYPE_LABELS");
+  });
+
+  it("distinguishes swept pool state by action and keeps long tables locally scrollable", () => {
+    const source = fs.readFileSync(
+      path.resolve(process.cwd(), "src/components/GcDebugModal.tsx"),
+      "utf8",
+    );
+    const style = fs.readFileSync(
+      path.resolve(process.cwd(), "src/components/GcDebugModal.css"),
+      "utf8",
+    );
+
+    expect(source).toContain("function getPoolStateLabel");
+    expect(source).toContain("版本已删除");
+    expect(source).toContain("引用已压缩");
+    expect(source).toContain("gc-debug__layout");
+    expect(source).toContain("gc-debug__table-scroll");
+    expect(source).toContain("scroll={{ x: 960, y: 360 }}");
+
+    expect(style).toContain(".gc-debug__table-scroll");
+    expect(style).toContain("max-height: 420px");
+    expect(style).toContain("overflow: auto");
   });
 
   it("renders sweep console with dry-run and real sweep buttons", () => {

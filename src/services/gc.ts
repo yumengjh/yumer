@@ -64,29 +64,7 @@ export interface BlockVersionGcRun {
   createdAt?: string;
 }
 
-export interface RiskFactor {
-  code: string;
-  weight: number;
-  detail?: Record<string, unknown>;
-}
-
-export interface RiskAssessment {
-  level: "low" | "medium" | "high";
-  score: number;
-  reasons: string[];
-  factors: RiskFactor[];
-}
-
 export type PlannedAction = "candidate_block_version" | "compact_map_entry";
-
-export type RequiredCheck =
-  | "verify_root_stability"
-  | "verify_source_consistency"
-  | "verify_policy_overlap"
-  | "verify_no_recent_write_dependency"
-  | "verify_content_read_paths";
-
-export type Readiness = "ready_for_manual_review" | "needs_more_validation";
 
 export interface CandidateReasonDetail {
   rootKind?: string;
@@ -124,11 +102,6 @@ export interface BlockVersionGcCandidate {
   decision?: string;
   candidateClass?: CandidateClass;
   decisionReasons?: string[];
-  riskLevel?: "low" | "medium" | "high";
-  riskAssessment?: RiskAssessment;
-  plannedAction?: PlannedAction;
-  requiredChecks?: RequiredCheck[];
-  readiness?: Readiness;
   createdAt?: string;
 }
 
@@ -163,11 +136,6 @@ export interface GcCandidatePoolItem {
   state?: GcPoolState;
   reasonCode?: string;
   reasonDetail?: CandidateReasonDetail;
-  riskLevel?: "low" | "medium" | "high";
-  riskAssessment?: RiskAssessment;
-  plannedAction?: PlannedAction;
-  requiredChecks?: RequiredCheck[];
-  readiness?: Readiness;
   eligibleAfter?: string | null;
   lastSweepAt?: string | null;
   lastValidationAt?: string | null;

@@ -27,8 +27,6 @@ import {
   type GcStorageCompactResult,
   type GcSweepResult,
   type PlannedAction,
-  type Readiness,
-  type RequiredCheck,
 } from "@/services/gc";
 import "./GcDebugModal.css";
 
@@ -149,19 +147,6 @@ const PLANNED_ACTION_LABELS: Record<PlannedAction, string> = {
   compact_map_entry: "可压缩 tombstone 引用",
 };
 
-const READINESS_LABELS: Record<Readiness, { label: string; color: string }> = {
-  ready_for_manual_review: { label: "可人工复核", color: "green" },
-  needs_more_validation: { label: "仍需补验证", color: "orange" },
-};
-
-const REQUIRED_CHECK_LABELS: Record<RequiredCheck, string> = {
-  verify_root_stability: "复查 root 是否稳定",
-  verify_source_consistency: "复查多来源 root 是否一致",
-  verify_policy_overlap: "复查是否仍命中保留策略",
-  verify_no_recent_write_dependency: "复查最近写入依赖",
-  verify_content_read_paths: "复查内容读取链路",
-};
-
 const RUN_MODE_LABELS: Record<GcRunMode, { label: string; color: string }> = {
   preview: { label: "Preview", color: "blue" },
   sweep: { label: "Sweep", color: "red" },
@@ -175,6 +160,20 @@ const POOL_STATE_LABELS: Record<GcPoolState, { label: string; color: string }> =
   resurrected: { label: "已复活", color: "orange" },
   blocked: { label: "已阻断", color: "red" },
 };
+
+function getPoolStateLabel(state?: GcPoolState, action?: PlannedAction) {
+  if (!state) return { label: "--", color: "default" };
+
+  if (state === "swept" && action === "candidate_block_version") {
+    return { label: "版本已删除", color: "green" };
+  }
+
+  if (state === "swept" && action === "compact_map_entry") {
+    return { label: "引用已压缩", color: "green" };
+  }
+
+  return POOL_STATE_LABELS[state] ?? { label: state, color: "default" };
+}
 
 const SOURCE_LABELS: Record<string, string> = {
   doc_snapshots: "正式快照",
@@ -199,27 +198,22 @@ const ROOT_REF_TYPE_LABELS: Record<string, string> = {
   draft: "Draft",
 };
 
-function getRiskColor(level?: string) {
-  switch (level) {
-    case "low":
-      return "green";
-    case "medium":
-      return "orange";
-    case "high":
-      return "red";
-    default:
-      return "default";
-  }
-}
-
 function formatAge(ms?: number) {
   if (typeof ms !== "number" || !Number.isFinite(ms)) return "--";
   return formatDuration(ms);
 }
 
 export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: GcDebugModalProps) {
-  const [token, setToken] = useState("");
-  const [operatorId, setOperatorId] = useState("");
+  const [token, setToken] = useState(() =>
+    typeof window === "undefined"
+      ? ""
+      : sessionStorage.getItem(GC_SYSTEM_ADMIN_TOKEN_KEY) ?? "",
+  );
+  const [operatorId, setOperatorId] = useState(() =>
+    typeof window === "undefined"
+      ? ""
+      : sessionStorage.getItem(GC_OPERATOR_ID_KEY) ?? "",
+  );
   const [includeCandidates, setIncludeCandidates] = useState(true);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
@@ -243,12 +237,6 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
   const [runModeFilter, setRunModeFilter] = useState<GcRunMode | undefined>(undefined);
   const [compactLoading, setCompactLoading] = useState(false);
   const [compactResult, setCompactResult] = useState<GcStorageCompactResult | null>(null);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    setToken(sessionStorage.getItem(GC_SYSTEM_ADMIN_TOKEN_KEY) ?? "");
-    setOperatorId(sessionStorage.getItem(GC_OPERATOR_ID_KEY) ?? "");
-  }, []);
 
   const persistCredentials = useCallback((nextToken: string, nextOperatorId: string) => {
     if (typeof window === "undefined") return;
@@ -377,7 +365,10 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
 
   useEffect(() => {
     if (!open) return;
-    void loadPanelData();
+    const timer = window.setTimeout(() => {
+      void loadPanelData();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [loadPanelData, open]);
 
   const handleRunPreview = useCallback(async () => {
@@ -860,6 +851,7 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
             </section>
           </div>
 
+          <div className="gc-debug__layout">
           <section className="gc-debug__card gc-debug__card--table">
             <div className="gc-debug__card-head">
               <h3>Recent Runs</h3>
@@ -887,12 +879,14 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
                 </Tag>
               </div>
             </div>
+            <div className="gc-debug__table-scroll">
             <Table
               size="small"
               rowKey="runId"
               columns={runColumns}
               dataSource={runs}
               pagination={false}
+              scroll={{ x: 960, y: 360 }}
               locale={{ emptyText: "暂无 run 记录" }}
               onRow={(record) => ({
                 onClick: () => {
@@ -900,6 +894,7 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
                 },
               })}
             />
+            </div>
           </section>
 
           <section className="gc-debug__card gc-debug__card--table">
@@ -915,18 +910,21 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
             {selectedRun?.candidateDetailsTruncated && (
               <Alert type="warning" showIcon message="本次 candidates 明细被截断，完整候选请去 Candidate Pool 查看" className="gc-debug__inline-alert" />
             )}
+            <div className="gc-debug__table-scroll">
             <Table
               size="small"
               rowKey={(record) => record.resourceKey + "-" + record.reasonCode}
               columns={candidateColumns}
               dataSource={candidates}
               pagination={false}
+              scroll={{ x: 960, y: 360 }}
               locale={{ emptyText: "当前没有候选明细" }}
               onRow={(record) => ({
                 onClick: () => setSelectedCandidate(record),
                 style: { cursor: "pointer" },
               })}
             />
+            </div>
           </section>
 
           {/* Candidate Pool Explorer */}
@@ -978,13 +976,14 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
                 刷新 Pool
               </Button>
             </div>
+            <div className="gc-debug__table-scroll">
             <Table
               size="small"
               rowKey={(record) => record.candidateKey ?? record.resourceKey}
               dataSource={poolItems}
               pagination={false}
               locale={{ emptyText: "暂无 pool 数据，点击刷新 Pool 加载" }}
-              scroll={{ x: 960 }}
+              scroll={{ x: 960, y: 360 }}
               columns={[
                 {
                   title: "candidateKey",
@@ -1020,10 +1019,10 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
                   title: "State",
                   dataIndex: "state",
                   key: "state",
-                  width: 88,
-                  render: (value?: GcPoolState) => {
-                    const s = value ? POOL_STATE_LABELS[value] : null;
-                    return s ? <Tag color={s.color}>{s.label}</Tag> : <Tag>{value || "--"}</Tag>;
+                  width: 112,
+                  render: (value: GcPoolState | undefined, record) => {
+                    const s = getPoolStateLabel(value, record.action);
+                    return <Tag color={s.color}>{s.label}</Tag>;
                   },
                 },
                 {
@@ -1040,26 +1039,6 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
                         <Tag>{typeLabel}</Tag>
                       </Tooltip>
                     );
-                  },
-                },
-                {
-                  title: "Readiness",
-                  key: "readiness",
-                  width: 110,
-                  render: (_, record) => {
-                    const r = record.readiness;
-                    if (!r) return "--";
-                    const l = READINESS_LABELS[r];
-                    return l ? <Tag color={l.color}>{l.label}</Tag> : <Tag>{r}</Tag>;
-                  },
-                },
-                {
-                  title: "Risk",
-                  key: "riskLevel",
-                  width: 72,
-                  render: (_, record) => {
-                    const level = record.riskAssessment?.level ?? record.riskLevel;
-                    return level ? <Tag color={getRiskColor(level)}>{level}</Tag> : "--";
                   },
                 },
                 {
@@ -1082,6 +1061,7 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
                 style: { cursor: "pointer" },
               })}
             />
+            </div>
           </section>
 
           {/* Sweep Console */}
@@ -1310,6 +1290,7 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
               )}
             </div>
           </section>
+          </div>
         </Spin>
       </div>
     </Modal>
@@ -1428,76 +1409,6 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
 
           <Divider />
 
-          {/* Section 3: 兼容字段 (downgraded) */}
-          <details className="gc-debug__compat-section">
-            <summary>兼容字段（旧版风险/动作/检查）</summary>
-            <div className="gc-debug__compat-inner">
-              {selectedCandidate.riskAssessment && (
-                <div className="gc-debug__risk-assessment">
-                  <div className="gc-debug__risk-header">
-                    <Tag color={getRiskColor(selectedCandidate.riskAssessment.level)}>
-                      {selectedCandidate.riskAssessment.level}
-                    </Tag>
-                    <span>风险分：<strong>{selectedCandidate.riskAssessment.score}</strong></span>
-                  </div>
-                  {selectedCandidate.riskAssessment.reasons.length > 0 && (
-                    <div className="gc-debug__risk-reasons">
-                      {selectedCandidate.riskAssessment.reasons.map((reason, idx) => (
-                        <div key={idx} className="gc-debug__risk-reason-item">{reason}</div>
-                      ))}
-                    </div>
-                  )}
-                  {selectedCandidate.riskAssessment.factors.length > 0 && (
-                    <div className="gc-debug__risk-factors">
-                      <Typography.Text type="secondary">风险因子</Typography.Text>
-                      {selectedCandidate.riskAssessment.factors.map((factor, idx) => (
-                        <Tooltip key={idx} title={factor.detail ? JSON.stringify(factor.detail, null, 2) : undefined}>
-                          <Tag className="gc-debug__factor-tag">
-                            {factor.code}
-                            <span className="gc-debug__factor-weight">
-                              {factor.weight > 0 ? "+" : ""}{factor.weight}
-                            </span>
-                          </Tag>
-                        </Tooltip>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <Descriptions column={1} bordered size="small" style={{ marginTop: 12 }}>
-                <Descriptions.Item label="plannedAction">
-                  {selectedCandidate.plannedAction ? (
-                    <Tag>{PLANNED_ACTION_LABELS[selectedCandidate.plannedAction] ?? selectedCandidate.plannedAction}</Tag>
-                  ) : "--"}
-                </Descriptions.Item>
-                <Descriptions.Item label="readiness">
-                  {selectedCandidate.readiness ? (
-                    <Tag color={READINESS_LABELS[selectedCandidate.readiness].color}>
-                      {READINESS_LABELS[selectedCandidate.readiness].label}
-                    </Tag>
-                  ) : "--"}
-                </Descriptions.Item>
-                <Descriptions.Item label="requiredChecks">
-                  {selectedCandidate.requiredChecks && selectedCandidate.requiredChecks.length > 0 ? (
-                    <div className="gc-debug__checks-list">
-                      {selectedCandidate.requiredChecks.map((check) => (
-                        <Tag key={check} className="gc-debug__check-tag">
-                          {REQUIRED_CHECK_LABELS[check] ?? check}
-                        </Tag>
-                      ))}
-                    </div>
-                  ) : "--"}
-                </Descriptions.Item>
-                <Descriptions.Item label="riskLevel">
-                  <Tag color={getRiskColor(selectedCandidate.riskLevel)}>{selectedCandidate.riskLevel ?? "medium"}</Tag>
-                </Descriptions.Item>
-              </Descriptions>
-            </div>
-          </details>
-
-          <Divider />
-
           {/* Section 4: 扫描范围 */}
           <Descriptions column={1} bordered size="small" title="扫描范围">
             <Descriptions.Item label="docId">
@@ -1548,15 +1459,9 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
             </Descriptions.Item>
             <Descriptions.Item label="state">
               {(() => {
-                const s = selectedPoolItem.state;
-                const l = s ? POOL_STATE_LABELS[s] : null;
-                return l ? <Tag color={l.color}>{l.label}</Tag> : <Tag>{s || "--"}</Tag>;
+                const l = getPoolStateLabel(selectedPoolItem.state, selectedPoolItem.action);
+                return <Tag color={l.color}>{l.label}</Tag>;
               })()}
-            </Descriptions.Item>
-            <Descriptions.Item label="riskLevel">
-              <Tag color={getRiskColor(selectedPoolItem.riskAssessment?.level ?? selectedPoolItem.riskLevel)}>
-                {selectedPoolItem.riskAssessment?.level ?? selectedPoolItem.riskLevel ?? "--"}
-              </Tag>
             </Descriptions.Item>
           </Descriptions>
 
@@ -1616,51 +1521,6 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
               </div>
             </>
           )}
-
-          <Divider />
-
-          <details className="gc-debug__compat-section">
-            <summary>兼容字段（风险/动作/检查）</summary>
-            <div className="gc-debug__compat-inner">
-              {selectedPoolItem.riskAssessment && (
-                <div className="gc-debug__risk-assessment">
-                  <div className="gc-debug__risk-header">
-                    <Tag color={getRiskColor(selectedPoolItem.riskAssessment.level)}>
-                      {selectedPoolItem.riskAssessment.level}
-                    </Tag>
-                    <span>风险分：<strong>{selectedPoolItem.riskAssessment.score}</strong></span>
-                  </div>
-                  {selectedPoolItem.riskAssessment.reasons.length > 0 && (
-                    <div className="gc-debug__risk-reasons">
-                      {selectedPoolItem.riskAssessment.reasons.map((reason, idx) => (
-                        <div key={idx} className="gc-debug__risk-reason-item">{reason}</div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-              <Descriptions column={1} bordered size="small" style={{ marginTop: 12 }}>
-                <Descriptions.Item label="readiness">
-                  {selectedPoolItem.readiness ? (() => {
-                    const l = READINESS_LABELS[selectedPoolItem.readiness];
-                    return l ? <Tag color={l.color}>{l.label}</Tag> : <Tag>{selectedPoolItem.readiness}</Tag>;
-                  })() : "--"}
-                </Descriptions.Item>
-                <Descriptions.Item label="requiredChecks">
-                  {selectedPoolItem.requiredChecks && selectedPoolItem.requiredChecks.length > 0 ? (
-                    <div className="gc-debug__checks-list">
-                      {selectedPoolItem.requiredChecks.map((check) => (
-                        <Tag key={check} className="gc-debug__check-tag">
-                          {REQUIRED_CHECK_LABELS[check] ?? check}
-                        </Tag>
-                      ))}
-                    </div>
-                  ) : "--"}
-                </Descriptions.Item>
-              </Descriptions>
-            </div>
-          </details>
-
           <Divider />
 
           <details className="gc-debug__raw-detail">
