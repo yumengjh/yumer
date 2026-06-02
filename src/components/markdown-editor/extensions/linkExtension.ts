@@ -9,7 +9,7 @@
  *    is handled by the React LinkToolbar component.
  */
 
-import { Link } from "@tiptap/extension-link";
+import { Link, type LinkOptions } from "@tiptap/extension-link";
 import { Plugin, PluginKey } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 
@@ -166,12 +166,13 @@ export const LinkExtension = Link.extend({
 
   addOptions() {
     return {
-      ...this.parent?.(),
+      ...(this.parent?.() || {}),
       openOnClick: false,
+      autolink: true,
       HTMLAttributes: {
         class: "tiptap-link",
       },
-    };
+    } as LinkOptions;
   },
 
   inclusive() {
