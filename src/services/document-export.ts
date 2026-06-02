@@ -7,7 +7,28 @@ type ExportDownloadResult = {
   blob: Blob;
 };
 
-function parseFilename(contentDisposition: string | null, format: DocumentExportFormat): string {
+function getExportExtension(format: DocumentExportFormat): string {
+  return format === "html" ? "zip" : format;
+}
+
+function sanitizeFilenamePart(input: string): string {
+  return input
+    .replace(/[\\/:*?"<>|]+/g, "_")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+}
+
+function buildFallbackFilename(format: DocumentExportFormat, documentTitle?: string): string {
+  const filenameBase = sanitizeFilenamePart(documentTitle ?? "") || "document";
+  return `${filenameBase}.${getExportExtension(format)}`;
+}
+
+function parseFilename(
+  contentDisposition: string | null,
+  format: DocumentExportFormat,
+  documentTitle?: string,
+): string {
   if (contentDisposition) {
     const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
     if (utf8Match?.[1]) {
@@ -29,7 +50,7 @@ function parseFilename(contentDisposition: string | null, format: DocumentExport
     }
   }
 
-  return `document.${format === "html" ? "zip" : format}`;
+  return buildFallbackFilename(format, documentTitle);
 }
 
 function readErrorMessage(payload: unknown, status: number): string {
@@ -64,6 +85,7 @@ function triggerDownload(blob: Blob, filename: string) {
 export async function downloadDocumentExport(
   docId: string,
   format: DocumentExportFormat,
+  documentTitle?: string,
 ): Promise<ExportDownloadResult> {
   const response = await apiFetch(`/documents/${docId}/export?format=${format}`);
   if (!response.ok) {
@@ -77,7 +99,7 @@ export async function downloadDocumentExport(
   }
 
   const blob = await response.blob();
-  const filename = parseFilename(response.headers.get("content-disposition"), format);
+  const filename = parseFilename(response.headers.get("content-disposition"), format, documentTitle);
   triggerDownload(blob, filename);
   return { filename, blob };
 }

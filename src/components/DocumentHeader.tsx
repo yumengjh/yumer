@@ -637,7 +637,7 @@ export function DocumentHeader({
       if (!currentDoc || exportingFormat) return;
       setExportingFormat(format);
       try {
-        const result = await downloadDocumentExport(currentDoc.docId, format);
+        const result = await downloadDocumentExport(currentDoc.docId, format, currentDoc.title);
         message.success(`已开始导出 ${result.filename}`);
       } catch (error) {
         message.error(`导出失败：${error instanceof Error ? error.message : "未知错误"}`);
