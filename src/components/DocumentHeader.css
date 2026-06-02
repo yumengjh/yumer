@@ -611,6 +611,19 @@
   opacity: 0.7;
 }
 
+.header-local-snapshot-compare__raw {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.header-local-snapshot-compare__raw-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .header-local-snapshot-compare__grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
