@@ -52,10 +52,10 @@
 
 .public-toc-panel .toc-rail-indicator {
   position: absolute;
-  left: 3px;
-  width: 3px;
+  left: 4px;
+  width: 2px;
   border-radius: 1.5px;
-  background-color: #4a5565;
+  background-color: var(--color-primary);
   transition: top 0.2s ease, height 0.15s ease;
 }
 
@@ -113,7 +113,7 @@
   width: 14px;
   height: 20px;
   margin-top: 1px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs, 3px);
   font-size: 9px;
   color: var(--color-text-quaternary);
   transition: color 0.15s ease, background-color 0.15s ease;
@@ -133,4 +133,18 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   white-space: normal;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .public-toc-panel .toc-rail-indicator {
+    transition: none;
+  }
+
+  .public-toc-panel .toc-item {
+    transition: none;
+  }
+
+  .public-toc-panel .toc-toggle {
+    transition: none;
+  }
 }

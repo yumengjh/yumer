@@ -28,20 +28,23 @@
   color: var(--color-text);
   margin: 0 0 24px;
   line-height: 1.4;
+  text-wrap: balance;
 }
 
 .doc-mobile-meta {
   display: none;
 }
 
-.doc-content {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  padding: 0 !important;
+.doc-content,
+.doc-content.tiptap-editor {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
   font-size: var(--doc-font-size, 16px);
   line-height: 1.8;
   overflow-x: visible;
+  text-wrap: pretty;
 }
 
 /*
@@ -68,18 +71,14 @@
   margin: 16px 0;
   max-width: 100%;
   overflow: hidden;
-  border-radius: 4px;
+  border-radius: var(--radius-sm, 4px);
   border: 1px solid var(--code-border);
   background: var(--code-bg);
 }
 
-/* 代码块 body 添加底部 padding */
+/* 代码块 body */
 .doc-content .code-block-body {
   padding-bottom: 12px;
-}
-
-/* 代码块 body 允许选中 */
-.doc-content .code-block-body {
   user-select: text;
   -webkit-user-select: text;
 }
@@ -99,15 +98,6 @@
   -webkit-user-select: text;
 }
 
-/* 代码块行高同步 */
-.doc-content .code-block-view,
-.doc-content .code-block-view .code-block-lines,
-.doc-content .code-block-view .code-block-line,
-.doc-content .code-block-view .code-block-line-content {
-  line-height: var(--code-block-line-height, 1.45);
-}
-
-
 /* 代码块使用独立行高，避免正文 line-height: 1.8 导致行号错位 */
 .doc-content .code-block-view,
 .doc-content .code-block-view .code-block-lines,
@@ -117,7 +107,7 @@
 }
 
 .doc-content img {
-  border-radius: 8px;
+  border-radius: var(--radius-md, 8px);
   cursor: zoom-in;
 }
 
@@ -205,13 +195,20 @@
   font-size: 12px;
   padding: 4px 10px;
   background-color: var(--color-bg-hover);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--radius-sm, 4px);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.doc-tag-badge:hover {
+  background-color: var(--color-bg-active);
   color: var(--color-text);
-  border-radius: 4px;
 }
 
 .doc-tag-dot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
 }
@@ -232,7 +229,7 @@
   z-index: 50;
 }
 
-/* Todo ???? - ?????????????? SVG checkbox */
+/* Task list SVG checkbox */
 .doc-content ul[data-type="taskList"],
 .doc-content ul.task-list {
   list-style: none;
@@ -333,8 +330,8 @@
 
 .doc-content li[data-type="taskItem"] input[type="checkbox"]:not(.task-item-checkbox-input):checked,
 .doc-content li.task-list-item input[type="checkbox"]:not(.task-item-checkbox-input):checked {
-  background-color: #15303d;
-  border-color: #15303d;
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
 }
 
 .doc-content li[data-type="taskItem"] input[type="checkbox"]:not(.task-item-checkbox-input):checked::after,
@@ -345,7 +342,7 @@
   left: 4.5px;
   width: 4px;
   height: 8px;
-  border: 2px solid #fff;
+  border: 2px solid var(--color-text-inverse);
   border-top: 0;
   border-left: 0;
   transform: rotate(45deg);
@@ -369,27 +366,38 @@
 
 @media (max-width: 768px) {
   .doc-page-body {
-    padding: 24px 16px;
+    padding: 20px 16px;
   }
 
   .doc-main-title {
-    font-size: 28px;
+    font-size: 26px;
     margin-bottom: 16px;
+    line-height: 1.35;
   }
 
   .doc-mobile-meta {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
-    gap: 12px 20px;
-    margin-bottom: 24px;
-    font-size: 14px;
+    gap: 8px 16px;
+    margin-bottom: 20px;
+    font-size: 13px;
+    color: var(--color-text-tertiary);
+  }
+
+  .doc-mobile-meta .doc-meta-label {
+    font-size: 12px;
+  }
+
+  .doc-footer {
+    padding-top: 20px;
+    gap: 10px;
   }
 
   .doc-footer .doc-footer-meta {
     flex-direction: column;
     align-items: flex-start;
-    gap: 10px;
+    gap: 8px;
   }
 
   .doc-footer .doc-meta-entry--views {
@@ -403,5 +411,30 @@
   .doc-content .doc-heading-anchor {
     left: calc(-0.9em - 0.12em);
     width: 0.9em;
+    min-height: 44px;
+    min-width: 44px;
+    display: inline-flex;
+  }
+
+  .doc-tag-badge {
+    padding: 6px 12px;
+    font-size: 13px;
+    min-height: 32px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .doc-content .doc-heading-anchor {
+    transition: none;
+  }
+
+  .doc-tag-badge {
+    transition: none;
+  }
+
+  .doc-content .checkbox-wrapper .check:checked + .label svg g path,
+  .doc-content .task-item-checkbox-input:checked + .task-item-checkbox svg g path {
+    stroke-dashoffset: 0;
+    opacity: 1;
   }
 }
