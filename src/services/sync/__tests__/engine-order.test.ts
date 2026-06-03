@@ -144,7 +144,7 @@ describe("deriveSyncEntries order handling", () => {
 
     expect(entries.filter((entry) => entry.opType === "move")).toEqual([]);
     expect(entries).toMatchObject([
-      { clientId: "b_b", blockId: "b_b", opType: "update" },
+      { clientId: "c_b", blockId: "b_b", opType: "update" },
     ]);
   });
 
@@ -369,13 +369,15 @@ describe("deriveSyncEntries order handling", () => {
     };
 
     const entries = deriveSyncEntries(previous, next);
+    const move = entries.find((entry) => entry.opType === "move");
 
-    expect(entries).toContainEqual({
-      clientId: "b_code",
+    expect(move).toMatchObject({
       blockId: "b_code",
       opType: "move",
-      sortKey: "013500",
+      sortKey: "001000",
     });
+    expect(move?.clientId).toEqual(expect.any(String));
+    expect(move?.clientId).not.toBe("b_code");
   });
 
   it("only emits a move for the dragged block when moving the tail block to the front", () => {
@@ -436,12 +438,46 @@ describe("deriveSyncEntries order handling", () => {
 
     expect(moves).toEqual([
       {
-        clientId: "b_6",
+        clientId: "c_6",
         blockId: "b_6",
         opType: "move",
-        sortKey: "000875",
+        sortKey: "001000",
       },
     ]);
+  });
+
+  it("keeps the existing clientId when a previously loaded block is edited", () => {
+    const previous: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_loaded", blockId: "b_loaded", sortKey: "001000" },
+          content: [{ type: "text", text: "before" }],
+        },
+      ],
+    };
+    const next: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_loaded", blockId: "b_loaded", sortKey: "001000" },
+          content: [{ type: "text", text: "after" }],
+        },
+      ],
+    };
+
+    const entries = deriveSyncEntries(previous, next);
+
+    expect(entries).toMatchObject([
+      {
+        clientId: "c_loaded",
+        blockId: "b_loaded",
+        opType: "update",
+      },
+    ]);
+    expect(entries.some((entry) => entry.clientId === "b_loaded")).toBe(false);
   });
 
   it("does not emit content updates for sync metadata-only changes", () => {

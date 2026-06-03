@@ -109,6 +109,55 @@ describe("markdown editor identity patching", () => {
     editor.destroy();
   });
 
+  it("still patches create ack identities when the local block text changed after dispatch", () => {
+    const editor = new Editor({
+      extensions: [
+        StarterKit.configure({
+          heading: { levels: [1, 2, 3, 4, 5, 6] },
+        }),
+        BlockIdAttribute,
+      ],
+      content: {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            attrs: { blockId: null, clientId: "client-live" },
+            content: [{ type: "text", text: "typed after create dispatch" }],
+          },
+        ],
+      },
+    });
+
+    editor.commands.setTextSelection(5);
+    const selectionBeforePatch = editor.state.selection.from;
+
+    const patched = patchEditorBlockIdentityFromDoc(editor, {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: {
+            blockId: "server-live",
+            "data-block-id": "server-live",
+            clientId: "client-live",
+            sortKey: "001000",
+          },
+          content: [{ type: "text", text: "text at dispatch time" }],
+        },
+      ],
+    } as TiptapDoc);
+
+    expect(patched).toBe(true);
+    expect(editor.state.selection.from).toBe(selectionBeforePatch);
+    const json = editor.getJSON() as TiptapDoc;
+    expect(json.content[0]?.attrs?.blockId).toBe("server-live");
+    expect(json.content[0]?.attrs?.sortKey).toBe("001000");
+    expect(json.content[0]?.content?.[0]?.text).toBe("typed after create dispatch");
+
+    editor.destroy();
+  });
+
   it("applies synced block ids and sort keys without moving selection", () => {
     const editor = new Editor({
       extensions: [

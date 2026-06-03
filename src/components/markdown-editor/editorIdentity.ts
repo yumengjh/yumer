@@ -146,9 +146,6 @@ function patchEditorBlockIdentityByClientIdFromDoc(
     if (!nextNode) return;
     if (currentNode.type.name !== nextNode.type) return;
 
-    const currentJson = currentNode.toJSON() as TiptapNode;
-    if (!sameNodeWithoutIdentity(currentJson, nextNode)) return;
-
     matched += 1;
     const nextIdentity = readIdentityFromAttrs(nextNode.attrs);
     const currentBlockId = currentIdentity.blockId ?? null;

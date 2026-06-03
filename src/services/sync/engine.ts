@@ -86,13 +86,14 @@ function payloadFingerprint(node: TiptapNode): string {
 
 type IndexedNode = {
   clientId: string;
+  matchKey: string;
   blockId: string | null;
   node: TiptapNode;
   index: number;
   sortKey: string;
 };
 
-function getSyncIdentityKey(identity: {
+function getSyncMatchKey(identity: {
   blockId?: string;
   clientId?: string;
 }): string | null {
@@ -105,10 +106,12 @@ function indexTopLevel(doc: TiptapDoc): Record<string, IndexedNode> {
   for (let i = 0; i < nodes.length; i += 1) {
     const node = nodes[i];
     const identity = readIdentityFromAttrs(node.attrs);
-    const identityKey = getSyncIdentityKey(identity);
-    if (!identityKey) continue;
-    indexed[identityKey] = {
-      clientId: identityKey,
+    const matchKey = getSyncMatchKey(identity);
+    const clientId = identity.clientId ?? null;
+    if (!matchKey || !clientId) continue;
+    indexed[matchKey] = {
+      clientId,
+      matchKey,
       blockId: identity.blockId ?? null,
       node,
       index: i,
@@ -129,7 +132,7 @@ export function analyzeSortKeyIntegrity(
 
   for (const node of nodes) {
     const identity = readIdentityFromAttrs(node.attrs);
-    const identityKey = getSyncIdentityKey(identity);
+    const identityKey = getSyncMatchKey(identity);
     if (!identityKey) continue;
     const sortKey =
       typeof node.attrs?.sortKey === "string" &&
@@ -249,7 +252,7 @@ function allocateCreateSortKeys(
 
   while (index < orderedNextNodes.length) {
     const node = orderedNextNodes[index];
-    if (prevIndexed[node.clientId]?.blockId) {
+    if (prevIndexed[node.matchKey]?.blockId) {
       index += 1;
       continue;
     }
@@ -258,7 +261,7 @@ function allocateCreateSortKeys(
     const run: IndexedNode[] = [];
     while (
       index < orderedNextNodes.length &&
-      !prevIndexed[orderedNextNodes[index].clientId]?.blockId
+      !prevIndexed[orderedNextNodes[index].matchKey]?.blockId
     ) {
       run.push(orderedNextNodes[index]);
       index += 1;
@@ -268,13 +271,13 @@ function allocateCreateSortKeys(
       .reverse()
       .find(
         (item) =>
-          item.blockId || prevIndexed[item.clientId]?.blockId || item.sortKey,
+          item.blockId || prevIndexed[item.matchKey]?.blockId || item.sortKey,
       );
     const nextExisting = orderedNextNodes
       .slice(index)
       .find(
         (item) =>
-          item.blockId || prevIndexed[item.clientId]?.blockId || item.sortKey,
+          item.blockId || prevIndexed[item.matchKey]?.blockId || item.sortKey,
       );
     const allocated = createSortKeysBetween(
       previousExisting?.sortKey ?? null,
@@ -296,23 +299,23 @@ function planDesiredSortKeys(
 ): Map<string, string> {
   const desiredSortKeys = new Map<string, string>();
   const existingNodes = orderedNextNodes.filter((node) =>
-    Boolean(prevIndexed[node.clientId]?.blockId),
+    Boolean(prevIndexed[node.matchKey]?.blockId),
   );
   const existingValues = existingNodes.map(
-    (node) => parseSortKey(prevIndexed[node.clientId].sortKey) ?? 0,
+    (node) => parseSortKey(prevIndexed[node.matchKey].sortKey) ?? 0,
   );
   const stableAnchorIds = new Set(
     longestIncreasingSubsequence(existingValues).map(
-      (index) => existingNodes[index].clientId,
+      (index) => existingNodes[index].matchKey,
     ),
   );
 
   let index = 0;
   while (index < orderedNextNodes.length) {
     const current = orderedNextNodes[index];
-    const previousNode = prevIndexed[current.clientId];
+    const previousNode = prevIndexed[current.matchKey];
 
-    if (previousNode?.blockId && stableAnchorIds.has(current.clientId)) {
+    if (previousNode?.blockId && stableAnchorIds.has(current.matchKey)) {
       desiredSortKeys.set(current.clientId, previousNode.sortKey);
       index += 1;
       continue;
@@ -321,8 +324,8 @@ function planDesiredSortKeys(
     const runStart = index;
     while (index < orderedNextNodes.length) {
       const candidate = orderedNextNodes[index];
-      const candidatePrevious = prevIndexed[candidate.clientId];
-      if (candidatePrevious?.blockId && stableAnchorIds.has(candidate.clientId)) {
+      const candidatePrevious = prevIndexed[candidate.matchKey];
+      if (candidatePrevious?.blockId && stableAnchorIds.has(candidate.matchKey)) {
         break;
       }
       index += 1;
@@ -355,15 +358,17 @@ export function deriveSyncEntries(
   prevDoc: TiptapDoc | null,
   nextDoc: TiptapDoc,
 ): SyncEntry[] {
-  const nextIndexed = indexTopLevel(nextDoc);
-  const prevIndexed = prevDoc ? indexTopLevel(prevDoc) : {};
+  const normalizedNext = normalizeEditorDoc(nextDoc);
+  const normalizedPrev = prevDoc ? normalizeEditorDoc(prevDoc) : null;
+  const nextIndexed = indexTopLevel(normalizedNext);
+  const prevIndexed = normalizedPrev ? indexTopLevel(normalizedPrev) : {};
   const entries: SyncEntry[] = [];
   const orderedNextNodes = Object.values(nextIndexed).sort(
     (a, b) => a.index - b.index,
   );
   const createSortKeys = allocateCreateSortKeys(orderedNextNodes, prevIndexed);
   const previousSortKeysAreCorrupted = hasCorruptedSortKeys(
-    analyzeSortKeyIntegrity(prevDoc),
+    analyzeSortKeyIntegrity(normalizedPrev),
   );
   const shouldSuppressExistingMoves = previousSortKeysAreCorrupted;
   const desiredSortKeys = shouldSuppressExistingMoves
@@ -371,7 +376,7 @@ export function deriveSyncEntries(
     : planDesiredSortKeys(orderedNextNodes, prevIndexed);
 
   for (const nextNode of orderedNextNodes) {
-    const prevNode = prevIndexed[nextNode.clientId];
+    const prevNode = prevIndexed[nextNode.matchKey];
     if (!prevNode?.blockId) {
       const syncCreateId = createSyncCreateId(nextNode.clientId);
       entries.push({
@@ -415,7 +420,7 @@ export function deriveSyncEntries(
   }
 
   for (const prevNode of Object.values(prevIndexed)) {
-    if (prevNode.blockId && !nextIndexed[prevNode.clientId]) {
+    if (prevNode.blockId && !nextIndexed[prevNode.matchKey]) {
       entries.push({
         clientId: prevNode.clientId,
         blockId: prevNode.blockId,

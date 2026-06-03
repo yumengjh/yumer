@@ -1,4 +1,4 @@
-import { readIdentityFromAttrs } from "./sync/identity";
+import { ensureDocumentIdentity, readIdentityFromAttrs } from "./sync/identity";
 
 export interface TiptapNode {
   type: string;
@@ -118,7 +118,7 @@ export function blocksToTiptapJson(
     } as unknown as TiptapNode;
   });
 
-  return { type: "doc", content };
+  return ensureDocumentIdentity({ type: "doc", content });
 }
 
 export function extractPlainText(node: TiptapNode): string {

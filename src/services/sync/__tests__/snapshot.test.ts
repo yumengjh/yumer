@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createInitialSyncState } from "../reducer";
+import { createInitialSyncState, markBatchInflight, resolveBatchSuccess } from "../reducer";
 import { advanceSyncSnapshot } from "../snapshot";
+import { selectSyncBatchOperations } from "../batching";
 import type { TiptapDoc } from "@/services/tiptap-converter";
 
 describe("sync snapshot advancement", () => {
@@ -72,9 +73,9 @@ describe("sync snapshot advancement", () => {
 
     const next = advanceSyncSnapshot(state, previous, current);
 
-    expect(next.state.dirtyOrder).toEqual(["block_1"]);
+    expect(next.state.dirtyOrder).toEqual(["client_1"]);
     expect(next.state.syncState).toBe("dirty");
-    expect((next.state.entries.block_1.payload as { content?: Array<{ text?: string }> }).content?.[0]?.text).toBe(
+    expect((next.state.entries.client_1.payload as { content?: Array<{ text?: string }> }).content?.[0]?.text).toBe(
       "new text just typed",
     );
     expect(next.snapshot.content?.[0].content?.[0].text).toBe("new text just typed");
@@ -147,15 +148,18 @@ describe("sync snapshot advancement", () => {
     };
 
     const next = advanceSyncSnapshot(state, previous, current);
+    const generatedClientId = next.snapshot.content?.[0].attrs?.clientId;
 
-    expect(next.state.dirtyOrder).toEqual(["block_code"]);
-    expect(next.state.entries.block_code).toMatchObject({
-      clientId: "block_code",
+    expect(generatedClientId).toEqual(expect.any(String));
+    expect(generatedClientId).not.toBe("block_code");
+    expect(next.state.dirtyOrder).toEqual([generatedClientId]);
+    expect(next.state.entries[generatedClientId as string]).toMatchObject({
+      clientId: generatedClientId,
       blockId: "block_code",
       opType: "move",
-      sortKey: "013500",
+      sortKey: "001000",
     });
-    expect(next.snapshot.content?.[0].attrs?.sortKey).toBe("013500");
+    expect(next.snapshot.content?.[0].attrs?.sortKey).toBe("001000");
   });
 
   it("persists generated sortKeys into the local snapshot for sequential blank-line creation", () => {
@@ -218,5 +222,125 @@ describe("sync snapshot advancement", () => {
     expect(step2.snapshot.content?.[2].attrs?.sortKey).toBe("003000");
     expect(step2.state.entries.blank_1.sortKey).toBe("002000");
     expect(step2.state.entries.block_2.sortKey).toBe("003000");
+  });
+
+  it("keeps deleting an older existing block when a replacement wave is removed during create ack", () => {
+    let state = createInitialSyncState("doc_1", "root_1", 1);
+
+    const loaded: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { blockId: "b_old_a", clientId: "c_old_a", sortKey: "001000" },
+          content: [{ type: "text", text: "old a" }],
+        },
+        {
+          type: "paragraph",
+          attrs: { blockId: "b_old_b", clientId: "c_old_b", sortKey: "002000" },
+          content: [{ type: "text", text: "old b" }],
+        },
+      ],
+    };
+
+    const initial = advanceSyncSnapshot(state, null, loaded);
+    state = initial.state;
+
+    const replacementWave: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_final", sortKey: "001000" },
+          content: [{ type: "text", text: "final text" }],
+        },
+        {
+          type: "paragraph",
+          attrs: { blockId: "b_old_b", clientId: "c_old_b", sortKey: "002000" },
+          content: [{ type: "text", text: "old b" }],
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_temp_3", sortKey: "003000" },
+          content: [{ type: "text", text: "temp 3" }],
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_temp_4", sortKey: "004000" },
+          content: [{ type: "text", text: "temp 4" }],
+        },
+      ],
+    };
+
+    const step1 = advanceSyncSnapshot(state, initial.snapshot, replacementWave);
+    state = markBatchInflight(
+      step1.state,
+      "batch_1",
+      step1.state.dirtyOrder,
+      false,
+    );
+
+    const finalLocal: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_final", sortKey: "001000" },
+          content: [{ type: "text", text: "final text" }],
+        },
+      ],
+    };
+
+    const step2 = advanceSyncSnapshot(state, step1.snapshot, finalLocal);
+
+    expect(step2.state.entries.c_old_b).toMatchObject({
+      clientId: "c_old_b",
+      blockId: "b_old_b",
+      opType: "delete",
+    });
+
+    const afterAck = resolveBatchSuccess(step2.state, "batch_1", [
+      {
+        operation: "create",
+        success: true,
+        clientId: "c_final",
+        blockId: "b_final",
+        sortKey: "001000",
+      },
+      {
+        operation: "delete",
+        success: true,
+        blockId: "b_old_a",
+      },
+      {
+        operation: "create",
+        success: true,
+        clientId: "c_temp_3",
+        blockId: "b_temp_3",
+        sortKey: "003000",
+      },
+      {
+        operation: "create",
+        success: true,
+        clientId: "c_temp_4",
+        blockId: "b_temp_4",
+        sortKey: "004000",
+      },
+    ]);
+
+    const followUp = selectSyncBatchOperations(
+      afterAck.dirtyOrder,
+      afterAck.entries,
+    );
+
+    expect(followUp).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          clientId: "c_old_b",
+          blockId: "b_old_b",
+          opType: "delete",
+        }),
+      ]),
+    );
   });
 });
