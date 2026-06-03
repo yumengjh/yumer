@@ -4,7 +4,7 @@ function normalizeCreatePayload(entry: SyncEntry): SyncEntry {
   if (entry.opType !== "create" || !entry.payload) return entry;
 
   const syncCreateId = entry.syncCreateId ?? `sync-create:${entry.clientId}`;
-  const nextAttrs = {
+  const nextAttrs: Record<string, unknown> = {
     ...((entry.payload.attrs as Record<string, unknown> | undefined) ?? {}),
     blockId: null,
     clientId: entry.clientId,
@@ -200,7 +200,7 @@ function withServerBlockId(
   blockId: string,
   sortKey?: string,
 ): SyncEntry {
-  const nextAttrs = {
+  const nextAttrs: Record<string, unknown> = {
     ...((entry.payload?.attrs as Record<string, unknown> | undefined) ?? {}),
     blockId,
     "data-block-id": blockId,

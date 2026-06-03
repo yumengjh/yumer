@@ -229,7 +229,7 @@ function withCreateIdentity(
   node: TiptapNode,
   clientId: string,
 ): Record<string, unknown> {
-  const nextAttrs = {
+  const nextAttrs: Record<string, unknown> = {
     ...(node.attrs ?? {}),
     clientId,
     blockId: null,

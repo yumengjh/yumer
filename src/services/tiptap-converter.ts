@@ -131,7 +131,7 @@ export function blocksToTiptapJson(
     } as unknown as TiptapNode;
   });
 
-  return ensureDocumentIdentity({ type: "doc", content });
+  return ensureDocumentIdentity({ type: "doc", content }) as TiptapDoc;
 }
 
 export function extractPlainText(node: TiptapNode): string {
