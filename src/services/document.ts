@@ -257,6 +257,21 @@ export async function publishDocument(
   return apiPost<PublishDocumentResult>(`/documents/${docId}/publish`);
 }
 
+export async function publishDocumentVersion(
+  docId: string,
+  version: number,
+): Promise<PublishDocumentResult> {
+  return apiPost<PublishDocumentResult>(`/documents/${docId}/publish-version`, {
+    version,
+  });
+}
+
+export async function unpublishDocument(
+  docId: string,
+): Promise<PublishDocumentResult> {
+  return apiPost<PublishDocumentResult>(`/documents/${docId}/unpublish`);
+}
+
 // ─── 块操作 ───
 
 const BATCH_SIZE = 100;

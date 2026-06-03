@@ -16,6 +16,8 @@ import {
   updateDocument as apiUpdateDoc,
   deleteDocument as apiDeleteDoc,
   publishDocument as apiPublishDoc,
+  publishDocumentVersion as apiPublishDocVersion,
+  unpublishDocument as apiUnpublishDoc,
   type EditDraftMeta,
   type Document,
   type EditorContent,
@@ -62,6 +64,9 @@ interface DocumentContextValue {
   updateDoc: (docId: string, data: { title?: string; icon?: string; cover?: string; visibility?: string; tags?: string[]; category?: string; status?: string }) => Promise<void>;
   deleteDoc: (docId: string) => Promise<void>;
   publishDoc: (docId: string) => Promise<PublishDocumentResult>;
+  publishDocVersion: (docId: string, version: number) => Promise<PublishDocumentResult>;
+  unpublishDoc: (docId: string) => Promise<PublishDocumentResult>;
+  syncDocumentMetadata: (doc: Document) => void;
   refreshDocs: () => Promise<void>;
   getBlockId: (domIndex: number) => string | undefined;
 }
@@ -203,6 +208,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     return { content, docVer };
   }, []);
 
+  const syncDocumentMetadata = useCallback((updated: Document) => {
+    if (currentDocRef.current?.docId === updated.docId) {
+      currentDocRef.current = updated;
+      setCurrentDoc(updated);
+    }
+    setDocuments((prev) =>
+      prev.map((doc) => (doc.docId === updated.docId ? updated : doc)),
+    );
+  }, []);
+
   const applyCommittedVersion = useCallback((version: number) => {
     const current = currentDocRef.current;
     if (current) {
@@ -275,19 +290,29 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const publishDoc = useCallback(
     async (docId: string): Promise<PublishDocumentResult> => {
       const result = await apiPublishDoc(docId);
-      const updated = result.document;
-      setCurrentDoc(updated);
-      setCurrentDocVersion(updated.head);
-      setCurrentContentSource("head");
-      setCurrentDraftMeta(null);
-      currentDocRef.current = updated;
-      setDocuments((prev) =>
-        prev.map((d) => (d.docId === docId ? updated : d)),
-      );
-      resetWindowPath(updated.docId);
+      syncDocumentMetadata(result.document);
+      resetWindowPath(result.document.docId);
       return result;
     },
-    [],
+    [syncDocumentMetadata],
+  );
+
+  const publishDocVersion = useCallback(
+    async (docId: string, version: number): Promise<PublishDocumentResult> => {
+      const result = await apiPublishDocVersion(docId, version);
+      syncDocumentMetadata(result.document);
+      return result;
+    },
+    [syncDocumentMetadata],
+  );
+
+  const unpublishDoc = useCallback(
+    async (docId: string): Promise<PublishDocumentResult> => {
+      const result = await apiUnpublishDoc(docId);
+      syncDocumentMetadata(result.document);
+      return result;
+    },
+    [syncDocumentMetadata],
   );
 
   const getBlockId = useCallback((): string | undefined => {
@@ -324,6 +349,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         updateDoc,
         deleteDoc,
         publishDoc,
+        publishDocVersion,
+        unpublishDoc,
+        syncDocumentMetadata,
         refreshDocs,
         getBlockId,
       }}

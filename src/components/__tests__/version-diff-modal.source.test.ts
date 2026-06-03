@@ -20,6 +20,10 @@ describe("VersionDiffModal source", () => {
     expect(source).toContain("没有可见差异");
     expect(source).toContain("revertDocument");
     expect(source).toContain("回退到此版本");
+    expect(source).toContain("publishDocumentVersion");
+    expect(source).toContain("发布此版本");
+    expect(source).toContain("publishedHead");
+    expect(source).toContain("已发布");
     expect(source).toContain("保存草稿并回退");
     expect(source).toContain("丢弃草稿并回退");
   });

@@ -49,6 +49,7 @@ import {
   type ManualPublicDocRevalidationResult,
 } from "@/services/public-doc-revalidation";
 import type { PublicDocRevalidationResult } from "@/services/document";
+import type { Document as EditorDocument } from "@/services/document";
 import { downloadDocumentExport, type DocumentExportFormat } from "@/services/document-export";
 import { getDocumentSyncState } from "@/services/sync/api";
 import { SyncDebugLog, type SyncDebugRecord } from "@/services/sync/debug-log";
@@ -269,6 +270,23 @@ function describePublishRevalidation(result: PublicDocRevalidationResult): strin
     : `发布成功，但公开页缓存刷新失败：${detail}`;
 }
 
+function describeUnpublishRevalidation(result: PublicDocRevalidationResult): string {
+  if (result.success) {
+    return "已取消发布，公开页缓存已刷新";
+  }
+
+  if (!result.attempted) {
+    return "已取消发布，公开页缓存未刷新";
+  }
+
+  const detail = result.status
+    ? `状态码 ${result.status}`
+    : result.error || "未知错误";
+  return result.responseBody
+    ? `已取消发布，但公开页缓存刷新失败：${detail}，${result.responseBody}`
+    : `已取消发布，但公开页缓存刷新失败：${detail}`;
+}
+
 function stringifyFilteredDoc(content: TiptapDoc | null, filterKeys: Set<string>): string | null {
   if (!content) return null;
   try {
@@ -406,6 +424,8 @@ export function DocumentHeader({
     currentDocSlug,
     selectDoc,
     publishDoc,
+    unpublishDoc,
+    syncDocumentMetadata,
     refreshDocs,
   } = useDocument();
   const { user, logout } = useAuth();
@@ -598,6 +618,37 @@ export function DocumentHeader({
       setPublishing(false);
     }
   }, [currentDoc, publishDoc]);
+
+  const handleUnpublish = useCallback(async () => {
+    if (!currentDoc) return;
+    setPublishing(true);
+    try {
+      const result = await unpublishDoc(currentDoc.docId);
+      const content = describeUnpublishRevalidation(result.revalidation);
+      if (result.revalidation.success) {
+        message.success(content);
+      } else if (result.revalidation.attempted) {
+        message.warning(content);
+      } else {
+        message.info(content);
+      }
+    } catch {
+      message.error("取消发布失败");
+    } finally {
+      setPublishing(false);
+    }
+  }, [currentDoc, unpublishDoc]);
+
+  const handleVersionPublished = useCallback(
+    async (document?: EditorDocument) => {
+      if (document) {
+        syncDocumentMetadata(document);
+        return;
+      }
+      await refreshDocs();
+    },
+    [refreshDocs, syncDocumentMetadata],
+  );
 
   const requestRevalidateSecret = useCallback((): Promise<string | null> => {
     if (typeof window === "undefined") return Promise.resolve(null);
@@ -1048,10 +1099,15 @@ export function DocumentHeader({
               </Tooltip>
             </Dropdown>
             {currentDoc.publishedHead ? (
-              <span className="header-published" title={`已发布版本 ${currentDoc.publishedHead}`}>
-                <span className="header-published__dot" />
-                v{currentDoc.publishedHead}
-              </span>
+              <>
+                <span className="header-published" title={`已发布版本 ${currentDoc.publishedHead}`}>
+                  <span className="header-published__dot" />
+                  v{currentDoc.publishedHead}
+                </span>
+                <Button size="small" type="text" onClick={handleUnpublish} loading={publishing}>
+                  取消发布
+                </Button>
+              </>
             ) : null}
           </div>
 
@@ -1131,7 +1187,9 @@ export function DocumentHeader({
           open={diffOpen}
           onClose={() => setDiffOpen(false)}
           docId={currentDoc.docId}
+          publishedHead={currentDoc.publishedHead ?? 0}
           onReverted={onRevertedToVersion}
+          onPublished={handleVersionPublished}
         />
       )}
       <DocumentSidebar

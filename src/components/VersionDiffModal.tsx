@@ -9,7 +9,9 @@ import {
   getVersionContent,
   getVersionDiff,
   getEditContent,
+  publishDocumentVersion,
   revertDocument,
+  type Document,
   type Revision,
   type DiffSummary,
   type DiffRef,
@@ -24,7 +26,9 @@ interface VersionDiffModalProps {
   open: boolean;
   onClose: () => void;
   docId: string;
+  publishedHead?: number;
   onReverted?: () => void | Promise<void>;
+  onPublished?: (document: Document) => void | Promise<void>;
 }
 
 type RefKey = "draft" | `revision:${number}`;
@@ -44,7 +48,14 @@ function keyToRef(key: RefKey): DiffRef {
   return { kind: "revision", version: Number(key.split(":")[1]) };
 }
 
-export function VersionDiffModal({ open, onClose, docId, onReverted }: VersionDiffModalProps) {
+export function VersionDiffModal({
+  open,
+  onClose,
+  docId,
+  publishedHead = 0,
+  onReverted,
+  onPublished,
+}: VersionDiffModalProps) {
   const [revisions, setRevisions] = useState<Revision[]>([]);
   const [loadingRevisions, setLoadingRevisions] = useState(false);
   const [draftMeta, setDraftMeta] = useState<DraftMeta>({ exists: false });
@@ -62,6 +73,7 @@ export function VersionDiffModal({ open, onClose, docId, onReverted }: VersionDi
   const [contentLoaded, setContentLoaded] = useState(false);
   const [revertTargetVersion, setRevertTargetVersion] = useState<number | null>(null);
   const [reverting, setReverting] = useState(false);
+  const [publishingVersion, setPublishingVersion] = useState(false);
 
   const contentCacheRef = useRef(new Map<string, string>());
 
@@ -322,6 +334,8 @@ export function VersionDiffModal({ open, onClose, docId, onReverted }: VersionDi
     selectedKey && selectedKey !== "draft" ? (keyToRef(selectedKey).version as number) : null;
   const canRevertSelectedVersion =
     selectedRevisionVersion !== null && selectedRevisionVersion !== revisions[0]?.docVer;
+  const canPublishSelectedVersion =
+    selectedRevisionVersion !== null && selectedRevisionVersion !== publishedHead;
 
   const executeRevert = useCallback(
     async (draftStrategy?: RevertDraftStrategy) => {
@@ -353,6 +367,22 @@ export function VersionDiffModal({ open, onClose, docId, onReverted }: VersionDi
     if (!canRevertSelectedVersion || selectedRevisionVersion === null) return;
     setRevertTargetVersion(selectedRevisionVersion);
   }, [canRevertSelectedVersion, selectedRevisionVersion]);
+
+  const handlePublishVersion = useCallback(async () => {
+    if (!canPublishSelectedVersion || selectedRevisionVersion === null) return;
+
+    setPublishingVersion(true);
+    try {
+      const result = await publishDocumentVersion(docId, selectedRevisionVersion);
+      message.success(`已发布 v${selectedRevisionVersion}`);
+      await onPublished?.(result.document);
+      onClose();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "发布失败，请重试");
+    } finally {
+      setPublishingVersion(false);
+    }
+  }, [canPublishSelectedVersion, docId, onClose, onPublished, selectedRevisionVersion]);
 
   return (
     <Modal
@@ -408,7 +438,10 @@ export function VersionDiffModal({ open, onClose, docId, onReverted }: VersionDi
                     >
                       <span className="version-diff__sidebar-ver">v{rev.docVer}</span>
                       <div className="version-diff__sidebar-info">
-                        <div className="version-diff__sidebar-time">{formatTime(rev.createdAt)}</div>
+                        <div className="version-diff__sidebar-time">
+                          {formatTime(rev.createdAt)}
+                          {rev.docVer === publishedHead ? <Tag color="gold">已发布</Tag> : null}
+                        </div>
                         {rev.message && <div className="version-diff__sidebar-msg">{rev.message}</div>}
                       </div>
                     </div>
@@ -486,8 +519,14 @@ export function VersionDiffModal({ open, onClose, docId, onReverted }: VersionDi
           {selectedKey !== null && !diffHtml && (
             <div className="version-diff__version-bar">
               <strong>{getRefLabel(selectedKey)}</strong>
+              {selectedRevisionVersion === publishedHead ? <Tag color="gold">已发布</Tag> : null}
               <span>{getRefTime(selectedKey)}</span>
               <span>{getRefMessage(selectedKey)}</span>
+              {canPublishSelectedVersion && (
+                <Button size="small" type="primary" onClick={handlePublishVersion} loading={publishingVersion}>
+                  发布此版本
+                </Button>
+              )}
               {canRevertSelectedVersion && (
                 <Button size="small" danger onClick={openRevertDialog}>
                   回退到此版本

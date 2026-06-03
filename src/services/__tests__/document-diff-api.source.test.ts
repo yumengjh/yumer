@@ -16,5 +16,7 @@ describe("document diff api source", () => {
     expect(source).toContain('if (to.kind === "revision" && typeof to.version === "number")');
     expect(source).toContain('export async function revertDocument(');
     expect(source).toContain('...(draftStrategy ? { draftStrategy } : {})');
+    expect(source).toContain('export async function publishDocumentVersion(');
+    expect(source).toContain('export async function unpublishDocument(');
   });
 });
