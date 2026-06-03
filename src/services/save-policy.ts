@@ -35,7 +35,7 @@ export function shouldSkipManualCommit(input: {
   contentDirty: boolean;
 }): boolean {
   if (input.syncEngineEnabled && input.isJsonDocument) {
-    return !input.hasUnsavedChanges;
+    return !input.hasUnsavedChanges && !input.contentDirty;
   }
 
   return !input.contentDirty;

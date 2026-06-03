@@ -65,6 +65,12 @@ describe("save policy", () => {
     expect(shouldSkipManualCommit({
       syncEngineEnabled: true,
       isJsonDocument: true,
+      hasUnsavedChanges: false,
+      contentDirty: true,
+    })).toBe(false);
+    expect(shouldSkipManualCommit({
+      syncEngineEnabled: true,
+      isJsonDocument: true,
       hasUnsavedChanges: true,
       contentDirty: false,
     })).toBe(false);
