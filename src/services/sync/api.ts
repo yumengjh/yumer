@@ -60,14 +60,12 @@ type BatchMoveBody = {
 export type BatchOperationBody = BatchCreateBody | BatchUpdateBody | BatchDeleteBody | BatchMoveBody;
 
 function buildCreatePayload(entry: SyncEntry, sortKey?: string): Record<string, unknown> {
-  const syncCreateId = entry.syncCreateId ?? `sync-create:${entry.clientId}`;
   return {
     ...(entry.payload as Record<string, unknown>),
     attrs: {
       ...(((entry.payload?.attrs as Record<string, unknown> | undefined) ?? {})),
       blockId: null,
       clientId: entry.clientId,
-      syncCreateId,
       ...(sortKey ? { sortKey } : {}),
     },
   };

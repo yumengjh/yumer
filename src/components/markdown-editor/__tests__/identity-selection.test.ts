@@ -122,7 +122,13 @@ describe("markdown editor identity patching", () => {
         content: [
           {
             type: "paragraph",
-            attrs: { blockId: null, clientId: "client-live" },
+            attrs: {
+              blockId: null,
+              clientId: "client-live",
+              syncCreateId: "sync-create:client-live",
+              "data-sync-create-id": "sync-create:client-live",
+              clientBatchId: "batch_live",
+            },
             content: [{ type: "text", text: "typed after create dispatch" }],
           },
         ],
@@ -153,6 +159,9 @@ describe("markdown editor identity patching", () => {
     const json = editor.getJSON() as TiptapDoc;
     expect(json.content[0]?.attrs?.blockId).toBe("server-live");
     expect(json.content[0]?.attrs?.sortKey).toBe("001000");
+    expect(json.content[0]?.attrs?.syncCreateId).toBeUndefined();
+    expect(json.content[0]?.attrs?.clientBatchId).toBeUndefined();
+    expect(json.content[0]?.attrs?.["data-sync-create-id"]).toBeUndefined();
     expect(json.content[0]?.content?.[0]?.text).toBe("typed after create dispatch");
 
     editor.destroy();

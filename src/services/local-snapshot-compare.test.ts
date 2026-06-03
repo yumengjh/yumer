@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { TiptapDoc } from "@/services/tiptap-converter";
 import { compareLocalSnapshotBlocks } from "@/services/local-snapshot-compare";
+import { DEFAULT_FILTER_KEYS } from "@/services/local-snapshot-filter";
 
 const paragraph = (clientId: string, text: string, attrs: Record<string, unknown> = {}) => ({
   type: "paragraph",
@@ -45,7 +46,7 @@ describe("local snapshot block compare", () => {
     ]);
   });
 
-  it("separates ignored metadata-only differences from content changes", () => {
+  it("ignores filtered sync metadata while preserving real content changes", () => {
     const before = doc([
       paragraph("a", "same", { clientBatchId: "batch_1" }),
       paragraph("b", "old", { clientBatchId: "batch_1" }),
@@ -59,8 +60,42 @@ describe("local snapshot block compare", () => {
       ignoredKeys: new Set(["clientBatchId"]),
     });
 
-    expect(result.summary.metadataOnly).toBe(1);
+    expect(result.summary.metadataOnly).toBe(0);
     expect(result.summary.modified).toBe(1);
-    expect(result.changes.map((change) => change.kind)).toEqual(["metadata-only", "modified"]);
+    expect(result.changes.map((change) => change.kind)).toEqual(["modified"]);
+  });
+
+  it("treats synced blocks with changed client-only metadata as unchanged when filtered", () => {
+    const before = doc([
+      paragraph("client_before", "same", {
+        blockId: "block_1",
+        clientBatchId: "batch_before",
+        syncCreateId: "sync-create:before",
+        "data-sync-create-id": "sync-create:before",
+      }),
+    ]);
+    const after = doc([
+      paragraph("client_after", "same", {
+        blockId: "block_1",
+        clientBatchId: "batch_after",
+        syncCreateId: "sync-create:after",
+      }),
+    ]);
+
+    const result = compareLocalSnapshotBlocks(before, after, {
+      ignoredKeys: new Set(DEFAULT_FILTER_KEYS),
+    });
+
+    expect(result.matches).toBe(true);
+    expect(result.summary).toEqual({
+      totalBefore: 1,
+      totalAfter: 1,
+      unchanged: 1,
+      added: 0,
+      deleted: 0,
+      modified: 0,
+      moved: 0,
+      metadataOnly: 0,
+    });
   });
 });

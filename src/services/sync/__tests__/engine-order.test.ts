@@ -291,12 +291,8 @@ describe("deriveSyncEntries order handling", () => {
       "sync-create:c_blank",
       "sync-create:c_2",
     ]);
-    expect(creates[0].payload?.attrs).toMatchObject({
-      syncCreateId: "sync-create:c_blank",
-    });
-    expect(creates[1].payload?.attrs).toMatchObject({
-      syncCreateId: "sync-create:c_2",
-    });
+    expect(creates[0].payload?.attrs?.syncCreateId).toBeUndefined();
+    expect(creates[1].payload?.attrs?.syncCreateId).toBeUndefined();
   });
 
   it("emits move entries when existing blocks change relative order", () => {
@@ -524,7 +520,14 @@ describe("deriveSyncEntries order handling", () => {
       content: [
         {
           type: "paragraph",
-          attrs: { clientId: "c_new", blockId: null, sortKey: "001000" },
+          attrs: {
+            clientId: "c_new",
+            blockId: null,
+            sortKey: "001000",
+            syncCreateId: "sync-create:c_new",
+            "data-sync-create-id": "sync-create:c_new",
+            clientBatchId: "batch_1",
+          },
         },
       ],
     };
@@ -537,6 +540,9 @@ describe("deriveSyncEntries order handling", () => {
     expect(patched.content[0].attrs?.["data-block-id"]).toBe("b_new");
     expect(patched.content[0].attrs?.sortKey).toBe("000984");
     expect(patched.content[0].attrs?.["data-sort-key"]).toBe("000984");
+    expect(patched.content[0].attrs?.syncCreateId).toBeUndefined();
+    expect(patched.content[0].attrs?.clientBatchId).toBeUndefined();
+    expect(patched.content[0].attrs?.["data-sync-create-id"]).toBeUndefined();
   });
 
   it("patches server sortKey returned by move ack by block id", () => {

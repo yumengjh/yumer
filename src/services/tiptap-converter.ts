@@ -21,6 +21,17 @@ export interface BlockPayload {
 
 export type PayloadFormat = "json" | "html";
 
+function stripTransientSyncAttrs(
+  attrs: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!attrs) return attrs;
+  const nextAttrs = { ...attrs };
+  delete nextAttrs.clientBatchId;
+  delete nextAttrs.syncCreateId;
+  delete nextAttrs["data-sync-create-id"];
+  return nextAttrs;
+}
+
 export function detectPayloadFormat(
   payload: Record<string, unknown>,
 ): PayloadFormat {
@@ -99,7 +110,7 @@ export function blocksToTiptapJson(
     if (block.payload.type && typeof block.payload.type === "string") {
       const payloadNode = block.payload as unknown as TiptapNode;
       const attrs = {
-        ...(payloadNode.attrs || {}),
+        ...(stripTransientSyncAttrs(payloadNode.attrs) ?? {}),
         blockId: block.blockId,
         ...(block.sortKey ? { sortKey: block.sortKey } : {}),
       };
@@ -111,7 +122,9 @@ export function blocksToTiptapJson(
       type: tiptapType,
       ...block.payload,
       attrs: {
-        ...((block.payload.attrs as Record<string, unknown> | undefined) || {}),
+        ...(stripTransientSyncAttrs(
+          (block.payload.attrs as Record<string, unknown> | undefined) || {},
+        ) ?? {}),
         blockId: block.blockId,
         ...(block.sortKey ? { sortKey: block.sortKey } : {}),
       },

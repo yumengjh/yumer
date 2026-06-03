@@ -46,4 +46,33 @@ describe("blocksToTiptapJson sync metadata", () => {
     expect(doc.content[0].attrs?.clientId).toEqual(expect.any(String));
     expect(doc.content[0].attrs?.clientId).not.toBe("block_only");
   });
+
+  it("strips transient sync attrs from loaded blocks", () => {
+    const doc = blocksToTiptapJson([
+      {
+        blockId: "block_sync",
+        type: "paragraph",
+        sortKey: "001000",
+        payload: {
+          type: "paragraph",
+          attrs: {
+            clientId: "client_sync",
+            clientBatchId: "batch_old",
+            syncCreateId: "sync-create:client_sync",
+            "data-sync-create-id": "sync-create:client_sync",
+          },
+          content: [{ type: "text", text: "A" }],
+        },
+      },
+    ]);
+
+    expect(doc.content[0].attrs).toMatchObject({
+      blockId: "block_sync",
+      clientId: "client_sync",
+      sortKey: "001000",
+    });
+    expect(doc.content[0].attrs?.clientBatchId).toBeUndefined();
+    expect(doc.content[0].attrs?.syncCreateId).toBeUndefined();
+    expect(doc.content[0].attrs?.["data-sync-create-id"]).toBeUndefined();
+  });
 });

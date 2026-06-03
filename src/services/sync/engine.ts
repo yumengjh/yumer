@@ -229,17 +229,18 @@ function withCreateIdentity(
   node: TiptapNode,
   clientId: string,
 ): Record<string, unknown> {
-  const syncCreateId = createSyncCreateId(clientId);
+  const nextAttrs = {
+    ...(node.attrs ?? {}),
+    clientId,
+    blockId: null,
+    "data-block-id": undefined,
+  };
+  delete nextAttrs.syncCreateId;
+  delete nextAttrs.clientBatchId;
+  delete nextAttrs["data-sync-create-id"];
   return {
     ...node,
-    attrs: {
-      ...(node.attrs ?? {}),
-      clientId,
-      syncCreateId,
-      "data-sync-create-id": syncCreateId,
-      blockId: null,
-      "data-block-id": undefined,
-    },
+    attrs: nextAttrs,
   } as Record<string, unknown>;
 }
 
@@ -479,6 +480,18 @@ export function applyServerAck(
     if (ack.sortKey && node.attrs?.sortKey !== ack.sortKey) {
       nextAttrs.sortKey = ack.sortKey;
       nextAttrs["data-sort-key"] = ack.sortKey;
+      nodeChanged = true;
+    }
+    if (nextAttrs.syncCreateId !== undefined) {
+      delete nextAttrs.syncCreateId;
+      nodeChanged = true;
+    }
+    if (nextAttrs.clientBatchId !== undefined) {
+      delete nextAttrs.clientBatchId;
+      nodeChanged = true;
+    }
+    if (nextAttrs["data-sync-create-id"] !== undefined) {
+      delete nextAttrs["data-sync-create-id"];
       nodeChanged = true;
     }
     if (!nodeChanged) return node;

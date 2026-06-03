@@ -1,9 +1,13 @@
 const FILTER_STORAGE_KEY = "yuediter:local-snapshot:compare-filters";
 
 export const DEFAULT_FILTER_KEYS: readonly string[] = [
+  "clientId",
+  "data-client-id",
   "syncCreateId",
   "clientBatchId",
   "data-sync-create-id",
+  "data-block-id",
+  "data-sort-key",
 ];
 
 export function loadFilterKeys(): string[] {
@@ -38,8 +42,26 @@ export function deepFilterKeys(value: unknown, keys: Set<string>): unknown {
   const raw = value as Record<string, unknown>;
   const out: Record<string, unknown> = {};
   for (const key of Object.keys(raw)) {
+    const next = deepFilterKeys(raw[key], keys);
+    if (key === "attrs" && next && typeof next === "object" && !Array.isArray(next)) {
+      const attrs = next as Record<string, unknown>;
+      if (attrs.blockId == null && typeof raw[key] === "object" && raw[key] && !Array.isArray(raw[key])) {
+        const rawAttrs = raw[key] as Record<string, unknown>;
+        if (typeof rawAttrs["data-block-id"] === "string") {
+          attrs.blockId = rawAttrs["data-block-id"];
+        }
+      }
+      if (attrs.sortKey == null && typeof raw[key] === "object" && raw[key] && !Array.isArray(raw[key])) {
+        const rawAttrs = raw[key] as Record<string, unknown>;
+        if (typeof rawAttrs["data-sort-key"] === "string") {
+          attrs.sortKey = rawAttrs["data-sort-key"];
+        }
+      }
+      out[key] = attrs;
+      continue;
+    }
     if (keys.has(key)) continue;
-    out[key] = deepFilterKeys(raw[key], keys);
+    out[key] = next;
   }
   return out;
 }

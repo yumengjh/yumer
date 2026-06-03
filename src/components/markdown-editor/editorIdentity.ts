@@ -12,6 +12,12 @@ const IDENTITY_BLOCK_NODE_TYPES = new Set<string>(BLOCK_IDENTITY_NODE_TYPES);
 
 type EditorLike = Pick<Editor, "state" | "view">;
 
+function clearTransientSyncAttrs(attrs: Record<string, unknown>) {
+  delete attrs.syncCreateId;
+  delete attrs.clientBatchId;
+  delete attrs["data-sync-create-id"];
+}
+
 /**
  * 为顶层块补齐同步身份，但只修改节点 attrs，不重建整篇文档。
  *
@@ -160,6 +166,7 @@ function patchEditorBlockIdentityByClientIdFromDoc(
     if (nextBlockId && currentBlockId !== nextBlockId) {
       nextAttrs.blockId = nextBlockId;
       nextAttrs["data-block-id"] = nextBlockId;
+      clearTransientSyncAttrs(nextAttrs);
       changed = true;
     }
 
@@ -247,6 +254,7 @@ export function patchEditorBlockIdentityFromDoc(
       nextAttrs.blockId = nextBlockId;
       if (nextBlockId) {
         nextAttrs["data-block-id"] = nextBlockId;
+        clearTransientSyncAttrs(nextAttrs);
       } else {
         delete nextAttrs["data-block-id"];
       }

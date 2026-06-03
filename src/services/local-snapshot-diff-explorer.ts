@@ -23,9 +23,13 @@ export type LocalSnapshotDiffFilter = {
 };
 
 export const AUTO_GENERATED_SYNC_META_KEYS = new Set([
+  "clientId",
+  "data-client-id",
   "clientBatchId",
   "syncCreateId",
   "data-sync-create-id",
+  "data-block-id",
+  "data-sort-key",
 ]);
 
 export const DEFAULT_VISIBLE_DIFF_CATEGORIES: Set<LocalSnapshotDiffCategory> = new Set([

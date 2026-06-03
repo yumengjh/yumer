@@ -298,6 +298,14 @@ describe("sync reducer", () => {
       sortKey: "000984",
       "data-sort-key": "000984",
     });
+    expect(
+      (state.entries.client_new.payload as { attrs?: Record<string, unknown> }).attrs?.syncCreateId,
+    ).toBeUndefined();
+    expect(
+      (state.entries.client_new.payload as { attrs?: Record<string, unknown> }).attrs?.[
+        "data-sync-create-id"
+      ],
+    ).toBeUndefined();
     expect((state.entries.client_new.payload as { content?: Array<{ text?: string }> }).content?.[0]?.text).toBe(
       "typed before create ack",
     );
@@ -401,8 +409,10 @@ describe("sync reducer", () => {
     expect((state.entries.client_fix.payload as { attrs?: Record<string, unknown> }).attrs).toMatchObject({
       blockId: null,
       clientId: "client_fix",
-      syncCreateId: "sync-create:client_fix",
       sortKey: "001995",
     });
+    expect(
+      (state.entries.client_fix.payload as { attrs?: Record<string, unknown> }).attrs?.syncCreateId,
+    ).toBeUndefined();
   });
 });

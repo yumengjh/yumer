@@ -1,5 +1,6 @@
 import type { TiptapDoc } from "@/services/tiptap-converter";
 import { hashEditorDoc } from "@/services/sync/hash";
+import { DEFAULT_FILTER_KEYS, deepFilterKeys } from "@/services/local-snapshot-filter";
 
 export type LocalDocSnapshot = {
   docId: string;
@@ -24,6 +25,12 @@ export interface DebouncedLocalSnapshotWriter {
   schedule(snapshot: LocalDocSnapshot): void;
   flush(): Promise<void>;
   cancel(): void;
+}
+
+const SNAPSHOT_HASH_FILTER_KEYS = new Set(DEFAULT_FILTER_KEYS);
+
+function hashSnapshotComparableDoc(content: TiptapDoc): string {
+  return hashEditorDoc(deepFilterKeys(content, SNAPSHOT_HASH_FILTER_KEYS) as TiptapDoc);
 }
 
 function cloneSnapshot(snapshot: LocalDocSnapshot): LocalDocSnapshot {
@@ -136,7 +143,7 @@ export function buildLocalDocSnapshot(
   return {
     docId,
     savedAt,
-    hash: hashEditorDoc(content),
+    hash: hashSnapshotComparableDoc(content),
     content: structuredClone(content),
   };
 }
@@ -145,7 +152,7 @@ export function compareSnapshotToContent(
   snapshot: LocalDocSnapshot,
   content: TiptapDoc,
 ): LocalSnapshotCompareResult {
-  const currentHash = hashEditorDoc(content);
+  const currentHash = hashSnapshotComparableDoc(content);
   return {
     matches: snapshot.hash === currentHash,
     currentHash,

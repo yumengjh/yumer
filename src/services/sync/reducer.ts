@@ -4,18 +4,21 @@ function normalizeCreatePayload(entry: SyncEntry): SyncEntry {
   if (entry.opType !== "create" || !entry.payload) return entry;
 
   const syncCreateId = entry.syncCreateId ?? `sync-create:${entry.clientId}`;
+  const nextAttrs = {
+    ...((entry.payload.attrs as Record<string, unknown> | undefined) ?? {}),
+    blockId: null,
+    clientId: entry.clientId,
+    ...(entry.sortKey ? { sortKey: entry.sortKey } : {}),
+  };
+  delete nextAttrs.syncCreateId;
+  delete nextAttrs.clientBatchId;
+  delete nextAttrs["data-sync-create-id"];
   return {
     ...entry,
     syncCreateId,
     payload: {
       ...entry.payload,
-      attrs: {
-        ...((entry.payload.attrs as Record<string, unknown> | undefined) ?? {}),
-        blockId: null,
-        clientId: entry.clientId,
-        syncCreateId,
-        ...(entry.sortKey ? { sortKey: entry.sortKey } : {}),
-      },
+      attrs: nextAttrs,
     },
   };
 }
@@ -197,16 +200,20 @@ function withServerBlockId(
   blockId: string,
   sortKey?: string,
 ): SyncEntry {
+  const nextAttrs = {
+    ...((entry.payload?.attrs as Record<string, unknown> | undefined) ?? {}),
+    blockId,
+    "data-block-id": blockId,
+    ...(sortKey ? { sortKey, "data-sort-key": sortKey } : {}),
+  };
+  delete nextAttrs.syncCreateId;
+  delete nextAttrs.clientBatchId;
+  delete nextAttrs["data-sync-create-id"];
+
   const payload = entry.payload
     ? {
         ...entry.payload,
-        attrs: {
-          ...((entry.payload.attrs as Record<string, unknown> | undefined) ??
-            {}),
-          blockId,
-          "data-block-id": blockId,
-          ...(sortKey ? { sortKey, "data-sort-key": sortKey } : {}),
-        },
+        attrs: nextAttrs,
       }
     : entry.payload;
 

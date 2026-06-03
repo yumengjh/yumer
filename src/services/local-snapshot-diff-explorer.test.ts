@@ -36,12 +36,14 @@ describe("local snapshot diff explorer", () => {
       modifiedChange({ textAlign: "left" }, { textAlign: "center" }, "same", "same"),
       modifiedChange({}, {}, "hello", "hello world"),
       modifiedChange({ syncCreateId: "tmp" }, { syncCreateId: "srv" }, "same", "same"),
+      modifiedChange({ "data-block-id": "b_1" }, { "data-block-id": "b_2" }, "same", "same"),
     ]);
 
     expect(entries.map((entry) => Array.from(entry.categories))).toEqual([
       ["sort"],
       ["style"],
       ["content"],
+      ["auto-meta"],
       ["auto-meta"],
     ]);
   });

@@ -49,6 +49,48 @@ describe("local document snapshot", () => {
     expect(compareSnapshotToContent(snapshot, docB).matches).toBe(false);
   });
 
+  it("ignores volatile sync metadata when comparing a stored snapshot", () => {
+    const before: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: {
+            blockId: "b_1",
+            clientId: "client_before",
+            "data-block-id": "b_1",
+            clientBatchId: "batch_before",
+            syncCreateId: "sync-create:before",
+            "data-sync-create-id": "sync-create:before",
+            sortKey: "001000",
+            "data-sort-key": "001000",
+          },
+          content: [{ type: "text", text: "same text" }],
+        },
+      ],
+    };
+    const after: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: {
+            blockId: "b_1",
+            clientId: "client_after",
+            clientBatchId: "batch_after",
+            syncCreateId: "sync-create:after",
+            sortKey: "001000",
+          },
+          content: [{ type: "text", text: "same text" }],
+        },
+      ],
+    };
+
+    const snapshot = buildLocalDocSnapshot("doc_1", before, 1000);
+
+    expect(compareSnapshotToContent(snapshot, after).matches).toBe(true);
+  });
+
   it("debounces repeated snapshot writes and only persists the latest one", async () => {
     vi.useFakeTimers();
     const writes: Array<string> = [];

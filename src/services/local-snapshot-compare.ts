@@ -1,5 +1,6 @@
 import type { TiptapDoc, TiptapNode } from "@/services/tiptap-converter";
 import { deepFilterKeys } from "@/services/local-snapshot-filter";
+import { readIdentityFromAttrs } from "@/services/sync/identity";
 
 export type LocalSnapshotBlockChangeKind =
   | "added"
@@ -47,8 +48,6 @@ type CompareOptions = {
   ignoredKeys?: Set<string>;
 };
 
-const IDENTITY_KEYS = ["blockId", "clientId", "syncCreateId", "data-sync-create-id", "id"];
-
 function stableStringify(value: unknown): string {
   if (Array.isArray(value)) {
     return `[${value.map((item) => stableStringify(item)).join(",")}]`;
@@ -64,12 +63,13 @@ function stableStringify(value: unknown): string {
 }
 
 function readBlockIdentity(node: TiptapNode): string | null {
+  const identity = readIdentityFromAttrs(node.attrs);
+  if (identity.blockId) return identity.blockId;
+  if (identity.clientId) return identity.clientId;
   const attrs = node.attrs ?? {};
-  for (const key of IDENTITY_KEYS) {
-    const value = attrs[key];
-    if (typeof value === "string" && value.trim()) return value;
-    if (typeof value === "number") return String(value);
-  }
+  const fallback = attrs.id;
+  if (typeof fallback === "string" && fallback.trim()) return fallback;
+  if (typeof fallback === "number") return String(fallback);
   return null;
 }
 
@@ -159,7 +159,7 @@ export function compareLocalSnapshotBlocks(
       continue;
     }
 
-    if (before.rawText !== after.rawText) {
+    if (before.rawText !== after.rawText && ignoredKeys.size === 0) {
       summary.metadataOnly += 1;
       changes.push({
         kind: "metadata-only",

@@ -34,8 +34,22 @@ describe("sync api payload builder", () => {
         ? (operation.data.payload.attrs as Record<string, unknown>).sortKey
         : null,
     );
+    const payloadSyncCreateIds = bodyOperations.map((operation) =>
+      operation.type === "create"
+        ? (operation.data.payload.attrs as Record<string, unknown>).syncCreateId
+        : null,
+    );
+    const operationSyncCreateIds = bodyOperations.map((operation) =>
+      operation.type === "create" ? operation.syncCreateId : null,
+    );
 
     expect(createSortKeys).toEqual(["001998", "002998", "003998"]);
     expect(payloadSortKeys).toEqual(createSortKeys);
+    expect(payloadSyncCreateIds).toEqual([undefined, undefined, undefined]);
+    expect(operationSyncCreateIds).toEqual([
+      "sync-create:client_1",
+      "sync-create:client_2",
+      "sync-create:client_3",
+    ]);
   });
 });
