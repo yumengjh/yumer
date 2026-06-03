@@ -117,6 +117,8 @@ describe("GcDebugModal policy visibility", () => {
     expect(source).toContain("Dry-run");
     expect(source).toContain("sweepDryRun");
     expect(source).toContain("sweepLimit");
+    expect(source).toContain("DEFAULT_SWEEP_LIMIT");
+    expect(source).toContain("maxSweepBatchSize");
 
     // Block version sweep
     expect(source).toContain("sweepBlockVersions");
@@ -155,6 +157,7 @@ describe("GcDebugModal policy visibility", () => {
     expect(source).toContain("wouldDeleteCandidates");
     expect(source).toContain("deletedBlockVersions");
     expect(source).toContain("blockedCandidates");
+    expect(source).toContain("筛选 blocked 查看原因");
 
     // Storage maintenance
     expect(source).toContain("Storage Maintenance");

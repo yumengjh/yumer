@@ -32,6 +32,7 @@ import "./GcDebugModal.css";
 
 const GC_SYSTEM_ADMIN_TOKEN_KEY = "gcSystemAdminToken";
 const GC_OPERATOR_ID_KEY = "gcOperatorId";
+const DEFAULT_SWEEP_LIMIT = 10000;
 
 type GcDebugModalProps = {
   open: boolean;
@@ -230,7 +231,7 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
   const [poolActionFilter, setPoolActionFilter] = useState<PlannedAction | undefined>(undefined);
   const [poolLoading, setPoolLoading] = useState(false);
   const [sweepLoading, setSweepLoading] = useState(false);
-  const [sweepLimit, setSweepLimit] = useState(100);
+  const [sweepLimit, setSweepLimit] = useState(DEFAULT_SWEEP_LIMIT);
   const [sweepDryRun, setSweepDryRun] = useState(true);
   const [selectedPoolItem, setSelectedPoolItem] = useState<GcCandidatePoolItem | null>(null);
   const [policy, setPolicy] = useState<GcPolicyDefaults | null>(null);
@@ -331,6 +332,11 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
           operatorId: activeOperatorId || undefined,
         }).then((policyResult) => {
           setPolicy(policyResult);
+          setSweepLimit((current) =>
+            current === DEFAULT_SWEEP_LIMIT
+              ? policyResult.maxSweepBatchSize ?? DEFAULT_SWEEP_LIMIT
+              : current,
+          );
         }).catch(() => { /* ignore policy load errors */ });
 
         // Load pool in background (non-blocking)
@@ -488,7 +494,7 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
             extra = `，已删除 ${summary.deletedBlockVersions} 个版本`;
           }
           if (typeof summary.blockedCandidates === "number" && summary.blockedCandidates > 0) {
-            extra += `，${summary.blockedCandidates} 个被阻断`;
+            extra += `，${summary.blockedCandidates} 个被阻断（请到 Candidate Pool 筛选 blocked 查看原因）`;
           }
         }
         message.success(`${modeLabel} ${labelMap[type]} 已完成：run ${result.runId}${extra}`);
@@ -1078,6 +1084,7 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
                 <Tag>宽限期 {formatDuration(policy.gracePeriodMs)}</Tag>
                 <Tag>Tombstone 宽限期 {formatDuration(policy.tombstoneGracePeriodMs)}</Tag>
                 <Tag>每块保留 {policy.keepLatestPerBlock}</Tag>
+                <Tag>Sweep 上限 {formatCount(policy.maxSweepBatchSize)}</Tag>
                 {policy.stableSeenThreshold != null && <Tag>稳定阈值 {policy.stableSeenThreshold} 次</Tag>}
               </div>
             )}
@@ -1088,7 +1095,7 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
                 <Input
                   type="number"
                   value={sweepLimit}
-                  onChange={(e) => setSweepLimit(Number(e.target.value) || 100)}
+                  onChange={(e) => setSweepLimit(Number(e.target.value) || DEFAULT_SWEEP_LIMIT)}
                   className="gc-debug__sweep-input"
                   style={{ width: 100 }}
                 />

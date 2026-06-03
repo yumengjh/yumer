@@ -169,6 +169,7 @@ export interface GcPolicyDefaults {
   tombstoneGracePeriodMs: number;
   keepLatestPerBlock: number;
   maxCandidatesToStore: number;
+  maxSweepBatchSize: number;
   promotionDelayMs?: number;
   stableSeenThreshold?: number;
   rootSources: string[];
@@ -396,7 +397,7 @@ export async function sweepDraftTombstones(
     body: JSON.stringify({
       workspaceId: input.workspaceId,
       docId: input.docId,
-      limit: input.limit ?? 100,
+      limit: input.limit ?? 10000,
       dryRun: input.dryRun ?? true,
     }),
   });
@@ -419,7 +420,7 @@ export async function sweepRevisionTombstones(
     body: JSON.stringify({
       workspaceId: input.workspaceId,
       docId: input.docId,
-      limit: input.limit ?? 100,
+      limit: input.limit ?? 10000,
       dryRun: input.dryRun ?? true,
     }),
   });
@@ -442,7 +443,7 @@ export async function sweepBlockVersions(
     body: JSON.stringify({
       workspaceId: input.workspaceId,
       docId: input.docId,
-      limit: input.limit ?? 100,
+      limit: input.limit ?? 10000,
       dryRun: input.dryRun ?? true,
     }),
   });

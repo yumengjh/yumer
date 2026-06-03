@@ -288,13 +288,51 @@ describe("gc service", () => {
         body: JSON.stringify({
           workspaceId: "ws_1",
           docId: "doc_1",
-          limit: 100,
+          limit: 10000,
           dryRun: false,
         }),
       }),
     );
     expect(result.runId).toBe("gc_run_sweep_2");
     expect(result.dryRun).toBe(false);
+  });
+
+  it("uses default hard cap 10000 for draft tombstone sweep when limit is omitted", async () => {
+    apiFetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            runId: "gc_run_sweep_1b",
+            mode: "sweep",
+            status: "completed",
+            dryRun: true,
+            source: "document_drafts",
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await sweepDraftTombstones({
+      token: "gc-secret",
+      workspaceId: "ws_1",
+      docId: "doc_1",
+      dryRun: true,
+    });
+
+    expect(apiFetch).toHaveBeenCalledWith(
+      "/admin/gc/block-versions/sweeps/draft-tombstones",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          workspaceId: "ws_1",
+          docId: "doc_1",
+          limit: 10000,
+          dryRun: true,
+        }),
+      }),
+    );
   });
 
   it("runs block version physical sweep", async () => {
@@ -356,6 +394,7 @@ describe("gc service", () => {
             tombstoneGracePeriodMs: 604800000,
             keepLatestPerBlock: 2,
             maxCandidatesToStore: 500,
+            maxSweepBatchSize: 10000,
             promotionDelayMs: 300000,
             stableSeenThreshold: 2,
             rootSources: ["doc_snapshots", "document_drafts"],
@@ -380,6 +419,7 @@ describe("gc service", () => {
     );
     expect(result.gracePeriodMs).toBe(86400000);
     expect(result.keepLatestPerBlock).toBe(2);
+    expect(result.maxSweepBatchSize).toBe(10000);
     expect(result.stableSeenThreshold).toBe(2);
   });
 
