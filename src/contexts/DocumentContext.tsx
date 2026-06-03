@@ -53,6 +53,7 @@ interface DocumentContextValue {
   selectDoc: (docId: string) => Promise<void>;
   selectDocAndScroll: (docId: string, blockId: string) => Promise<void>;
   loadContent: (docId: string) => Promise<{ content: EditorContent; docVer: number }>;
+  applyCommittedVersion: (version: number) => void;
   markSavedAt: (at: Date | null) => void;
   setSaveStatus: (status: SaveStatus) => void;
   setHasUnsavedChanges: (value: boolean) => void;
@@ -202,6 +203,22 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     return { content, docVer };
   }, []);
 
+  const applyCommittedVersion = useCallback((version: number) => {
+    const current = currentDocRef.current;
+    if (current) {
+      const updated = { ...current, head: version };
+      currentDocRef.current = updated;
+      setCurrentDoc(updated);
+      setDocuments((prev) =>
+        prev.map((doc) => (doc.docId === updated.docId ? { ...doc, head: version } : doc)),
+      );
+    }
+
+    setCurrentDocVersion(version);
+    setCurrentContentSource("head");
+    setCurrentDraftMeta({ exists: false });
+  }, []);
+
   const createDoc = useCallback(
     async (data: { title: string; icon?: string; cover?: string; visibility?: string; category?: string }): Promise<Document> => {
       if (!workspaceId) throw new Error("未选择工作空间");
@@ -298,6 +315,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         selectDoc,
         selectDocAndScroll,
         loadContent,
+        applyCommittedVersion,
         markSavedAt: setLastSavedAt,
         setSaveStatus,
         setHasUnsavedChanges,

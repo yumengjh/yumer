@@ -119,6 +119,13 @@ export interface EditContentResponse {
   };
 }
 
+export interface CommitVersionResult {
+  docId: string;
+  version: number;
+  committed: boolean;
+  draftRemoved: boolean;
+}
+
 export interface PaginatedResponse<T> {
   items: T[];
   total: number;
@@ -227,8 +234,8 @@ export async function updateDocument(
 export async function commitVersion(
   docId: string,
   message?: string,
-): Promise<void> {
-  await apiPost(`/documents/${docId}/commit`, { message });
+): Promise<CommitVersionResult> {
+  return apiPost<CommitVersionResult>(`/documents/${docId}/commit`, { message });
 }
 
 export type RevertDraftStrategy = "preserve" | "discard";

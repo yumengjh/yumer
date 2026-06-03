@@ -350,6 +350,7 @@ function EditorContent() {
     currentBlockIds,
     lastEditPosition,
     loadContent,
+    applyCommittedVersion,
     selectDoc,
     updateDoc,
     workspaceId,
@@ -857,7 +858,8 @@ function EditorContent() {
       }
       if (!skipCommit) {
         try {
-          await commitVersion(currentDoc.docId, "手动保存");
+          const commitResult = await commitVersion(currentDoc.docId, "手动保存");
+          applyCommittedVersion(commitResult.version);
         } catch (error) {
           if (!isNoopCommitError(error)) {
             throw error;
@@ -907,6 +909,7 @@ function EditorContent() {
     syncEngineEnabled,
     saveLegacyContent,
     loadContent,
+    applyCommittedVersion,
     tiptapContent,
     ignoreNextLocalSnapshotChange,
   ]);

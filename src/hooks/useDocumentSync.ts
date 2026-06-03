@@ -157,6 +157,7 @@ export function useDocumentSync({
   const [syncState, setSyncState] = useState<SyncReducerState | null>(null);
   const stateRef = useRef<SyncReducerState | null>(null);
   const snapshotRef = useRef<TiptapDoc | null>(null);
+  const latestContentRef = useRef<TiptapDoc | null>(content);
   const flushRunningRef = useRef(false);
 
   const replaceSyncState = useCallback((next: SyncReducerState | null) => {
@@ -200,6 +201,10 @@ export function useDocumentSync({
   );
 
   useEffect(() => {
+    latestContentRef.current = content;
+  }, [content]);
+
+  useEffect(() => {
     if (!docId || !rootBlockId || baseVersion == null) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- sync state must reset when the document binding changes
       replaceSyncState(null);
@@ -208,7 +213,7 @@ export function useDocumentSync({
     }
 
     replaceSyncState(createInitialSyncState(docId, rootBlockId, baseVersion));
-    snapshotRef.current = null;
+    snapshotRef.current = latestContentRef.current;
   }, [baseVersion, docId, replaceSyncState, rootBlockId]);
 
   useEffect(() => {
