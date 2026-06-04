@@ -28,14 +28,28 @@ export function shouldReloadAfterManualSave(input: {
   );
 }
 
+export function hasDiscardableDraft(input: {
+  currentContentSource: "draft" | "head" | null;
+  currentDraftExists: boolean;
+  hasUnsavedChanges: boolean;
+  contentDirty?: boolean;
+}): boolean {
+  return Boolean(
+    input.currentContentSource === "draft" ||
+      input.currentDraftExists ||
+      input.hasUnsavedChanges ||
+      input.contentDirty,
+  );
+}
+
 export function shouldSkipManualCommit(input: {
   syncEngineEnabled: boolean;
   isJsonDocument: boolean;
-  hasUnsavedChanges: boolean;
+  hasDiscardableDraft: boolean;
   contentDirty: boolean;
 }): boolean {
   if (input.syncEngineEnabled && input.isJsonDocument) {
-    return !input.hasUnsavedChanges && !input.contentDirty;
+    return !input.hasDiscardableDraft;
   }
 
   return !input.contentDirty;
@@ -44,4 +58,13 @@ export function shouldSkipManualCommit(input: {
 export function isNoopCommitError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error ?? "");
   return message.includes("没有可提交的草稿");
+}
+
+export function isNoopDiscardDraftError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return (
+    message.includes("没有草稿") ||
+    message.includes("草稿不存在") ||
+    message.toLowerCase().includes("draft not found")
+  );
 }

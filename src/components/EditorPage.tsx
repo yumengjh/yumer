@@ -35,7 +35,9 @@ import { uploadImage } from "@/services/images";
 import { useDocumentSync } from "@/hooks/useDocumentSync";
 import { readIdentityFromAttrs } from "@/services/sync/identity";
 import {
+  hasDiscardableDraft,
   isNoopCommitError,
+  isNoopDiscardDraftError,
   shouldEnableLegacyAutoSave,
   shouldReloadAfterManualSave,
   shouldSkipManualCommit,
@@ -348,6 +350,7 @@ function EditorContent() {
     currentDocSlug,
     currentDocVersion,
     currentContentSource,
+    currentDraftMeta,
     currentBlockIds,
     lastEditPosition,
     loadContent,
@@ -373,6 +376,7 @@ function EditorContent() {
   const [outputModalOpen, setOutputModalOpen] = useState(false);
   const [showTOC, setShowTOC] = useState(false);
   const [findReplaceOpen, setFindReplaceOpen] = useState(false);
+  const [findReplaceEditor, setFindReplaceEditor] = useState<ReturnType<MarkdownEditorRef["getEditor"]>>(null);
   const [manualSaving, setManualSaving] = useState(false);
   const [manualSaveMode, setManualSaveMode] = useState<ManualSaveMode>(() => readManualSaveMode());
   const [discardingDraft, setDiscardingDraft] = useState(false);
@@ -408,6 +412,12 @@ function EditorContent() {
   const tiptapContent = typeof content === "object" && content?.type === "doc"
     ? (content as TiptapDoc)
     : null;
+  const discardableDraft = hasDiscardableDraft({
+    currentContentSource,
+    currentDraftExists: currentDraftMeta?.exists === true,
+    hasUnsavedChanges,
+    contentDirty,
+  });
 
   const sync = useDocumentSync({
     docId: syncEngineEnabled ? currentDoc?.docId ?? null : null,
@@ -443,18 +453,28 @@ function EditorContent() {
     contentRef.current = content;
   }, [content]);
 
+  const handleToggleFindReplace = useCallback(() => {
+    setFindReplaceEditor(editorRef.current?.getEditor() ?? null);
+    setFindReplaceOpen((prev) => !prev);
+  }, []);
+
+  const handleCloseFindReplace = useCallback(() => {
+    setFindReplaceOpen(false);
+    setFindReplaceEditor(null);
+  }, []);
+
   // Ctrl+F / Ctrl+H 打开查找替换栏
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
       if ((e.ctrlKey || e.metaKey) && (key === "f" || key === "h")) {
         e.preventDefault();
-        setFindReplaceOpen((prev) => !prev);
+        handleToggleFindReplace();
       }
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [handleToggleFindReplace]);
 
   useEffect(() => {
     restoredLastEditDocIdRef.current = null;
@@ -847,7 +867,7 @@ function EditorContent() {
       const skipCommit = shouldSkipManualCommit({
         syncEngineEnabled,
         isJsonDocument,
-        hasUnsavedChanges,
+        hasDiscardableDraft: discardableDraft,
         contentDirty,
       });
       let noDraftToSave = skipCommit;
@@ -911,7 +931,6 @@ function EditorContent() {
     currentDoc,
     content,
     contentDirty,
-    hasUnsavedChanges,
     manualSaving,
     manualSaveMode,
     markSavedAt,
@@ -921,17 +940,25 @@ function EditorContent() {
     saveLegacyContent,
     loadContent,
     applyCommittedVersion,
+    discardableDraft,
     tiptapContent,
     ignoreNextLocalSnapshotChange,
   ]);
 
   const handleDiscardDraft = useCallback(async () => {
-    if (!currentDoc || currentContentSource !== "draft" || discardingDraft) return;
+    if (!currentDoc || !discardableDraft || discardingDraft) return;
 
     setDiscardingDraft(true);
     try {
-      await discardDraftRequest(currentDoc.docId);
+      try {
+        await discardDraftRequest(currentDoc.docId);
+      } catch (error) {
+        if (!isNoopDiscardDraftError(error)) {
+          throw error;
+        }
+      }
       const loaded = await loadContent(currentDoc.docId);
+      ignoreNextLocalSnapshotChange();
       setContent(loaded.content || BLANK_CONTENT);
       setContentDirty(false);
       setHasUnsavedChanges(false);
@@ -945,9 +972,10 @@ function EditorContent() {
       setDiscardingDraft(false);
     }
   }, [
-    currentContentSource,
     currentDoc,
+    discardableDraft,
     discardingDraft,
+    ignoreNextLocalSnapshotChange,
     loadContent,
     markSavedAt,
     message,
@@ -1142,12 +1170,12 @@ function EditorContent() {
             }}
             currentDocumentContent={tiptapContent}
             onRevertedToVersion={handleReloadAfterRevert}
-            onToggleFindReplace={() => setFindReplaceOpen((prev) => !prev)}
+            onToggleFindReplace={handleToggleFindReplace}
           />
           <FindReplaceBar
-            editor={editorRef.current?.getEditor() ?? null}
+            editor={findReplaceEditor}
             visible={findReplaceOpen}
-            onClose={() => setFindReplaceOpen(false)}
+            onClose={handleCloseFindReplace}
           />
           <div className="output-card">
             <MarkdownEditor

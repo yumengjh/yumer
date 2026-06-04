@@ -75,6 +75,7 @@ import {
 import type { EditorToolbarPreferences } from "@/services/editor-toolbar-preferences";
 import type { EditorSyncPreferences } from "@/services/editor-sync-preferences";
 import type { ManualSaveMode } from "@/services/manual-save-preferences";
+import { hasDiscardableDraft } from "@/services/save-policy";
 import "./DocumentHeader.css";
 
 const PUBLIC_DOC_REVALIDATE_SECRET_KEY = "publicDocRevalidateSecret";
@@ -421,6 +422,8 @@ export function DocumentHeader({
     saveStatus,
     lastSavedAt,
     currentContentSource,
+    currentDraftMeta,
+    hasUnsavedChanges,
     currentDocSlug,
     selectDoc,
     publishDoc,
@@ -862,6 +865,11 @@ export function DocumentHeader({
     : undefined;
 
   const visibleSaveStatus: VisibleSaveStatus | null = saveStatus === "idle" ? null : saveStatus;
+  const showDiscardDraft = hasDiscardableDraft({
+    currentContentSource,
+    currentDraftExists: currentDraftMeta?.exists === true,
+    hasUnsavedChanges,
+  });
   const saveModeLabel = manualSaveMode === "reload" ? "保存并刷新" : "保存";
   const saveModeTooltip =
     manualSaveMode === "reload"
@@ -1038,7 +1046,7 @@ export function DocumentHeader({
                   />
                 </Dropdown>
               </Button.Group>
-              {currentContentSource === "draft" ? (
+              {showDiscardDraft ? (
                 <Button
                   size="small"
                   className="header-btn-discard"
@@ -1144,7 +1152,7 @@ export function DocumentHeader({
               disabled={saving || saveStatus === "flushing"}
               aria-label={saveModeLabel}
             />
-            {currentContentSource === "draft" ? (
+            {showDiscardDraft ? (
               <Button
                 size="small"
                 icon={<DeleteOutlined />}

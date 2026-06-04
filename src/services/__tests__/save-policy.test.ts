@@ -1,6 +1,8 @@
-﻿import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
+  hasDiscardableDraft,
   isNoopCommitError,
+  isNoopDiscardDraftError,
   shouldEnableLegacyAutoSave,
   shouldReloadAfterManualSave,
   shouldSkipManualCommit,
@@ -55,29 +57,56 @@ describe("save policy", () => {
     })).toBe(false);
   });
 
-  it("skips manual commit when there are no local changes to persist", () => {
+  it("treats loaded drafts and local edits as discardable draft state", () => {
+    expect(hasDiscardableDraft({
+      currentContentSource: "draft",
+      currentDraftExists: false,
+      hasUnsavedChanges: false,
+      contentDirty: false,
+    })).toBe(true);
+    expect(hasDiscardableDraft({
+      currentContentSource: "head",
+      currentDraftExists: true,
+      hasUnsavedChanges: false,
+      contentDirty: false,
+    })).toBe(true);
+    expect(hasDiscardableDraft({
+      currentContentSource: "head",
+      currentDraftExists: false,
+      hasUnsavedChanges: true,
+      contentDirty: false,
+    })).toBe(true);
+    expect(hasDiscardableDraft({
+      currentContentSource: "head",
+      currentDraftExists: false,
+      hasUnsavedChanges: false,
+      contentDirty: false,
+    })).toBe(false);
+  });
+
+  it("skips manual commit only when there is no draft state to persist", () => {
     expect(shouldSkipManualCommit({
       syncEngineEnabled: true,
       isJsonDocument: true,
-      hasUnsavedChanges: false,
+      hasDiscardableDraft: false,
       contentDirty: false,
     })).toBe(true);
     expect(shouldSkipManualCommit({
       syncEngineEnabled: true,
       isJsonDocument: true,
-      hasUnsavedChanges: false,
-      contentDirty: true,
+      hasDiscardableDraft: true,
+      contentDirty: false,
     })).toBe(false);
     expect(shouldSkipManualCommit({
       syncEngineEnabled: true,
       isJsonDocument: true,
-      hasUnsavedChanges: true,
-      contentDirty: false,
+      hasDiscardableDraft: true,
+      contentDirty: true,
     })).toBe(false);
     expect(shouldSkipManualCommit({
       syncEngineEnabled: false,
       isJsonDocument: false,
-      hasUnsavedChanges: false,
+      hasDiscardableDraft: false,
       contentDirty: true,
     })).toBe(false);
   });
@@ -86,5 +115,11 @@ describe("save policy", () => {
     expect(isNoopCommitError(new Error("没有可提交的草稿"))).toBe(true);
     expect(isNoopCommitError(new Error("认证已过期，请重新登录"))).toBe(false);
     expect(isNoopCommitError("没有可提交的草稿")).toBe(true);
+  });
+
+  it("treats backend no-draft discard errors as a successful no-op", () => {
+    expect(isNoopDiscardDraftError(new Error("没有草稿可丢弃"))).toBe(true);
+    expect(isNoopDiscardDraftError(new Error("草稿不存在"))).toBe(true);
+    expect(isNoopDiscardDraftError(new Error("认证已过期，请重新登录"))).toBe(false);
   });
 });
