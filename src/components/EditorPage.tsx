@@ -447,6 +447,7 @@ function EditorContent() {
     content: tiptapContent,
     enabled: Boolean(currentDoc?.docId && tiptapContent),
     autoSave: autoSaveSnapshotEnabled,
+    hasUnsavedChanges,
   });
   const ignoreNextLocalSnapshotChange = localSnapshot.ignoreNextContentChange;
   useEffect(() => {

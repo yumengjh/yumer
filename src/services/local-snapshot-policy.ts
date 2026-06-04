@@ -1,7 +1,7 @@
 export function shouldCaptureLocalSnapshotChange(input: {
   autoSave: boolean;
-  wasEdited: boolean;
+  hasUnsavedChanges: boolean;
   suppressCapture: boolean;
 }): boolean {
-  return Boolean(input.autoSave && input.wasEdited && !input.suppressCapture);
+  return Boolean(input.autoSave && input.hasUnsavedChanges && !input.suppressCapture);
 }

@@ -27,6 +27,7 @@ type UseLocalDocumentSnapshotArgs = {
   content: TiptapDoc | null;
   enabled?: boolean;
   autoSave?: boolean;
+  hasUnsavedChanges?: boolean;
 };
 
 const EMPTY_STATE: LocalSnapshotState = {
@@ -43,13 +44,13 @@ export function useLocalDocumentSnapshot({
   content,
   enabled = true,
   autoSave = true,
+  hasUnsavedChanges = false,
 }: UseLocalDocumentSnapshotArgs) {
   const store = useMemo<LocalSnapshotStore>(() => createBrowserLocalSnapshotStore(), []);
   const [state, setState] = useState<LocalSnapshotState>(EMPTY_STATE);
   const docIdRef = useRef<string | null>(null);
   const lastObservedHashRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
-  const hasEditedRef = useRef(false);
   const suppressNextCaptureRef = useRef(false);
 
   useEffect(() => {
@@ -131,7 +132,6 @@ export function useLocalDocumentSnapshot({
       void snapshotWriter.flush();
       docIdRef.current = null;
       lastObservedHashRef.current = null;
-      hasEditedRef.current = false;
       setState(EMPTY_STATE);
       return;
     }
@@ -145,7 +145,6 @@ export function useLocalDocumentSnapshot({
 
     if (isNewDoc) {
       // \u65b0\u6587\u6863\u52a0\u8f7d\uff1a\u4ec5\u8bfb\u53d6\u5feb\u7167\u505a\u5bf9\u6bd4\uff0c\u4e0d\u81ea\u52a8\u5199\u5165
-      hasEditedRef.current = false;
       lastObservedHashRef.current = currentHash;
       setState((current) => ({
         ...current,
@@ -211,7 +210,6 @@ export function useLocalDocumentSnapshot({
 
     if (suppressCapture) {
       lastObservedHashRef.current = currentHash;
-      hasEditedRef.current = false;
       setState((current) => {
         if (!current.storedSnapshot) {
           return {
@@ -233,15 +231,39 @@ export function useLocalDocumentSnapshot({
       return;
     }
 
-    // \u54c8\u5e0c\u53d8\u5316\uff1a\u6807\u8bb0\u4e3a\u5df2\u7f16\u8f91\uff0c\u540e\u7eed\u53d8\u5316\u624d\u81ea\u52a8\u4fdd\u5b58
-    const wasEdited = hasEditedRef.current;
+    // \u52a0\u8f7d/\u5237\u65b0\u540e\u4ec5 compare 不写\u5165\uff1b\u8fdb\u5165\u8fd9\u4e2a\u5206\u652f\u8bf4\u660e\u5df2\u7ecf\u662f\u771f\u5b9e\u7528\u6237\u7f16\u8f91\uff0c\u7b2c\u4e00\u7b14\u4e5f\u8981\u81ea\u52a8\u6355\u83b7
     lastObservedHashRef.current = currentHash;
-    hasEditedRef.current = true;
 
-    if (shouldCaptureLocalSnapshotChange({ autoSave, wasEdited, suppressCapture: false })) {
+    if (shouldCaptureLocalSnapshotChange({ autoSave, hasUnsavedChanges, suppressCapture: false })) {
+      setSafeState((current) => ({
+        ...current,
+        status: "saving",
+        currentHash,
+        error: null,
+      }));
       scheduleSnapshotWrite(docId, content);
+      return;
     }
-  }, [content, docId, enabled, autoSave, scheduleSnapshotWrite, snapshotWriter, store]);
+
+    setSafeState((current) => {
+      if (!current.storedSnapshot) {
+        return {
+          ...current,
+          status: "missing",
+          currentHash,
+          error: null,
+        };
+      }
+
+      const compare = compareSnapshotToContent(current.storedSnapshot, content);
+      return {
+        ...current,
+        status: compare.matches ? "saved" : "mismatch",
+        currentHash: compare.currentHash,
+        error: null,
+      };
+    });
+  }, [content, docId, enabled, autoSave, hasUnsavedChanges, scheduleSnapshotWrite, setSafeState, snapshotWriter, store]);
 
   const refreshSnapshot = useCallback(async () => {
     if (!docId || !content) return;
