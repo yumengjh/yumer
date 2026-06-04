@@ -22,6 +22,7 @@ describe("document commit api", () => {
     apiPost.mockResolvedValue({
       docId: "doc_1",
       version: 24,
+      draftRevision: 8,
       committed: true,
       draftRemoved: true,
     });
@@ -30,6 +31,7 @@ describe("document commit api", () => {
 
     expect(apiPost).toHaveBeenCalledWith("/documents/doc_1/commit", { message: "手动保存" });
     expect(response.version).toBe(24);
+    expect(response.draftRevision).toBe(8);
     expect(response.committed).toBe(true);
   });
 });

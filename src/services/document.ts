@@ -123,6 +123,7 @@ export interface EditContentResponse {
 export interface CommitVersionResult {
   docId: string;
   version: number;
+  draftRevision: number;
   committed: boolean;
   draftRemoved: boolean;
 }

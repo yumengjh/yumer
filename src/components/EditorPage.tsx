@@ -892,7 +892,7 @@ function EditorContent() {
       if (!skipCommit) {
         try {
           const commitResult = await commitVersion(currentDoc.docId, "手动保存");
-          applyCommittedVersion(commitResult.version);
+          applyCommittedVersion(commitResult.version, commitResult.draftRevision);
         } catch (error) {
           if (!isNoopCommitError(error)) {
             throw error;

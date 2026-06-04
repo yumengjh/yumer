@@ -17,9 +17,16 @@ describe("manual save baseVersion rebase source", () => {
       "utf8",
     );
 
-    expect(contextSource).toContain("applyCommittedVersion: (version: number) => void;");
+    expect(contextSource).toContain(
+      "applyCommittedVersion: (version: number, draftRevision?: number | null) => void;",
+    );
     expect(pageSource).toContain('const commitResult = await commitVersion(currentDoc.docId, "手动保存")');
-    expect(pageSource).toContain("applyCommittedVersion(commitResult.version)");
+    expect(pageSource).toContain(
+      "applyCommittedVersion(commitResult.version, commitResult.draftRevision)",
+    );
+    expect(contextSource).toContain(
+      "draftRevision: draftRevision ?? currentDraft?.draftRevision ?? 0",
+    );
     expect(hookSource).toContain("const latestContentRef = useRef<TiptapDoc | null>(content);");
     expect(hookSource).toContain("snapshotRef.current = latestContentRef.current;");
   });

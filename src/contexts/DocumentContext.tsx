@@ -55,7 +55,7 @@ interface DocumentContextValue {
   selectDoc: (docId: string) => Promise<void>;
   selectDocAndScroll: (docId: string, blockId: string) => Promise<void>;
   loadContent: (docId: string) => Promise<{ content: EditorContent; docVer: number }>;
-  applyCommittedVersion: (version: number) => void;
+  applyCommittedVersion: (version: number, draftRevision?: number | null) => void;
   markSavedAt: (at: Date | null) => void;
   setSaveStatus: (status: SaveStatus) => void;
   setHasUnsavedChanges: (value: boolean) => void;
@@ -218,7 +218,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
-  const applyCommittedVersion = useCallback((version: number) => {
+  const applyCommittedVersion = useCallback((version: number, draftRevision?: number | null) => {
     const current = currentDocRef.current;
     if (current) {
       const updated = { ...current, head: version };
@@ -231,7 +231,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
     setCurrentDocVersion(version);
     setCurrentContentSource("head");
-    setCurrentDraftMeta({ exists: false });
+    setCurrentDraftMeta((currentDraft) => ({
+      exists: false,
+      draftRevision: draftRevision ?? currentDraft?.draftRevision ?? 0,
+    }));
   }, []);
 
   const createDoc = useCallback(
