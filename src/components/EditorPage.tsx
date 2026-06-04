@@ -1099,6 +1099,7 @@ function EditorContent() {
             onRememberPosition={handleRememberPosition}
             onDiscardDraft={handleDiscardDraft}
             saving={manualSaving}
+            loadingDoc={loadingDoc}
             rememberingPosition={rememberingPosition}
             discardingDraft={discardingDraft}
             showTOC={showTOC}

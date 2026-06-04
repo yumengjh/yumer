@@ -101,6 +101,7 @@ interface DocumentHeaderProps {
   onRememberPosition: () => void | Promise<void>;
   onDiscardDraft: () => void;
   saving?: boolean;
+  loadingDoc?: boolean;
   rememberingPosition?: boolean;
   discardingDraft?: boolean;
   showTOC: boolean;
@@ -381,6 +382,7 @@ export function DocumentHeader({
   onRememberPosition,
   onDiscardDraft,
   saving = false,
+  loadingDoc = false,
   rememberingPosition = false,
   discardingDraft = false,
   showTOC,
@@ -576,11 +578,7 @@ export function DocumentHeader({
 
   const handleDocChange = useCallback(
     async (docId: string) => {
-      try {
-        await selectDoc(docId);
-      } catch {
-        message.error("加载文档失败");
-      }
+      await selectDoc(docId);
     },
     [selectDoc],
   );
@@ -1186,10 +1184,9 @@ export function DocumentHeader({
       <DocumentSidebar
         visible={listOpen}
         onToggle={() => setListOpen(!listOpen)}
-        onSelect={(docId) => {
-          handleDocChange(docId);
-        }}
+        onSelect={handleDocChange}
         currentDocId={currentDoc?.docId}
+        currentDocLoading={loadingDoc}
       />
       <DocumentSearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
       <CreateDocumentModal open={createOpen} onClose={() => setCreateOpen(false)} />

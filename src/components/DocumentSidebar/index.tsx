@@ -17,7 +17,6 @@ import {
   SearchOutlined,
   RightOutlined,
 } from "@ant-design/icons";
-import { useRouter } from "next/navigation";
 import { useDocument } from "../../contexts/DocumentContext";
 import { DocumentInfoModal } from "../DocumentInfoModal";
 import "./style.css";
@@ -81,9 +80,10 @@ const writePersistedSidebarLayout = (layout: PersistedSidebarLayout) => {
 interface DocumentSidebarProps {
   visible: boolean;
   onToggle: () => void;
-  onSelect: (docId: string) => void;
+  onSelect: (docId: string) => void | Promise<void>;
   onCreateNew?: () => void;
   currentDocId?: string;
+  currentDocLoading?: boolean;
 }
 
 export default function DocumentSidebar({
@@ -92,10 +92,10 @@ export default function DocumentSidebar({
   onSelect,
   onCreateNew,
   currentDocId,
+  currentDocLoading = false,
 }: DocumentSidebarProps) {
   const { documents, refreshDocs, createDoc, deleteDoc, updateDoc } = useDocument();
   const [creating, setCreating] = useState(false);
-  const router = useRouter();
   const sidebarRef = useRef<HTMLDivElement | null>(null);
   const initialLayout = useMemo(() => readPersistedSidebarLayout(), []);
 
@@ -103,6 +103,7 @@ export default function DocumentSidebar({
   const [sidebarWidth, setSidebarWidth] = useState(initialLayout.width);
   const [isResizing, setIsResizing] = useState(false);
   const [openingDocId, setOpeningDocId] = useState<string | null>(null);
+  const openingDocContentLoadingSeenRef = useRef(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
@@ -117,6 +118,25 @@ export default function DocumentSidebar({
       refreshDocs().catch(() => {});
     }
   }, [visible, refreshDocs]);
+
+  useEffect(() => {
+    if (!openingDocId) {
+      openingDocContentLoadingSeenRef.current = false;
+      return;
+    }
+
+    if (currentDocId !== openingDocId) return;
+
+    if (currentDocLoading) {
+      openingDocContentLoadingSeenRef.current = true;
+      return;
+    }
+
+    if (openingDocContentLoadingSeenRef.current) {
+      openingDocContentLoadingSeenRef.current = false;
+      setOpeningDocId(null);
+    }
+  }, [currentDocId, currentDocLoading, openingDocId]);
 
   // 提取所有分类和标签
   const { categories, tags } = useMemo(() => {
@@ -279,15 +299,16 @@ export default function DocumentSidebar({
   const hasActiveFilters = searchValue || selectedCategory || selectedTag;
 
   const handleDocSelect = async (docId: string) => {
-    if (openingDocId === docId) return;
+    if (currentDocId === docId || openingDocId === docId) return;
     setOpeningDocId(docId);
+    openingDocContentLoadingSeenRef.current = false;
     try {
-      onSelect(docId);
+      await onSelect(docId);
     } catch (error) {
       const msg = error instanceof Error ? error.message : "打开文档失败";
       message.error(msg);
-    } finally {
       setOpeningDocId(null);
+      openingDocContentLoadingSeenRef.current = false;
     }
   };
 
