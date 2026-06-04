@@ -241,7 +241,10 @@ export async function renewSyncSession(
 ): Promise<SyncSessionMeta> {
   return apiPost<SyncSessionMeta>(
     `/documents/${docId}/sync-session/renew`,
-    syncSession,
+    {
+      sessionId: syncSession.sessionId,
+      sessionEpoch: syncSession.sessionEpoch,
+    },
   );
 }
 

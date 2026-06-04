@@ -114,6 +114,119 @@ describe("sync snapshot advancement", () => {
     });
   });
 
+  it("cancels unsent creates when unsynced pasted blocks are deleted before flushing", () => {
+    let state = createInitialSyncState("doc_1", "root_1", 1);
+    const empty: TiptapDoc = { type: "doc", content: [] };
+    const initial = advanceSyncSnapshot(state, null, empty);
+    state = initial.state;
+
+    const pasted: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "paste_1" },
+          content: [{ type: "text", text: "old pasted content 1" }],
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "paste_2" },
+          content: [{ type: "text", text: "old pasted content 2" }],
+        },
+      ],
+    };
+    const afterPaste = advanceSyncSnapshot(state, initial.snapshot, pasted);
+
+    expect(afterPaste.state.dirtyOrder).toEqual(["paste_1", "paste_2"]);
+
+    const finalLocal: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "final_1" },
+          content: [{ type: "text", text: "new final content" }],
+        },
+      ],
+    };
+    const afterDeleteAndType = advanceSyncSnapshot(
+      afterPaste.state,
+      afterPaste.snapshot,
+      finalLocal,
+    );
+
+    expect(afterDeleteAndType.state.dirtyOrder).toEqual(["final_1"]);
+    expect(afterDeleteAndType.state.entries).not.toHaveProperty("paste_1");
+    expect(afterDeleteAndType.state.entries).not.toHaveProperty("paste_2");
+    expect(afterDeleteAndType.state.entries.final_1).toMatchObject({
+      clientId: "final_1",
+      opType: "create",
+    });
+  });
+
+  it("turns inflight creates into deletes when unsynced pasted blocks are deleted before ack", () => {
+    let state = createInitialSyncState("doc_1", "root_1", 1);
+    const empty: TiptapDoc = { type: "doc", content: [] };
+    const initial = advanceSyncSnapshot(state, null, empty);
+    state = initial.state;
+
+    const pasted: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "paste_1" },
+          content: [{ type: "text", text: "old pasted content 1" }],
+        },
+      ],
+    };
+    const afterPaste = advanceSyncSnapshot(state, initial.snapshot, pasted);
+    state = markBatchInflight(afterPaste.state, "batch_1", ["paste_1"]);
+
+    const finalLocal: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "final_1" },
+          content: [{ type: "text", text: "new final content" }],
+        },
+      ],
+    };
+
+    const afterDeleteAndType = advanceSyncSnapshot(
+      state,
+      afterPaste.snapshot,
+      finalLocal,
+    );
+
+    expect(afterDeleteAndType.state.entries.paste_1).toMatchObject({
+      clientId: "paste_1",
+      blockId: null,
+      opType: "delete",
+    });
+
+    const afterAck = resolveBatchSuccess(afterDeleteAndType.state, "batch_1", [
+      {
+        operation: "create",
+        success: true,
+        clientId: "paste_1",
+        blockId: "server_paste_1",
+        sortKey: "001000",
+      },
+    ]);
+
+    expect(afterAck.entries.paste_1).toMatchObject({
+      clientId: "paste_1",
+      blockId: "server_paste_1",
+      opType: "delete",
+    });
+    expect(afterAck.entries.final_1).toMatchObject({
+      clientId: "final_1",
+      opType: "create",
+    });
+  });
+
   it("enqueues moves for existing blocks that only have server block ids", () => {
     const state = createInitialSyncState("doc_1", "root_1", 1);
     const previous: TiptapDoc = {

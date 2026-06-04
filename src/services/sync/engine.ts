@@ -421,7 +421,7 @@ export function deriveSyncEntries(
   }
 
   for (const prevNode of Object.values(prevIndexed)) {
-    if (prevNode.blockId && !nextIndexed[prevNode.matchKey]) {
+    if (!nextIndexed[prevNode.matchKey]) {
       entries.push({
         clientId: prevNode.clientId,
         blockId: prevNode.blockId,

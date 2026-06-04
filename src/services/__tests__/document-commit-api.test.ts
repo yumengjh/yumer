@@ -77,4 +77,25 @@ describe("document commit api", () => {
     });
     expect(renewed.lastAckedOpSeq).toBe(42);
   });
+
+  it("only sends the sync session identity when renewing a lease", async () => {
+    apiPost.mockResolvedValue({
+      sessionId: "session_1",
+      sessionEpoch: 3,
+      leaseExpiresAt: "2026-06-05T01:00:00.000Z",
+      lastAckedOpSeq: 42,
+    });
+
+    await renewSyncSession("doc_1", {
+      sessionId: "session_1",
+      sessionEpoch: 3,
+      leaseExpiresAt: "2026-06-05T00:55:00.000Z",
+      lastAckedOpSeq: 7,
+    } as Parameters<typeof renewSyncSession>[1]);
+
+    expect(apiPost).toHaveBeenCalledWith("/documents/doc_1/sync-session/renew", {
+      sessionId: "session_1",
+      sessionEpoch: 3,
+    });
+  });
 });

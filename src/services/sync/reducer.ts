@@ -70,6 +70,10 @@ export function enqueueChange(
 ): SyncReducerState {
   const current = state.entries[incoming.clientId];
 
+  if (!current && incoming.opType === "delete" && !incoming.blockId) {
+    return state;
+  }
+
   if (
     current?.opType === "delete" &&
     (incoming.opType === "update" || incoming.opType === "move")
