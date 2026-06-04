@@ -102,6 +102,8 @@ export interface MarkdownEditorProps {
   theme?: "light" | "dark";
   /** 是否显示工具栏，默认 true */
   showToolbar?: boolean;
+  /** Visible item ids for the fixed toolbar. */
+  toolbarItemIds?: string[];
   /** Whether to show the floating toolbar when text is selected. */
   floatingToolbarEnabled?: boolean;
   /** Visible item ids for the floating toolbar. */
@@ -129,6 +131,8 @@ export interface MarkdownEditorProps {
   /** 当前工作空间，用于图片上传 */
   /** 文档标题 */
   title?: string;
+  /** Whether to show the document title field. */
+  showTitle?: boolean;
   /** 标题变化回调（失焦时触发） */
   onTitleChange?: (title: string) => void;
   onUploadImage?: EditorImageUploadHandler;
@@ -256,6 +260,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
   placeholder = "开始记录你的知识吧…",
   theme: themeProp,
   showToolbar = true,
+  toolbarItemIds,
   floatingToolbarEnabled = false,
   floatingToolbarItemIds = [],
   floatingToolbarDelayMs = 180,
@@ -269,6 +274,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
   defaultFontSize = 15,
   contentWidth = 750,
   title = "",
+  showTitle = true,
   onTitleChange,
   onUploadImage,
 }, ref) {
@@ -282,6 +288,10 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
   const floatingToolbarItemSet = useMemo(
     () => new Set(floatingToolbarItemIds),
     [floatingToolbarItemIds],
+  );
+  const toolbarItemSet = useMemo(
+    () => (toolbarItemIds ? new Set(toolbarItemIds) : undefined),
+    [toolbarItemIds],
   );
 
   const handleTitleBlur = useCallback(() => {
@@ -611,7 +621,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
             uploadImage: onUploadImage ?? null,
           }}
         >
-          {showToolbar && <Toolbar />}
+          {showToolbar && <Toolbar enabledItemIds={toolbarItemSet} />}
           {editable && floatingToolbarEnabled && (
             <FloatingSelectionToolbar
               enabledItemIds={floatingToolbarItemSet}
@@ -627,7 +637,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
               maxWidth: `${contentWidth}px`,
             }}
           >
-            {!loading && editable && (
+            {!loading && editable && showTitle && (
               <h1
                 ref={titleRef}
                 className="doc-title-input"

@@ -76,6 +76,7 @@ import type { EditorToolbarPreferences } from "@/services/editor-toolbar-prefere
 import type { EditorSyncPreferences } from "@/services/editor-sync-preferences";
 import type { ManualSaveMode } from "@/services/manual-save-preferences";
 import { hasDiscardableDraft } from "@/services/save-policy";
+import { MiniMarkdownEditor } from "@/modules/mini-editor-kit";
 import "./DocumentHeader.css";
 
 const PUBLIC_DOC_REVALIDATE_SECRET_KEY = "publicDocRevalidateSecret";
@@ -435,6 +436,9 @@ export function DocumentHeader({
   const [tagManageOpen, setTagManageOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [miniEditorDemoOpen, setMiniEditorDemoOpen] = useState(false);
+  const [miniEditorDemoTitle, setMiniEditorDemoTitle] = useState("");
+  const [miniEditorDemoResetKey, setMiniEditorDemoResetKey] = useState(0);
   const [exportingFormat, setExportingFormat] = useState<DocumentExportFormat | null>(null);
   const [gcDebugOpen, setGcDebugOpen] = useState(false);
   const [syncDebugOpen, setSyncDebugOpen] = useState(false);
@@ -817,6 +821,12 @@ export function DocumentHeader({
           onClick: () => void onRememberPosition(),
         },
         {
+          key: "mini-editor-demo",
+          icon: <BugOutlined />,
+          label: "Mini 编辑器演示",
+          onClick: () => setMiniEditorDemoOpen(true),
+        },
+        {
           key: "revalidate",
           icon: <ReloadOutlined />,
           label: "刷新公开页缓存",
@@ -932,6 +942,16 @@ export function DocumentHeader({
                   </button>
                 </Tooltip>
               )}
+              <Tooltip title="Mini 编辑器演示">
+                <button
+                  type="button"
+                  className="header-icon-btn header-btn-mini-editor"
+                  onClick={() => setMiniEditorDemoOpen(true)}
+                  aria-label="Mini 编辑器演示"
+                >
+                  <BugOutlined />
+                </button>
+              </Tooltip>
             </nav>
           )}
 
@@ -1221,6 +1241,56 @@ export function DocumentHeader({
         open={syncDebugOpen}
         onClose={() => setSyncDebugOpen(false)}
       />
+      <Modal
+        open={miniEditorDemoOpen}
+        title="Mini 编辑器演示"
+        onCancel={() => setMiniEditorDemoOpen(false)}
+        width={760}
+        destroyOnClose
+        footer={[
+          <Button
+            key="reset"
+            onClick={() => {
+              setMiniEditorDemoTitle("");
+              setMiniEditorDemoResetKey((value) => value + 1);
+            }}
+          >
+            重置内容
+          </Button>,
+          <Button
+            key="close"
+            type="primary"
+            onClick={() => setMiniEditorDemoOpen(false)}
+          >
+            关闭
+          </Button>,
+        ]}
+      >
+        <div className="mini-editor-demo">
+          <div className="mini-editor-demo__field">
+            <label className="mini-editor-demo__label" htmlFor="mini-editor-demo-title">
+              Bug 标题
+            </label>
+            <Input
+              id="mini-editor-demo-title"
+              placeholder="例如：粘贴图片后光标跳到文档末尾"
+              className="mini-editor-demo__title"
+              value={miniEditorDemoTitle}
+              onChange={(event) => setMiniEditorDemoTitle(event.target.value)}
+            />
+          </div>
+          <div className="mini-editor-demo__field">
+            <span className="mini-editor-demo__label">问题描述</span>
+            <MiniMarkdownEditor
+              key={miniEditorDemoResetKey}
+              minHeight="220px"
+              placeholder="写下复现步骤、期望结果、实际结果，必要时附上错误日志。"
+              contentWidth={680}
+              autofocus="end"
+            />
+          </div>
+        </div>
+      </Modal>
       <Modal
         open={localSnapshotOpen}
         title="本地数据快照"

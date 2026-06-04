@@ -8,6 +8,8 @@ This project is being split into copyable React modules instead of page-level fe
   Reusable editor module. Contains `MarkdownEditor`, toolbar, extensions, code block behavior, editor types, and editor-local styles.
 - `src/modules/viewer-kit`
   Reusable viewer module. Contains document header/layout, table of contents, heading anchor enhancement, code block enhancement, and image preview.
+- `src/modules/mini-editor-kit`
+  Compact editor module for form-like writing surfaces. Wraps `editor-kit` with input-style chrome and a reduced toolbar.
 - `src/modules/content-styles`
   Shared content typography and block rendering styles. This is the single source of truth for editor content and viewer content.
 
@@ -16,6 +18,7 @@ This project is being split into copyable React modules instead of page-level fe
 Copy these directories together:
 
 - `src/modules/editor-kit`
+- `src/modules/mini-editor-kit`
 - `src/modules/viewer-kit`
 - `src/modules/content-styles`
 

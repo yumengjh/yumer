@@ -711,6 +711,40 @@
   background: var(--color-accent-teal-bg) !important;
 }
 
+.header-btn-mini-editor {
+  color: var(--color-warning-text, #ad6800);
+}
+
+.header-btn-mini-editor:hover {
+  color: var(--color-warning-text, #ad6800);
+  background: rgba(250, 173, 20, 0.12);
+}
+
+.mini-editor-demo {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 2px;
+}
+
+.mini-editor-demo__field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mini-editor-demo__label {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.mini-editor-demo__title.ant-input {
+  height: 36px;
+  border-radius: 8px;
+}
+
 /* 响应式 */
 .header-end--mobile {
   display: none;

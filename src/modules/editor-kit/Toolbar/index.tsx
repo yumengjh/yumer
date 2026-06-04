@@ -9,5 +9,9 @@ interface ToolbarProps {
 export default function Toolbar({ enabledItemIds }: ToolbarProps = {}) {
   const isMobile = useMediaQuery("(max-width: 768px)");
 
-  return isMobile ? <MobileToolbar /> : <DesktopToolbar enabledItemIds={enabledItemIds} />;
+  return isMobile ? (
+    <MobileToolbar enabledItemIds={enabledItemIds} />
+  ) : (
+    <DesktopToolbar enabledItemIds={enabledItemIds} />
+  );
 }

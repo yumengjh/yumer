@@ -26,7 +26,11 @@ import { useMarkdownEditorContext } from "../EditorContext";
 import { titleLevelItems } from "./data";
 import "./MobileToolbar.css";
 
-export default function MobileToolbar() {
+interface MobileToolbarProps {
+  enabledItemIds?: ReadonlySet<string>;
+}
+
+export default function MobileToolbar({ enabledItemIds }: MobileToolbarProps = {}) {
   const actions = useToolbarActions();
   const { uploadImage } = useMarkdownEditorContext();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -59,6 +63,20 @@ export default function MobileToolbar() {
     { id: "divider",      icon: <DividerIcon />,        label: "分割线" },
     { id: "clearFormat",  icon: <ClearFormatIcon />,    label: "清除格式" },
   ];
+
+  const visibleQuickActions = enabledItemIds
+    ? quickActions.filter((action) => enabledItemIds.has(action.id))
+    : quickActions;
+  const showMoreButton = !enabledItemIds || [
+    "text-mode",
+    "align-left",
+    "align-center",
+    "align-right",
+    "text-color",
+    "bg-color",
+    "table",
+    "image",
+  ].some((id) => enabledItemIds.has(id));
 
   const handleHeading = (level: string) => {
     actions.setHeading(parseInt(level, 10));
@@ -116,7 +134,7 @@ export default function MobileToolbar() {
           }}
         />
         <div className="mobile-toolbar-scroll">
-          {quickActions.map((action) => (
+          {visibleQuickActions.map((action) => (
             <button
               key={action.id}
               type="button"
@@ -145,28 +163,30 @@ export default function MobileToolbar() {
           ))}
         </div>
         {/* 更多按钮：分隔线 + 图标 */}
-        <div className="mobile-toolbar-more">
-          <button
-            type="button"
-            className={[
-              "mobile-toolbar-btn",
-              pressedAction === "more" ? "is-pressed" : "",
-            ].filter(Boolean).join(" ")}
-            onPointerDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              setPressedAction("more");
-              setMoreOpen(true);
-              clearPressedAction();
-            }}
-            onPointerCancel={clearPressedAction}
-            onPointerLeave={clearPressedAction}
-            onPointerUp={clearPressedAction}
-            aria-label="More"
-          >
-            <EllipsisOutlined />
-          </button>
-        </div>
+        {showMoreButton && (
+          <div className="mobile-toolbar-more">
+            <button
+              type="button"
+              className={[
+                "mobile-toolbar-btn",
+                pressedAction === "more" ? "is-pressed" : "",
+              ].filter(Boolean).join(" ")}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setPressedAction("more");
+                setMoreOpen(true);
+                clearPressedAction();
+              }}
+              onPointerCancel={clearPressedAction}
+              onPointerLeave={clearPressedAction}
+              onPointerUp={clearPressedAction}
+              aria-label="More"
+            >
+              <EllipsisOutlined />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 底部抽屉：低频操作 */}

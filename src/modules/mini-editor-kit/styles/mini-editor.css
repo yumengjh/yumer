@@ -1,0 +1,83 @@
+.mini-editor-kit {
+  --mini-editor-border: var(--color-border, #d9d9d9);
+  --mini-editor-border-focus: var(--color-primary-border, #91caff);
+  --mini-editor-bg: var(--color-bg-container, #ffffff);
+  --mini-editor-muted-bg: var(--color-bg-layout, #fafafa);
+  background: transparent;
+  flex: initial;
+}
+
+.mini-editor-kit .tiptap-card {
+  overflow: hidden;
+  flex: initial;
+  border: 1px solid var(--mini-editor-border);
+  border-radius: 8px;
+  background: var(--mini-editor-bg);
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.mini-editor-kit:focus-within .tiptap-card {
+  border-color: var(--mini-editor-border-focus);
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.08);
+}
+
+.mini-editor-kit .toolbar,
+.mini-editor-kit .mobile-toolbar-wrapper {
+  position: static;
+  top: auto;
+  min-height: 38px;
+  height: auto;
+  justify-content: flex-start;
+  padding: 5px 8px;
+  background: var(--mini-editor-muted-bg);
+  border-bottom: 1px solid var(--color-border-secondary, #f0f0f0);
+  z-index: 1;
+}
+
+.mini-editor-kit .toolbar {
+  gap: 2px;
+}
+
+.mini-editor-kit .toolbar-group {
+  padding: 0 3px;
+}
+
+.mini-editor-kit .toolbar-button,
+.mini-editor-kit .dropdown-trigger-button {
+  height: 28px;
+}
+
+.mini-editor-kit .tiptap-editor-wrapper {
+  max-width: none;
+  min-height: 180px;
+  margin: 0;
+  padding: 14px 16px 18px;
+  background: var(--mini-editor-bg);
+}
+
+.mini-editor-kit .tiptap-editor {
+  min-height: inherit;
+  font-size: var(--app-editor-font-size, 14px);
+  line-height: 1.68;
+}
+
+.mini-editor-kit .tiptap-editor :where(h1, h2, h3, h4, h5, h6) {
+  margin-top: 12px;
+}
+
+.mini-editor-kit .tiptap-editor :where(p) {
+  margin-bottom: 6px;
+}
+
+.mini-editor-kit .tiptap-editor pre,
+.mini-editor-kit .tiptap-editor .code-block-view {
+  margin: 10px 0;
+}
+
+@media (max-width: 768px) {
+  .mini-editor-kit .tiptap-editor-wrapper {
+    padding: 12px 14px 16px;
+  }
+}
