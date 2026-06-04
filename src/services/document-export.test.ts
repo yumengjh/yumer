@@ -19,7 +19,7 @@ describe("document export service", () => {
       createObjectURL: vi.fn(() => "blob:export"),
       revokeObjectURL: vi.fn(),
     });
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function () {
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
       downloadedFilename = this.download;
     });
     vi.mocked(apiFetch).mockResolvedValue({
@@ -29,7 +29,7 @@ describe("document export service", () => {
         get: () => null,
       },
       blob: async () => new Blob(["hello"], { type: "text/markdown" }),
-    } as Response);
+    } as unknown as Response);
 
     const result = await downloadDocumentExport("doc_1", "md", "中文文档");
 

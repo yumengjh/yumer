@@ -1,0 +1,115 @@
+.doc-layout {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.doc-page {
+  background: var(--color-bg);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.doc-page-body {
+  display: grid;
+  grid-template-columns: 1fr minmax(auto, var(--doc-content-width, 800px)) 1fr;
+  width: 100%;
+  padding: 40px 0;
+  flex: 1;
+}
+
+.doc-main-content {
+  grid-column: 2;
+  width: 100%;
+  padding: 0 24px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.doc-sidebar-container {
+  grid-column: 3;
+  width: 0;
+  height: 100%;
+}
+
+.doc-sidebar {
+  width: 260px;
+  position: fixed;
+  top: 80px;
+  right: 24px;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  z-index: 50;
+}
+
+.doc-content .doc-heading-with-anchor {
+  position: relative;
+}
+
+.doc-content .doc-heading-anchor {
+  position: absolute;
+  left: calc(-1em - 0.18em);
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.9em;
+  font-size: 0.85em;
+  line-height: 1;
+  color: var(--color-accent-teal);
+  text-decoration: none;
+  opacity: 0;
+  transition: opacity 0.16s ease, color 0.16s ease;
+  user-select: none;
+}
+
+.doc-content .doc-heading-with-anchor:hover > .doc-heading-anchor,
+.doc-content .doc-heading-with-anchor:focus-within > .doc-heading-anchor,
+.doc-content .doc-heading-anchor:focus-visible {
+  opacity: 1;
+}
+
+.doc-content .doc-heading-anchor:hover,
+.doc-content .doc-heading-anchor:focus-visible {
+  color: var(--color-accent-teal-hover);
+}
+
+@media (max-width: 1200px) {
+  .doc-page-body {
+    display: flex;
+    padding: 40px 24px;
+  }
+
+  .doc-main-content {
+    padding: 0;
+  }
+}
+
+@media (max-width: 1024px) {
+  .doc-sidebar-container {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .doc-page-body {
+    padding: 20px 16px;
+  }
+
+  .doc-content .doc-heading-anchor {
+    left: calc(-0.9em - 0.12em);
+    width: 0.9em;
+    min-height: 44px;
+    min-width: 44px;
+    display: inline-flex;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .doc-content .doc-heading-anchor {
+    transition: none;
+  }
+}

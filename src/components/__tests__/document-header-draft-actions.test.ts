@@ -11,6 +11,6 @@ describe("DocumentHeader draft actions", () => {
 
     expect(source).toContain("onDiscardDraft");
     expect(source).toContain('currentContentSource === "draft"');
-    expect(source).toContain("取消草稿");
+    expect(source).toContain("DeleteOutlined");
   });
 });

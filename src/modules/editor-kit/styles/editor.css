@@ -1,0 +1,7 @@
+@import "../../content-styles/content.css";
+
+/*
+ * Compatibility entry for editor consumers.
+ * Content typography now lives in src/modules/content-styles/content.css
+ * so editor and viewer can share the same source of truth.
+ */

@@ -291,8 +291,8 @@ describe("deriveSyncEntries order handling", () => {
       "sync-create:c_blank",
       "sync-create:c_2",
     ]);
-    expect(creates[0].payload?.attrs?.syncCreateId).toBeUndefined();
-    expect(creates[1].payload?.attrs?.syncCreateId).toBeUndefined();
+    expect((creates[0].payload?.attrs as Record<string, unknown> | undefined)?.syncCreateId).toBeUndefined();
+    expect((creates[1].payload?.attrs as Record<string, unknown> | undefined)?.syncCreateId).toBeUndefined();
   });
 
   it("emits move entries when existing blocks change relative order", () => {

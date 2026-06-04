@@ -1,12 +1,10 @@
 import {
   getShikiHighlighter,
+  renderCodeBlockBodyHtml,
   resolveCodeLanguageForShiki,
   SHIKI_LIGHT_THEME,
-} from "@/components/markdown-editor/code/codeHighlight";
-import {
-  renderCodeBlockBodyHtml,
   tokenLineToHtml,
-} from "@/components/markdown-editor/code/codeBlockLineHtml";
+} from "@/modules/editor-kit/shared";
 
 const codeBlockRegex = /<pre><code(?: class="language-([^"]*)")?>([\s\S]*?)<\/code><\/pre>/g;
 

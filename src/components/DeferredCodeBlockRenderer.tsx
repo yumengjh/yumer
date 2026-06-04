@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 
 const ClientCodeBlockRenderer = dynamic(
-  () => import("@/components/ClientCodeBlockRenderer"),
+  () => import("@/modules/viewer-kit").then((mod) => mod.CodeBlockEnhancer),
   { ssr: false },
 );
 

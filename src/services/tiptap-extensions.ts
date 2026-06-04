@@ -22,14 +22,16 @@ import { Table } from "@tiptap/extension-table";
 import { TableRow } from "@tiptap/extension-table-row";
 import { TableCell } from "@tiptap/extension-table-cell";
 import { TableHeader } from "@tiptap/extension-table-header";
-import { HighlightBlock } from "../components/markdown-editor/extensions/highlightBlock";
-import { createFontSizeExtension } from "../components/markdown-editor/extensions/fontSize";
-import { OrderedListStyle } from "../components/markdown-editor/extensions/orderedListStyle";
-import { LineHeight } from "../components/markdown-editor/extensions/lineHeight";
-import { Indent } from "../components/markdown-editor/extensions/indent";
-import { BlockIdAttribute } from "../components/markdown-editor/extensions/blockIdAttribute";
-import { ImageBlock } from "../components/markdown-editor/extensions/imageBlock";
-import { HeadingAnchor } from "../components/markdown-editor/extensions/headingAnchor";
+import {
+  BlockIdAttribute,
+  createFontSizeExtension,
+  HeadingAnchor,
+  HighlightBlock,
+  ImageBlock,
+  Indent,
+  LineHeight,
+  OrderedListStyle,
+} from "@/modules/editor-kit/shared";
 
 export const serializationExtensions = [
   StarterKit.configure({

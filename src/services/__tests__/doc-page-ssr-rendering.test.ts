@@ -319,11 +319,11 @@ describe("doc page SSR rendering contract", () => {
 
   it("renders public code block chrome with fold, title, language label, and copy", () => {
     const rendererSource = fs.readFileSync(
-      path.resolve(process.cwd(), "src/components/ClientCodeBlockRenderer.tsx"),
+      path.resolve(process.cwd(), "src/modules/viewer-kit/CodeBlockEnhancer.tsx"),
       "utf8",
     ).replace(/\r\n/g, "\n");
     const chromeSource = fs.readFileSync(
-      path.resolve(process.cwd(), "src/components/markdown-editor/code/publicCodeBlockChrome.ts"),
+      path.resolve(process.cwd(), "src/modules/editor-kit/code/publicCodeBlockChrome.ts"),
       "utf8",
     ).replace(/\r\n/g, "\n");
 

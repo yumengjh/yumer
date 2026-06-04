@@ -7,7 +7,7 @@ import {
   escapeCodeHtml,
   extractCodeText,
   normalizeCodeBlockAttrs,
-} from "@/components/markdown-editor/code/codeBlockOptions";
+} from "@/modules/editor-kit/shared";
 import { serializationExtensions } from "./tiptap-extensions";
 import { type TiptapDoc, type TiptapNode } from "./tiptap-converter";
 import { resolveApiUrl } from "./api-client";

@@ -19,7 +19,7 @@ import {
 } from "../services/document";
 import { versionTreeToHtml, annotateBlockChanges } from "../services/version-html";
 import DeferredCodeBlockRenderer from "./DeferredCodeBlockRenderer";
-import "@/components/markdown-editor/styles/editor.css";
+import "@/modules/editor-kit/styles/editor.css";
 import "./VersionDiffModal.css";
 
 interface VersionDiffModalProps {

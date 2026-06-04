@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect, useRef, type CSSProperties }
 import { App } from "antd";
 import { usePathname, useRouter } from "next/navigation";
 import TurndownService from "turndown";
-import { MarkdownEditor, MarkdownEditorRef } from "@/components/markdown-editor";
+import { MarkdownEditor, MarkdownEditorRef } from "@/modules/editor-kit";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import {
   DASH_PATH,
@@ -31,6 +31,7 @@ import {
   type LastEditPosition,
   updateDocumentLastEditPosition,
 } from "@/services/document";
+import { uploadImage } from "@/services/images";
 import { useDocumentSync } from "@/hooks/useDocumentSync";
 import { readIdentityFromAttrs } from "@/services/sync/identity";
 import {
@@ -709,6 +710,16 @@ function EditorContent() {
     }
   }, [currentDoc, updateDoc, message]);
 
+  const handleUploadImage = useCallback(
+    async (file: File) => {
+      if (!workspaceId) {
+        throw new Error("未选择工作空间");
+      }
+      return uploadImage(workspaceId, file);
+    },
+    [workspaceId],
+  );
+
   const handleRememberPosition = useCallback(async () => {
     if (!currentDoc || rememberingPosition) return;
 
@@ -1153,9 +1164,9 @@ function EditorContent() {
               loading={loadingDoc}
               defaultFontSize={activeSettingsState.effectiveSettings.editor.fontSize}
               contentWidth={activeSettingsState.effectiveSettings.editor.contentWidth}
-              workspaceId={workspaceId}
               title={currentDoc?.title ?? ""}
               onTitleChange={handleTitleChange}
+              onUploadImage={handleUploadImage}
               style={
                 {
                   "--app-editor-font-size": `${activeSettingsState.effectiveSettings.editor.fontSize}px`,

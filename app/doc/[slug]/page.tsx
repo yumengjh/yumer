@@ -4,14 +4,13 @@ import { DocFooter } from "@/components/DocFooter";
 import DeferredCodeBlockRenderer from "@/components/DeferredCodeBlockRenderer";
 import DeferredDocImagePreview from "@/components/DeferredDocImagePreview";
 import { DocPageLayout } from "@/components/DocPageLayout";
-import { PublicDocTOC } from "@/components/PublicDocTOC";
-import { PublicHeadingAnchorEnhancer } from "@/components/PublicHeadingAnchorEnhancer";
+import { DocumentTableOfContents, HeadingAnchorEnhancer } from "@/modules/viewer-kit";
 import {
   getPublicDocSnapshot,
   isLatestRequest,
   type PublicDocSearchParams,
 } from "@/services/public-doc-snapshot";
-import "@/components/markdown-editor/styles/editor.css";
+import "@/modules/content-styles/content.css";
 import "./style.css";
 
 type PageProps = {
@@ -43,7 +42,13 @@ export default async function DocPage({ params, searchParams }: PageProps) {
       title={doc.title}
       icon={doc.icon}
       workspaceId={doc.workspaceId}
-      sidebar={<PublicDocTOC />}
+      sidebar={
+        <DocumentTableOfContents
+          title="目录"
+          expandAllLabel="全部展开"
+          collapseAllLabel="全部收起"
+        />
+      }
       footer={
         <DocFooter
           authorName={doc.authorName}
@@ -67,7 +72,7 @@ export default async function DocPage({ params, searchParams }: PageProps) {
         data-yuediter-render-version={doc.renderHeaders.renderVersion || undefined}
         dangerouslySetInnerHTML={{ __html: doc.html }}
       />
-      <PublicHeadingAnchorEnhancer />
+      <HeadingAnchorEnhancer />
       <DeferredCodeBlockRenderer />
       <DeferredDocImagePreview />
     </DocPageLayout>

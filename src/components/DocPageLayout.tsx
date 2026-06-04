@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, ReactNode, type CSSProperties } from "react";
-import { PublicDocHeader } from "./PublicDocHeader";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { DocumentLayout } from "@/modules/viewer-kit";
 import {
   buildSettingsState,
   getClientVisibleSettings,
@@ -11,34 +12,32 @@ import {
 interface DocPageLayoutProps {
   title: string;
   icon?: string;
-  children: ReactNode;
-  sidebar: ReactNode;
-  footer?: ReactNode;
+  children: React.ReactNode;
+  sidebar: React.ReactNode;
+  footer?: React.ReactNode;
   workspaceId?: string;
 }
 
-export function DocPageLayout({ title, icon, children, sidebar, footer, workspaceId }: DocPageLayoutProps) {
-  const [tocOpen, setTocOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
+export function DocPageLayout({
+  title,
+  icon,
+  children,
+  sidebar,
+  footer,
+  workspaceId,
+}: DocPageLayoutProps) {
   const [settingsState, setSettingsState] = useState<SettingsState>(() =>
     buildSettingsState({ priority: "workspace-first" }),
   );
 
   useEffect(() => {
-    const saved = localStorage.getItem("yuediter_doc_toc_open");
-    // 默认关闭
-    if (saved === "true") {
-      setTocOpen(true);
-    }
-
-    const checkMobile = () => setIsMobile(window.innerWidth <= 1024);
-    checkMobile();
-    window.addEventListener("resize", checkMobile);
-    return () => window.removeEventListener("resize", checkMobile);
-  }, []);
-
-  useEffect(() => {
     let active = true;
+
+    const applyFallback = () => {
+      if (active) {
+        setSettingsState(buildSettingsState({ priority: "workspace-first" }));
+      }
+    };
 
     const runWhenIdle = () => {
       if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
@@ -51,9 +50,7 @@ export function DocPageLayout({ title, icon, children, sidebar, footer, workspac
             })
             .catch((error) => {
               console.log("[public-doc] settings request failed", error);
-              if (active) {
-                setSettingsState(buildSettingsState({ priority: "workspace-first" }));
-              }
+              applyFallback();
             });
         });
         return;
@@ -68,9 +65,7 @@ export function DocPageLayout({ title, icon, children, sidebar, footer, workspac
           })
           .catch((error) => {
             console.log("[public-doc] settings request failed", error);
-            if (active) {
-              setSettingsState(buildSettingsState({ priority: "workspace-first" }));
-            }
+            applyFallback();
           });
       }, 0);
     };
@@ -92,37 +87,41 @@ export function DocPageLayout({ title, icon, children, sidebar, footer, workspac
     };
   }, [workspaceId]);
 
-  const layoutStyle = {
-    "--doc-content-width": `${settingsState.effectiveSettings.reader.contentWidth}px`,
-    "--doc-font-size": `${settingsState.effectiveSettings.reader.fontSize}px`,
-  } as CSSProperties;
-
-  const handleToggleTocDesktop = () => {
-    const next = !tocOpen;
-    setTocOpen(next);
-    localStorage.setItem("yuediter_doc_toc_open", String(next));
-  };
-
   return (
-    <div className="doc-page" style={layoutStyle}>
-      <PublicDocHeader 
-        title={title} 
-        icon={icon} 
-        onToggleTocDesktop={handleToggleTocDesktop} 
-      />
-      <div className="doc-page-body">
-        <main className="doc-main-content">
-          {children}
-        </main>
-        {(!isMobile && tocOpen) && (
-          <div className="doc-sidebar-container">
-            <aside className="doc-sidebar">
-              {sidebar}
-            </aside>
-          </div>
-        )}
-      </div>
-      {footer}
-    </div>
+    <DocumentLayout
+      title={title}
+      icon={icon ? <span>{icon}</span> : undefined}
+      sidebar={sidebar}
+      footer={footer}
+      backControl={
+        <Link href="/blog" className="doc-back-link" aria-label="返回列表">
+          <svg
+            className="doc-back-icon"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden
+          >
+            <path
+              d="M19 12H5M5 12L12 19M5 12L12 5"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </Link>
+      }
+      backLabel="返回列表"
+      tocLabel="目录"
+      tocDrawerTitle="目录"
+      tocStorageKey="yuediter_doc_toc_open"
+      contentWidth={settingsState.effectiveSettings.reader.contentWidth}
+      fontSize={settingsState.effectiveSettings.reader.fontSize}
+    >
+      {children}
+    </DocumentLayout>
   );
 }

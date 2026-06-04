@@ -1,7 +1,7 @@
 import {
   FLOATING_TOOLBAR_ITEMS,
   type FloatingToolbarItemId,
-} from "@/components/markdown-editor/Toolbar/floatingToolbarItems";
+} from "@/modules/editor-kit/shared";
 
 export const EDITOR_TOOLBAR_PREFERENCES_STORAGE_KEY = "yuediter:editor-toolbar-preferences";
 
