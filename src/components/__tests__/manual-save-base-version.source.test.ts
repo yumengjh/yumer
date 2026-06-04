@@ -20,15 +20,22 @@ describe("manual save baseVersion rebase source", () => {
     expect(contextSource).toContain(
       "applyCommittedVersion: (version: number, draftRevision?: number | null) => void;",
     );
-    expect(pageSource).toContain('const commitResult = await commitVersion(currentDoc.docId, "手动保存")');
-    expect(pageSource).toContain(
+    const barrierAt = pageSource.indexOf("const ok = await sync.flushAndCommitBarrier(");
+    const commitAt = pageSource.indexOf("const commitResult = await commitVersion(");
+    const applyCommitAt = pageSource.indexOf(
       "applyCommittedVersion(commitResult.version, commitResult.draftRevision)",
     );
+
+    expect(barrierAt).toBeGreaterThanOrEqual(0);
+    expect(commitAt).toBeGreaterThan(barrierAt);
+    expect(applyCommitAt).toBeGreaterThan(commitAt);
     expect(contextSource).toContain(
       "draftRevision: draftRevision ?? currentDraft?.draftRevision ?? 0",
     );
     expect(hookSource).toContain("const latestContentRef = useRef<TiptapDoc | null>(content);");
     expect(hookSource).toContain("snapshotRef.current = latestContentRef.current;");
+    expect(hookSource).toContain("const autosyncPausedRef = useRef(false);");
+    expect(hookSource).toContain('if (source === "autosync" && autosyncPausedRef.current) return;');
   });
 
   it("captures edits made while a sync batch is in flight before accepting the ack baseline", () => {
@@ -61,5 +68,6 @@ describe("manual save baseVersion rebase source", () => {
     expect(editorCaptureAt).toBeGreaterThan(ackBaselineAt);
     expect(hookSource).toContain("draftRevision: rebased.draftRevision,");
     expect(hookSource).toContain("response.draftRevision,");
+    expect(hookSource).toContain('logSyncEvent("ack:content-patch-failed"');
   });
 });

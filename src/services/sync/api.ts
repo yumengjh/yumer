@@ -8,6 +8,7 @@ export interface SyncBatchResponse {
   appliedAt: number;
   serverHead: number;
   draftRevision?: number;
+  ackedThroughOpSeq?: number;
   needsReload: boolean;
   conflicts: Array<{ code: string; message: string }>;
   results: SyncBatchResult[];
@@ -165,9 +166,14 @@ export async function postSyncBatch(input: {
   draftRevision: number;
   clientBatchId: string;
   source: SyncSource;
+  sessionId?: string;
+  sessionEpoch?: number;
   operations: SyncEntry[];
 }): Promise<SyncBatchResponse> {
   const bodyOperations = buildSyncBatchOperations(input);
+  const ackedThroughOpSeq = input.operations.reduce((max, entry) => {
+    return typeof entry.revision === "number" ? Math.max(max, entry.revision) : max;
+  }, 0);
 
   if (bodyOperations.length === 0) {
     return {
@@ -187,6 +193,11 @@ export async function postSyncBatch(input: {
     draftRevision: input.draftRevision,
     clientBatchId: input.clientBatchId,
     source: input.source,
+    ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    ...(typeof input.sessionEpoch === "number"
+      ? { sessionEpoch: input.sessionEpoch }
+      : {}),
+    ...(ackedThroughOpSeq > 0 ? { ackedThroughOpSeq } : {}),
     createVersion: false,
     operations: bodyOperations,
   };
@@ -194,6 +205,13 @@ export async function postSyncBatch(input: {
   const startTime = Date.now();
   try {
     const response = await apiPost<SyncBatchResponse>("/blocks/batch", requestBody);
+    if (
+      bodyOperations.length > 0 &&
+      !response.needsReload &&
+      (!Array.isArray(response.results) || response.results.length === 0)
+    ) {
+      throw new Error("同步协议错误：非空批次返回了空结果");
+    }
     SyncDebugLog.add({
       id: input.clientBatchId,
       timestamp: startTime,

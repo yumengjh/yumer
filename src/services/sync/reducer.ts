@@ -1,3 +1,4 @@
+import type { SyncSessionMeta } from "@/services/document";
 import type { SyncEntry, SyncReducerState, SyncBatchResult } from "./types";
 
 function normalizeCreatePayload(entry: SyncEntry): SyncEntry {
@@ -38,13 +39,18 @@ export function createInitialSyncState(
   rootBlockId: string,
   baseVersion: number,
   draftRevision = 0,
+  syncSession?: SyncSessionMeta | null,
 ): SyncReducerState {
   return {
     docId,
     rootBlockId,
     baseVersion,
     draftRevision,
-    localRevision: 0,
+    sessionId: syncSession?.sessionId ?? null,
+    sessionEpoch: syncSession?.sessionEpoch ?? null,
+    leaseExpiresAt: syncSession?.leaseExpiresAt ?? null,
+    lastAckedOpSeq: syncSession?.lastAckedOpSeq ?? null,
+    localRevision: syncSession?.lastAckedOpSeq ?? 0,
     syncState: "idle",
     entries: {},
     dirtyOrder: [],
@@ -63,6 +69,17 @@ export function enqueueChange(
   incoming: SyncEntry,
 ): SyncReducerState {
   const current = state.entries[incoming.clientId];
+
+  if (
+    current?.opType === "delete" &&
+    (incoming.opType === "update" || incoming.opType === "move")
+  ) {
+    return upsertEntry(state, {
+      ...current,
+      blockId: incoming.blockId ?? current.blockId,
+      opType: "delete",
+    });
+  }
 
   if (current?.opType === "create" && incoming.opType === "update") {
     const merged: SyncEntry = normalizeCreatePayload({
@@ -261,6 +278,7 @@ export function resolveBatchSuccess(
   results: SyncBatchResult[],
   serverHead?: number,
   serverDraftRevision?: number,
+  ackedThroughOpSeq?: number,
 ): SyncReducerState {
   if (state.inflightBatchId !== batchId) return state;
 
@@ -270,13 +288,15 @@ export function resolveBatchSuccess(
     .filter(Boolean);
 
   if (results.length === 0) {
-    for (const entry of inflightEntries) {
-      if (
-        nextEntries[entry.clientId]?.revision ===
-        state.inflightEntryRevisions[entry.clientId]
-      ) {
-        delete nextEntries[entry.clientId];
-      }
+    if (inflightEntries.length > 0) {
+      return {
+        ...state,
+        inflightBatchId: null,
+        inflightEntryIds: [],
+        inflightEntryRevisions: {},
+        syncState: "error",
+        lastError: "同步响应返回空结果，已停止自动清理待同步队列",
+      };
     }
   }
 
@@ -327,6 +347,13 @@ export function resolveBatchSuccess(
   }
 
   const nextDirty = state.dirtyOrder.filter((id) => Boolean(nextEntries[id]));
+  const hasAckFailures = results.some((result, index) => {
+    return !(result.success || isDeleteNotFound(inflightEntries[index], result));
+  });
+  const maxAckedInflightRevision =
+    !hasAckFailures && typeof ackedThroughOpSeq === "number"
+      ? Math.max(state.lastAckedOpSeq ?? 0, ackedThroughOpSeq)
+      : state.lastAckedOpSeq ?? null;
   return {
     ...state,
     entries: nextEntries,
@@ -340,6 +367,7 @@ export function resolveBatchSuccess(
       typeof serverDraftRevision === "number"
         ? serverDraftRevision
         : state.draftRevision,
+    lastAckedOpSeq: maxAckedInflightRevision,
     syncState: nextDirty.length > 0 ? "dirty" : "idle",
     lastError: null,
   };
@@ -358,6 +386,20 @@ export function resolveBatchFailure(
     inflightEntryIds: [],
     inflightEntryRevisions: {},
     syncState: conflicted ? "conflicted" : "error",
+    lastError: error,
+  };
+}
+
+export function markSyncSessionLost(
+  state: SyncReducerState,
+  error: string,
+): SyncReducerState {
+  return {
+    ...state,
+    inflightBatchId: null,
+    inflightEntryIds: [],
+    inflightEntryRevisions: {},
+    syncState: "lease-lost",
     lastError: error,
   };
 }

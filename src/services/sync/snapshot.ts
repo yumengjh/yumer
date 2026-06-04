@@ -40,13 +40,12 @@ function applyLocalSortKeys(
 
 function shouldCreateInitialUnsyncedContent(snapshot: TiptapDoc): boolean {
   const nodes = Array.isArray(snapshot.content) ? snapshot.content : [];
-  if (nodes.length !== 1) return false;
-
-  const [node] = nodes;
-  const identity = readIdentityFromAttrs(node.attrs);
-  if (identity.blockId) return false;
-  if (Array.isArray(node.content) && node.content.length > 0) return true;
-  return node.type !== "paragraph" && node.type !== "heading";
+  return nodes.some((node) => {
+    const identity = readIdentityFromAttrs(node.attrs);
+    if (identity.blockId) return false;
+    if (Array.isArray(node.content) && node.content.length > 0) return true;
+    return node.type !== "paragraph" && node.type !== "heading";
+  });
 }
 
 export function advanceSyncSnapshot(

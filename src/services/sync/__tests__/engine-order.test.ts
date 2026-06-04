@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+﻿import { describe, expect, it } from "vitest";
 import { applyCreateAck, applyServerAck, deriveSyncEntries } from "../engine";
 import type { TiptapDoc } from "@/services/tiptap-converter";
 
@@ -566,5 +566,44 @@ describe("deriveSyncEntries order handling", () => {
     expect(patched.content[0].attrs?.blockId).toBe("b_existing");
     expect(patched.content[0].attrs?.sortKey).toBe("001500");
     expect(patched.content[0].attrs?.["data-sort-key"]).toBe("001500");
+  });
+  it("patches nested nodes returned by ack recursively", () => {
+    const doc: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "bulletList",
+          attrs: { clientId: "list_client" },
+          content: [
+            {
+              type: "listItem",
+              attrs: { clientId: "item_client", syncCreateId: "sync-create:item_client" },
+              content: [
+                {
+                  type: "paragraph",
+                  attrs: { clientId: "paragraph_client", clientBatchId: "batch_nested" },
+                  content: [{ type: "text", text: "nested" }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const patched = applyServerAck(doc, [
+      { clientId: "item_client", blockId: "block_item", sortKey: "001500" },
+      { clientId: "paragraph_client", blockId: "block_paragraph", sortKey: "001600" },
+    ]);
+
+    const listItem = patched.content[0].content?.[0];
+    const paragraph = listItem?.content?.[0];
+
+    expect(listItem?.attrs?.blockId).toBe("block_item");
+    expect(listItem?.attrs?.sortKey).toBe("001500");
+    expect(listItem?.attrs?.syncCreateId).toBeUndefined();
+    expect(paragraph?.attrs?.blockId).toBe("block_paragraph");
+    expect(paragraph?.attrs?.sortKey).toBe("001600");
+    expect(paragraph?.attrs?.clientBatchId).toBeUndefined();
   });
 });

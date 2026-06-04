@@ -23,6 +23,7 @@ import {
   type EditorContent,
   type LastEditPosition,
   type PublishDocumentResult,
+  type SyncSessionMeta,
 } from "../services/document";
 import { encodeDocId } from "../lib/doc-slug";
 
@@ -47,6 +48,7 @@ interface DocumentContextValue {
   currentDocVersion: number | null;
   currentContentSource: "draft" | "head" | null;
   currentDraftMeta: EditDraftMeta | null;
+  currentSyncSession: SyncSessionMeta | null;
   currentBlockIds: string[];
   lastEditPosition: LastEditPosition | null;
   pendingScrollBlockId: string | null;
@@ -54,7 +56,13 @@ interface DocumentContextValue {
   clearWorkspace: () => void;
   selectDoc: (docId: string) => Promise<void>;
   selectDocAndScroll: (docId: string, blockId: string) => Promise<void>;
-  loadContent: (docId: string) => Promise<{ content: EditorContent; docVer: number }>;
+  loadContent: (
+    docId: string,
+  ) => Promise<{
+    content: EditorContent;
+    docVer: number;
+    syncSession: SyncSessionMeta | null;
+  }>;
   applyCommittedVersion: (version: number, draftRevision?: number | null) => void;
   markSavedAt: (at: Date | null) => void;
   setSaveStatus: (status: SaveStatus) => void;
@@ -103,6 +111,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const [currentDocVersion, setCurrentDocVersion] = useState<number | null>(null);
   const [currentContentSource, setCurrentContentSource] = useState<"draft" | "head" | null>(null);
   const [currentDraftMeta, setCurrentDraftMeta] = useState<EditDraftMeta | null>(null);
+  const [currentSyncSession, setCurrentSyncSession] = useState<SyncSessionMeta | null>(null);
   const [currentBlockIds, setCurrentBlockIds] = useState<string[]>([]);
   const [lastEditPosition, setLastEditPosition] = useState<LastEditPosition | null>(null);
 
@@ -126,6 +135,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setCurrentDocVersion(null);
     setCurrentContentSource(null);
     setCurrentDraftMeta(null);
+    setCurrentSyncSession(null);
     setCurrentBlockIds([]);
     setLastEditPosition(null);
     currentDocRef.current = doc;
@@ -139,6 +149,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setCurrentDocVersion(null);
     setCurrentContentSource(null);
     setCurrentDraftMeta(null);
+    setCurrentSyncSession(null);
     setCurrentBlockIds([]);
     setLastEditPosition(null);
     currentDocRef.current = null;
@@ -153,6 +164,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setCurrentDocVersion(null);
     setCurrentContentSource(null);
     setCurrentDraftMeta(null);
+    setCurrentSyncSession(null);
     setCurrentBlockIds([]);
     setLastEditPosition(null);
     currentDocRef.current = null;
@@ -197,15 +209,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     pushWindowPath(doc.docId);
   }, [setCurrentDocument, workspaceId]);
 
-  const loadContent = useCallback(async (docId: string): Promise<{ content: EditorContent; docVer: number }> => {
-    const { content, blockIds, docVer, source, draft, lastEditPosition } = await loadDocumentContentV2(docId);
+  const loadContent = useCallback(async (docId: string): Promise<{ content: EditorContent; docVer: number; syncSession: SyncSessionMeta | null }> => {
+    const { content, blockIds, docVer, source, draft, lastEditPosition, syncSession } = await loadDocumentContentV2(docId);
     blockIdsRef.current = blockIds;
     setCurrentBlockIds(blockIds);
     setCurrentDocVersion(docVer);
     setCurrentContentSource(source);
     setCurrentDraftMeta(draft);
+    setCurrentSyncSession(syncSession ?? null);
     setLastEditPosition(lastEditPosition);
-    return { content, docVer };
+    return { content, docVer, syncSession: syncSession ?? null };
   }, []);
 
   const syncDocumentMetadata = useCallback((updated: Document) => {
@@ -248,6 +261,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       resetSaveState("loaded");
       setCurrentContentSource("head");
       setCurrentDraftMeta(null);
+      setCurrentSyncSession(null);
       setCurrentBlockIds([]);
       setLastEditPosition(null);
       pushWindowPath(doc.docId);
@@ -279,6 +293,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         setCurrentDocVersion(null);
         setCurrentContentSource(null);
         setCurrentDraftMeta(null);
+        setCurrentSyncSession(null);
         setCurrentBlockIds([]);
         setLastEditPosition(null);
         currentDocRef.current = null;
@@ -335,6 +350,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         currentDocVersion,
         currentContentSource,
         currentDraftMeta,
+        currentSyncSession,
         currentBlockIds,
         lastEditPosition,
         pendingScrollBlockId,

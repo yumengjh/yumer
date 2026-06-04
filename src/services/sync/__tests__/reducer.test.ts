@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+﻿import { describe, expect, it } from "vitest";
 import {
   createInitialSyncState,
   enqueueChange,
+  markSyncSessionLost,
   markBatchInflight,
   resolveBatchSuccess,
 } from "../reducer";
@@ -51,7 +52,7 @@ describe("sync reducer", () => {
     expect(state.entries.client_b).toBeUndefined();
   });
 
-  it("lets a later update restore an entry after a transient delete", () => {
+  it("keeps delete terminal when a later update arrives for the same block", () => {
     let state = createInitialSyncState("doc_1", "root_1", 3);
     state = enqueueChange(state, {
       clientId: "client_restore",
@@ -78,10 +79,39 @@ describe("sync reducer", () => {
     });
 
     expect(state.dirtyOrder).toEqual(["client_restore"]);
-    expect(state.entries.client_restore.opType).toBe("update");
-    expect((state.entries.client_restore.payload as { content?: Array<{ text?: string }> }).content?.[0]?.text).toBe(
-      "first line recovered",
-    );
+    expect(state.entries.client_restore.opType).toBe("delete");
+    expect(state.entries.client_restore.blockId).toBe("b_restore");
+  });
+
+  it("seeds sync session metadata into the initial reducer state", () => {
+    const state = createInitialSyncState("doc_1", "root_1", 3, 7, {
+      sessionId: "session_1",
+      sessionEpoch: 2,
+      leaseExpiresAt: "2026-06-04T23:59:59.000Z",
+      lastAckedOpSeq: 11,
+    });
+
+    expect(state.draftRevision).toBe(7);
+    expect(state.sessionId).toBe("session_1");
+    expect(state.sessionEpoch).toBe(2);
+    expect(state.leaseExpiresAt).toBe("2026-06-04T23:59:59.000Z");
+    expect(state.lastAckedOpSeq).toBe(11);
+  });
+
+  it("keeps pending operations when the active sync session is lost", () => {
+    let state = createInitialSyncState("doc_1", "root_1", 3);
+    state = enqueueChange(state, {
+      clientId: "client_pending",
+      blockId: "block_pending",
+      opType: "update",
+      payload: { type: "paragraph" },
+    });
+
+    state = markSyncSessionLost(state, "SYNC_SESSION_EXPIRED");
+
+    expect(state.syncState).toBe("lease-lost");
+    expect(state.dirtyOrder).toEqual(["client_pending"]);
+    expect(state.entries.client_pending).toBeDefined();
   });
 
   it("keeps pending commit marker while inflight batch is resolving", () => {
@@ -206,7 +236,7 @@ describe("sync reducer", () => {
     expect(state.syncState).toBe("idle");
   });
 
-  it("clears inflight entries when a batch has no executable operations", () => {
+  it("treats an empty ack for inflight entries as a protocol error", () => {
     let state = createInitialSyncState("doc_1", "root_1", 3);
     state = enqueueChange(state, {
       clientId: "client_without_block",
@@ -218,9 +248,10 @@ describe("sync reducer", () => {
 
     state = resolveBatchSuccess(state, "batch_empty", []);
 
-    expect(state.entries.client_without_block).toBeUndefined();
-    expect(state.dirtyOrder).toEqual([]);
-    expect(state.syncState).toBe("idle");
+    expect(state.entries.client_without_block).toBeDefined();
+    expect(state.dirtyOrder).toEqual(["client_without_block"]);
+    expect(state.syncState).toBe("error");
+    expect(state.lastError).toContain("空结果");
   });
 
   it("keeps edits made to an existing block while an older update is inflight", () => {
@@ -370,6 +401,32 @@ describe("sync reducer", () => {
     expect(state.draftRevision).toBe(8);
   });
 
+  it("advances lastAckedOpSeq after a fully successful batch", () => {
+    let state = createInitialSyncState("doc_1", "root_1", 3, 7, {
+      sessionId: "session_1",
+      sessionEpoch: 2,
+      lastAckedOpSeq: 4,
+    });
+    state = enqueueChange(state, {
+      clientId: "client_ack",
+      blockId: "block_ack",
+      opType: "update",
+      payload: { type: "paragraph" },
+    });
+    state = markBatchInflight(state, "batch_ack", ["client_ack"], false);
+
+    state = resolveBatchSuccess(
+      state,
+      "batch_ack",
+      [{ operation: "update", success: true, blockId: "block_ack" }],
+      3,
+      8,
+      5,
+    );
+
+    expect(state.lastAckedOpSeq).toBe(5);
+  });
+
   it("turns a delete made to a newly created block while create is inflight into a follow-up delete", () => {
     let state = createInitialSyncState("doc_1", "root_1", 3);
     state = enqueueChange(state, {
@@ -435,5 +492,81 @@ describe("sync reducer", () => {
     expect(
       (state.entries.client_fix.payload as { attrs?: Record<string, unknown> }).attrs?.syncCreateId,
     ).toBeUndefined();
+  });
+  it("keeps delete when a later update arrives for the same client", () => {
+    let state = createInitialSyncState("doc_1", "root_1", 3);
+    state = enqueueChange(state, {
+      clientId: "client_deleted_existing",
+      blockId: "block_deleted_existing",
+      opType: "update",
+      payload: {
+        type: "paragraph",
+        content: [{ type: "text", text: "before delete" }],
+      },
+    });
+    state = enqueueChange(state, {
+      clientId: "client_deleted_existing",
+      blockId: "block_deleted_existing",
+      opType: "delete",
+    });
+    state = enqueueChange(state, {
+      clientId: "client_deleted_existing",
+      blockId: "block_deleted_existing",
+      opType: "update",
+      payload: {
+        type: "paragraph",
+        content: [{ type: "text", text: "should not revive" }],
+      },
+    });
+
+    expect(state.dirtyOrder).toEqual(["client_deleted_existing"]);
+    expect(state.entries.client_deleted_existing.opType).toBe("delete");
+    expect(state.entries.client_deleted_existing.blockId).toBe("block_deleted_existing");
+  });
+
+  it("keeps delete when a later move arrives for the same client", () => {
+    let state = createInitialSyncState("doc_1", "root_1", 3);
+    state = enqueueChange(state, {
+      clientId: "client_deleted_moved",
+      blockId: "block_deleted_moved",
+      opType: "update",
+      payload: {
+        type: "paragraph",
+        content: [{ type: "text", text: "before delete" }],
+      },
+    });
+    state = enqueueChange(state, {
+      clientId: "client_deleted_moved",
+      blockId: "block_deleted_moved",
+      opType: "delete",
+    });
+    state = enqueueChange(state, {
+      clientId: "client_deleted_moved",
+      blockId: "block_deleted_moved",
+      opType: "move",
+      sortKey: "009000",
+    });
+
+    expect(state.dirtyOrder).toEqual(["client_deleted_moved"]);
+    expect(state.entries.client_deleted_moved.opType).toBe("delete");
+    expect(state.entries.client_deleted_moved.blockId).toBe("block_deleted_moved");
+  });
+
+  it("treats empty ack results for inflight entries as a protocol error", () => {
+    let state = createInitialSyncState("doc_1", "root_1", 3);
+    state = enqueueChange(state, {
+      clientId: "client_protocol",
+      blockId: "block_protocol",
+      opType: "update",
+      payload: { type: "paragraph", content: [{ type: "text", text: "x" }] },
+    });
+    state = markBatchInflight(state, "batch_protocol", ["client_protocol"], false);
+
+    state = resolveBatchSuccess(state, "batch_protocol", []);
+
+    expect(state.entries.client_protocol).toBeDefined();
+    expect(state.dirtyOrder).toEqual(["client_protocol"]);
+    expect(state.syncState).toBe("error");
+    expect(state.lastError).toContain("空结果");
   });
 });

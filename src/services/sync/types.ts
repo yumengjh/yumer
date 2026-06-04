@@ -18,7 +18,13 @@ export interface IdentityDoc {
   content?: IdentityNode[];
 }
 
-export type SyncState = "idle" | "dirty" | "flushing" | "error" | "conflicted";
+export type SyncState =
+  | "idle"
+  | "dirty"
+  | "flushing"
+  | "error"
+  | "conflicted"
+  | "lease-lost";
 
 export type SyncOpType = "create" | "update" | "delete" | "move";
 
@@ -40,6 +46,10 @@ export interface SyncReducerState {
   rootBlockId: string;
   baseVersion: number;
   draftRevision: number;
+  sessionId: string | null;
+  sessionEpoch: number | null;
+  leaseExpiresAt: string | null;
+  lastAckedOpSeq: number | null;
   localRevision: number;
   syncState: SyncState;
   entries: Record<string, SyncEntry>;

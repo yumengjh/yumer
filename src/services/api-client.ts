@@ -191,6 +191,9 @@ export function apiPatch<T>(path: string, body?: unknown): Promise<T> {
   });
 }
 
-export function apiDelete<T>(path: string): Promise<T> {
-  return apiRequest<T>(path, { method: "DELETE" });
+export function apiDelete<T>(path: string, body?: unknown): Promise<T> {
+  return apiRequest<T>(path, {
+    method: "DELETE",
+    body: body ? JSON.stringify(body) : undefined,
+  });
 }

@@ -97,11 +97,19 @@ export interface LastEditPosition {
   updatedAt: string;
 }
 
+export interface SyncSessionMeta {
+  sessionId: string;
+  sessionEpoch: number;
+  leaseExpiresAt?: string | null;
+  lastAckedOpSeq?: number | null;
+}
+
 export interface EditContentResponse {
   docId: string;
   source: "draft" | "head";
   head: number;
   publishedHead: number;
+  syncSession?: SyncSessionMeta | null;
   editorState?: {
     lastEditPosition?: LastEditPosition | null;
   } | null;
@@ -126,6 +134,12 @@ export interface CommitVersionResult {
   draftRevision: number;
   committed: boolean;
   draftRemoved: boolean;
+}
+
+export interface CommitVersionInput {
+  sessionId?: string;
+  sessionEpoch?: number;
+  ackedThroughOpSeq?: number;
 }
 
 export interface PaginatedResponse<T> {
@@ -214,8 +228,21 @@ export async function deleteDocument(docId: string): Promise<void> {
   return apiDelete(`/documents/${docId}`);
 }
 
-export async function discardDraft(docId: string): Promise<void> {
-  await apiDelete(`/documents/${docId}/draft`);
+export async function discardDraft(
+  docId: string,
+  syncSession?: Pick<SyncSessionMeta, "sessionId" | "sessionEpoch">,
+): Promise<void> {
+  await apiDelete(`/documents/${docId}/draft`, syncSession);
+}
+
+export async function renewSyncSession(
+  docId: string,
+  syncSession: Pick<SyncSessionMeta, "sessionId" | "sessionEpoch">,
+): Promise<SyncSessionMeta> {
+  return apiPost<SyncSessionMeta>(
+    `/documents/${docId}/sync-session/renew`,
+    syncSession,
+  );
 }
 
 export async function updateDocument(
@@ -236,8 +263,12 @@ export async function updateDocument(
 export async function commitVersion(
   docId: string,
   message?: string,
+  syncSession?: CommitVersionInput,
 ): Promise<CommitVersionResult> {
-  return apiPost<CommitVersionResult>(`/documents/${docId}/commit`, { message });
+  return apiPost<CommitVersionResult>(`/documents/${docId}/commit`, {
+    message,
+    ...(syncSession ?? {}),
+  });
 }
 
 export type RevertDraftStrategy = "preserve" | "discard";
@@ -492,6 +523,7 @@ export async function loadDocumentContentV2(
   source: "draft" | "head";
   draft: EditDraftMeta;
   lastEditPosition: LastEditPosition | null;
+  syncSession: SyncSessionMeta | null;
 }> {
   const resp = await getEditContent(docId);
   const lastEditPosition = readLastEditPositionFromEditorState(resp.editorState);
@@ -503,6 +535,7 @@ export async function loadDocumentContentV2(
       source: resp.source,
       draft: resp.draft,
       lastEditPosition,
+      syncSession: resp.syncSession ?? null,
     };
   }
 
@@ -517,6 +550,7 @@ export async function loadDocumentContentV2(
       source: resp.source,
       draft: resp.draft,
       lastEditPosition,
+      syncSession: resp.syncSession ?? null,
     };
   }
 
@@ -534,6 +568,7 @@ export async function loadDocumentContentV2(
       source: resp.source,
       draft: resp.draft,
       lastEditPosition,
+      syncSession: resp.syncSession ?? null,
     };
   }
 
@@ -546,6 +581,7 @@ export async function loadDocumentContentV2(
     source: resp.source,
     draft: resp.draft,
     lastEditPosition,
+    syncSession: resp.syncSession ?? null,
   };
 }
 

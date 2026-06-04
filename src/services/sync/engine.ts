@@ -463,44 +463,63 @@ export function applyServerAck(
     });
   }
 
-  let changed = false;
-  const content = doc.content.map((node) => {
+  const patchNode = (
+    node: TiptapDoc["content"][number],
+  ): TiptapDoc["content"][number] => {
     const identity = readIdentityFromAttrs(node.attrs);
     const ack =
       (identity.clientId ? ackByClientId.get(identity.clientId) : undefined) ??
       (identity.blockId ? ackByBlockId.get(identity.blockId) : undefined);
-    if (!ack) return node;
     const nextAttrs = { ...(node.attrs ?? {}) };
     let nodeChanged = false;
-    if (identity.blockId !== ack.blockId) {
-      nextAttrs.blockId = ack.blockId;
-      nextAttrs["data-block-id"] = ack.blockId;
-      nodeChanged = true;
+    if (ack) {
+      if (identity.blockId !== ack.blockId) {
+        nextAttrs.blockId = ack.blockId;
+        nextAttrs["data-block-id"] = ack.blockId;
+        nodeChanged = true;
+      }
+      if (ack.sortKey && node.attrs?.sortKey !== ack.sortKey) {
+        nextAttrs.sortKey = ack.sortKey;
+        nextAttrs["data-sort-key"] = ack.sortKey;
+        nodeChanged = true;
+      }
+      if (nextAttrs.syncCreateId !== undefined) {
+        delete nextAttrs.syncCreateId;
+        nodeChanged = true;
+      }
+      if (nextAttrs.clientBatchId !== undefined) {
+        delete nextAttrs.clientBatchId;
+        nodeChanged = true;
+      }
+      if (nextAttrs["data-sync-create-id"] !== undefined) {
+        delete nextAttrs["data-sync-create-id"];
+        nodeChanged = true;
+      }
     }
-    if (ack.sortKey && node.attrs?.sortKey !== ack.sortKey) {
-      nextAttrs.sortKey = ack.sortKey;
-      nextAttrs["data-sort-key"] = ack.sortKey;
-      nodeChanged = true;
+
+    let nextContent = node.content;
+    if (Array.isArray(node.content) && node.content.length > 0) {
+      let childChanged = false;
+      nextContent = node.content.map((child) => {
+        const patchedChild = patchNode(child);
+        if (patchedChild !== child) {
+          childChanged = true;
+        }
+        return patchedChild;
+      });
+      nodeChanged = nodeChanged || childChanged;
     }
-    if (nextAttrs.syncCreateId !== undefined) {
-      delete nextAttrs.syncCreateId;
-      nodeChanged = true;
-    }
-    if (nextAttrs.clientBatchId !== undefined) {
-      delete nextAttrs.clientBatchId;
-      nodeChanged = true;
-    }
-    if (nextAttrs["data-sync-create-id"] !== undefined) {
-      delete nextAttrs["data-sync-create-id"];
-      nodeChanged = true;
-    }
+
     if (!nodeChanged) return node;
-    changed = true;
     return {
       ...node,
-      attrs: nextAttrs,
+      ...(nodeChanged ? { attrs: nextAttrs } : {}),
+      ...(nextContent ? { content: nextContent } : {}),
     };
-  });
+  };
+
+  const content = doc.content.map((node) => patchNode(node));
+  const changed = content.some((node, index) => node !== doc.content[index]);
 
   return changed ? { ...doc, content } : doc;
 }

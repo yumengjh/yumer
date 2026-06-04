@@ -351,6 +351,7 @@ function EditorContent() {
     currentDocVersion,
     currentContentSource,
     currentDraftMeta,
+    currentSyncSession,
     currentBlockIds,
     lastEditPosition,
     loadContent,
@@ -424,6 +425,7 @@ function EditorContent() {
     rootBlockId: syncEngineEnabled ? currentDoc?.rootBlockId ?? null : null,
     baseVersion: syncEngineEnabled ? currentDocVersion : null,
     draftRevision: currentDraftMeta?.draftRevision ?? 0,
+    syncSession: syncEngineEnabled ? currentSyncSession : null,
     content: syncEngineEnabled ? tiptapContent : null,
     onContentPatched: (doc) => {
       const latestEditorContent = editorRef.current?.getJSON() as TiptapDoc | undefined;
@@ -883,21 +885,31 @@ function EditorContent() {
         }
         const ok = await sync.flushAndCommitBarrier(
           latestEditorContent?.type === "doc" ? latestEditorContent : tiptapContent,
+          async () => {
+            try {
+              const commitResult = await commitVersion(
+                currentDoc.docId,
+                "手动保存",
+                currentSyncSession
+                  ? {
+                      sessionId: currentSyncSession.sessionId,
+                      sessionEpoch: currentSyncSession.sessionEpoch,
+                      ackedThroughOpSeq: sync.syncState?.lastAckedOpSeq ?? undefined,
+                    }
+                  : undefined,
+              );
+              applyCommittedVersion(commitResult.version, commitResult.draftRevision);
+            } catch (error) {
+              if (!isNoopCommitError(error)) {
+                throw error;
+              }
+              noDraftToSave = true;
+            }
+          },
         );
         if (!ok) {
           setSaveStatus("error");
           return;
-        }
-      }
-      if (!skipCommit) {
-        try {
-          const commitResult = await commitVersion(currentDoc.docId, "手动保存");
-          applyCommittedVersion(commitResult.version, commitResult.draftRevision);
-        } catch (error) {
-          if (!isNoopCommitError(error)) {
-            throw error;
-          }
-          noDraftToSave = true;
         }
       }
       if (noDraftToSave) {
@@ -943,6 +955,7 @@ function EditorContent() {
     loadContent,
     applyCommittedVersion,
     discardableDraft,
+    currentSyncSession,
     tiptapContent,
     ignoreNextLocalSnapshotChange,
   ]);
@@ -953,7 +966,7 @@ function EditorContent() {
     setDiscardingDraft(true);
     try {
       try {
-        await discardDraftRequest(currentDoc.docId);
+        await discardDraftRequest(currentDoc.docId, currentSyncSession ?? undefined);
       } catch (error) {
         if (!isNoopDiscardDraftError(error)) {
           throw error;
@@ -981,6 +994,7 @@ function EditorContent() {
     loadContent,
     markSavedAt,
     message,
+    currentSyncSession,
     setHasUnsavedChanges,
     setSaveStatus,
   ]);

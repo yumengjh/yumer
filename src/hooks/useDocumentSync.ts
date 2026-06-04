@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { renewSyncSession, type SyncSessionMeta } from "@/services/document";
 import type { TiptapDoc } from "@/services/tiptap-converter";
 import { postSyncBatch } from "@/services/sync/api";
 import { selectSyncBatchOperations } from "@/services/sync/batching";
@@ -11,6 +12,7 @@ import {
   enqueueChange,
   markBatchInflight,
   markPendingCommit,
+  markSyncSessionLost,
   resolveBatchFailure,
   resolveBatchSuccess,
 } from "@/services/sync/reducer";
@@ -25,6 +27,7 @@ type UseDocumentSyncArgs = {
   rootBlockId: string | null;
   baseVersion: number | null;
   draftRevision: number;
+  syncSession?: SyncSessionMeta | null;
   content: TiptapDoc | null;
   onContentPatched?: (doc: TiptapDoc) => TiptapDoc | void;
 };
@@ -153,6 +156,7 @@ export function useDocumentSync({
   rootBlockId,
   baseVersion,
   draftRevision,
+  syncSession,
   content,
   onContentPatched,
 }: UseDocumentSyncArgs) {
@@ -161,6 +165,7 @@ export function useDocumentSync({
   const snapshotRef = useRef<TiptapDoc | null>(null);
   const latestContentRef = useRef<TiptapDoc | null>(content);
   const flushRunningRef = useRef(false);
+  const autosyncPausedRef = useRef(false);
 
   const replaceSyncState = useCallback((next: SyncReducerState | null) => {
     stateRef.current = next;
@@ -215,17 +220,51 @@ export function useDocumentSync({
     }
 
     replaceSyncState(
-      createInitialSyncState(docId, rootBlockId, baseVersion, draftRevision),
+      createInitialSyncState(
+        docId,
+        rootBlockId,
+        baseVersion,
+        draftRevision,
+        syncSession,
+      ),
     );
     snapshotRef.current = latestContentRef.current;
-  }, [baseVersion, docId, draftRevision, replaceSyncState, rootBlockId]);
+  }, [baseVersion, docId, draftRevision, replaceSyncState, rootBlockId, syncSession]);
 
   useEffect(() => {
     captureContentSnapshot(content);
   }, [captureContentSnapshot, content]);
 
+  useEffect(() => {
+    if (!docId || !syncSession?.sessionId) return;
+    const timer = window.setInterval(() => {
+      void renewSyncSession(docId, syncSession)
+        .then((renewed) => {
+          updateSyncState((current) =>
+            current
+              ? {
+                  ...current,
+                  leaseExpiresAt: renewed.leaseExpiresAt ?? current.leaseExpiresAt,
+                  lastAckedOpSeq:
+                    renewed.lastAckedOpSeq ?? current.lastAckedOpSeq,
+                }
+              : current,
+          );
+        })
+        .catch((error) => {
+          const message =
+            error instanceof Error ? error.message : "鍚屾浼氳瘽缁澶辫触";
+          updateSyncState((current) =>
+            current ? markSyncSessionLost(current, message) : current,
+          );
+        });
+    }, 2 * 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, [docId, syncSession, updateSyncState]);
+
   const flush = useCallback(
     async (source: SyncSource = "autosync") => {
+      if (source === "autosync" && autosyncPausedRef.current) return;
       if (flushRunningRef.current) return;
 
       const initial = stateRef.current;
@@ -289,6 +328,8 @@ export function useDocumentSync({
               draftRevision: rebased.draftRevision,
               clientBatchId,
               source,
+              sessionId: rebased.sessionId ?? undefined,
+              sessionEpoch: rebased.sessionEpoch ?? undefined,
               operations,
             });
             logSyncEvent("flush:response", {
@@ -302,18 +343,31 @@ export function useDocumentSync({
             const batchFailure = summarizeSyncBatchFailures(response.results);
 
             if (response.needsReload) {
+              const lostSession = response.conflicts.some((conflict) =>
+                [
+                  "SYNC_SESSION_REQUIRED",
+                  "SYNC_SESSION_MISMATCH",
+                  "SYNC_SESSION_EXPIRED",
+                ].includes(conflict.code),
+              );
               updateSyncState((prev) =>
                 prev
-                  ? resolveBatchFailure(
-                      prev,
-                      clientBatchId,
-                      "检测到版本冲突，请刷新后重试",
-                      true,
-                    )
+                  ? lostSession
+                    ? markSyncSessionLost(
+                        prev,
+                        "当前编辑会话已失效，请刷新后继续编辑",
+                      )
+                    : resolveBatchFailure(
+                        prev,
+                        clientBatchId,
+                        "检测到版本冲突，请刷新后重试",
+                        true,
+                      )
                   : prev,
               );
               return;
             }
+
 
             updateSyncState((prev) =>
               prev
@@ -323,6 +377,7 @@ export function useDocumentSync({
                     response.results,
                     response.serverHead,
                     response.draftRevision,
+                    response.ackedThroughOpSeq,
                   )
                 : prev,
             );
@@ -369,9 +424,17 @@ export function useDocumentSync({
               const patched = applyServerAck(currentSnapshot, serverAckMappings);
               snapshotRef.current = patched;
               if (onContentPatched && patched !== currentSnapshot) {
-                const applied = onContentPatched(patched);
-                if (applied && applied.type === "doc") {
-                  captureContentSnapshot(applied);
+                try {
+                  const applied = onContentPatched(patched);
+                  if (applied && applied.type === "doc") {
+                    captureContentSnapshot(applied);
+                  }
+                } catch (error) {
+                  logSyncEvent("ack:content-patch-failed", {
+                    docId: rebased.docId,
+                    clientBatchId,
+                    error: error instanceof Error ? error.message : String(error),
+                  });
                 }
               }
             }
@@ -388,7 +451,7 @@ export function useDocumentSync({
               return;
             }
           } catch (error) {
-            const message = error instanceof Error ? error.message : "同步失败";
+            const message = error instanceof Error ? error.message : "鍚屾澶辫触";
             updateSyncState((prev) =>
               prev
                 ? resolveBatchFailure(prev, clientBatchId, message, false)
@@ -405,11 +468,15 @@ export function useDocumentSync({
   );
 
   const flushAndCommitBarrier = useCallback(
-    async (latestContent?: TiptapDoc | null): Promise<boolean> => {
+    async (
+      latestContent?: TiptapDoc | null,
+      commitAction?: () => Promise<void>,
+    ): Promise<boolean> => {
       if (latestContent) {
         captureContentSnapshot(latestContent);
       }
 
+      autosyncPausedRef.current = true;
       updateSyncState((prev) => (prev ? markPendingCommit(prev) : prev));
       try {
         await flush("manual-save");
@@ -421,8 +488,15 @@ export function useDocumentSync({
         ) {
           return false;
         }
-        return current.dirtyOrder.length === 0;
+        if (current.dirtyOrder.length > 0) {
+          return false;
+        }
+        if (commitAction) {
+          await commitAction();
+        }
+        return true;
       } finally {
+        autosyncPausedRef.current = false;
         updateSyncState((prev) => (prev ? clearPendingCommit(prev) : prev));
       }
     },
@@ -433,7 +507,11 @@ export function useDocumentSync({
     if (!syncState) return "idle" as const;
     if (syncState.syncState === "flushing") return "flushing" as const;
     if (syncState.syncState === "dirty") return "dirty" as const;
-    if (syncState.syncState === "error" || syncState.syncState === "conflicted")
+    if (
+      syncState.syncState === "error" ||
+      syncState.syncState === "conflicted" ||
+      syncState.syncState === "lease-lost"
+    )
       return "error" as const;
     return "saved" as const;
   }, [syncState]);

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+﻿import { describe, expect, it } from "vitest";
 import { createInitialSyncState, markBatchInflight, resolveBatchSuccess } from "../reducer";
 import { advanceSyncSnapshot } from "../snapshot";
 import { selectSyncBatchOperations } from "../batching";
@@ -342,5 +342,37 @@ describe("sync snapshot advancement", () => {
         }),
       ]),
     );
+  });
+  it("treats multiple initial unsynced blocks as create operations", () => {
+    const state = createInitialSyncState("doc_1", "root_1", 1);
+    const doc: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "client_multi_1" },
+          content: [{ type: "text", text: "first" }],
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "client_multi_2" },
+          content: [{ type: "text", text: "second" }],
+        },
+      ],
+    };
+
+    const next = advanceSyncSnapshot(state, null, doc);
+
+    expect(next.state.dirtyOrder).toEqual(["client_multi_1", "client_multi_2"]);
+    expect(next.state.entries.client_multi_1).toMatchObject({
+      clientId: "client_multi_1",
+      blockId: null,
+      opType: "create",
+    });
+    expect(next.state.entries.client_multi_2).toMatchObject({
+      clientId: "client_multi_2",
+      blockId: null,
+      opType: "create",
+    });
   });
 });

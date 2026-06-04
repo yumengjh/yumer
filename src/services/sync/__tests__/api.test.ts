@@ -1,8 +1,23 @@
-import { describe, expect, it } from "vitest";
-import { buildSyncBatchOperations } from "../api";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { buildSyncBatchOperations, postSyncBatch } from "../api";
 import type { SyncEntry } from "../types";
 
+const { apiPost } = vi.hoisted(() => ({
+  apiPost: vi.fn(),
+}));
+
+vi.mock("@/services/api-client", () => ({
+  apiGet: vi.fn(),
+  apiPost,
+  apiPatch: vi.fn(),
+  apiDelete: vi.fn(),
+}));
+
 describe("sync api payload builder", () => {
+  beforeEach(() => {
+    apiPost.mockReset();
+  });
+
   it("deduplicates repeated create sortKeys before sending a batch", () => {
     const operations: SyncEntry[] = ["1", "2", "3"].map((suffix) => ({
       clientId: `client_${suffix}`,
@@ -51,5 +66,130 @@ describe("sync api payload builder", () => {
       "sync-create:client_2",
       "sync-create:client_3",
     ]);
+  });
+
+  it("rejects malformed batch responses that omit results for non-empty operations", async () => {
+    apiPost.mockResolvedValue({
+      acceptedBatchId: "batch_missing_results",
+      appliedAt: Date.now(),
+      serverHead: 3,
+      draftRevision: 1,
+      needsReload: false,
+      conflicts: [],
+      results: [],
+    });
+
+    await expect(
+      postSyncBatch({
+        docId: "doc_1",
+        rootBlockId: "root_1",
+        baseVersion: 3,
+        draftRevision: 1,
+        clientBatchId: "batch_missing_results",
+        source: "autosync",
+        operations: [
+          {
+            clientId: "client_sync",
+            blockId: "block_sync",
+            opType: "update",
+            payload: {
+              type: "paragraph",
+              content: [{ type: "text", text: "x" }],
+            },
+          },
+        ],
+      }),
+    ).rejects.toThrow("同步协议错误");
+  });
+
+  it("preserves conflict responses with empty results so the caller can enter reload state", async () => {
+    apiPost.mockResolvedValue({
+      acceptedBatchId: "batch_stale_session",
+      appliedAt: Date.now(),
+      serverHead: 4,
+      draftRevision: 2,
+      needsReload: true,
+      conflicts: [
+        {
+          code: "SYNC_SESSION_MISMATCH",
+          message: "sync session is stale",
+        },
+      ],
+      results: [],
+    });
+
+    await expect(
+      postSyncBatch({
+        docId: "doc_1",
+        rootBlockId: "root_1",
+        baseVersion: 3,
+        draftRevision: 1,
+        clientBatchId: "batch_stale_session",
+        source: "autosync",
+        operations: [
+          {
+            clientId: "client_sync",
+            blockId: "block_sync",
+            opType: "update",
+            revision: 9,
+            payload: { type: "paragraph" },
+          },
+        ],
+      }),
+    ).resolves.toMatchObject({
+      needsReload: true,
+      conflicts: [{ code: "SYNC_SESSION_MISMATCH" }],
+      results: [],
+    });
+  });
+
+  it("forwards optional sync session metadata in sync batch requests", async () => {
+    apiPost.mockResolvedValue({
+      acceptedBatchId: "batch_session",
+      appliedAt: Date.now(),
+      serverHead: 3,
+      draftRevision: 1,
+      needsReload: false,
+      conflicts: [],
+      results: [
+        {
+          operation: "update",
+          success: true,
+          blockId: "block_sync",
+        },
+      ],
+    });
+
+    await postSyncBatch({
+      docId: "doc_1",
+      rootBlockId: "root_1",
+      baseVersion: 3,
+      draftRevision: 1,
+      clientBatchId: "batch_session",
+      source: "autosync",
+      sessionId: "session_1",
+      sessionEpoch: 4,
+      operations: [
+        {
+          clientId: "client_sync",
+          blockId: "block_sync",
+          opType: "update",
+          revision: 9,
+          payload: {
+            type: "paragraph",
+            content: [{ type: "text", text: "x" }],
+          },
+        },
+      ],
+    });
+
+    expect(apiPost).toHaveBeenCalledWith(
+      "/blocks/batch",
+      expect.objectContaining({
+        sessionId: "session_1",
+        sessionEpoch: 4,
+        ackedThroughOpSeq: 9,
+      }),
+    );
   });
 });
