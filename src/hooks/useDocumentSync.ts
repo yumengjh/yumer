@@ -24,6 +24,7 @@ type UseDocumentSyncArgs = {
   docId: string | null;
   rootBlockId: string | null;
   baseVersion: number | null;
+  draftRevision: number;
   content: TiptapDoc | null;
   onContentPatched?: (doc: TiptapDoc) => TiptapDoc | void;
 };
@@ -151,6 +152,7 @@ export function useDocumentSync({
   docId,
   rootBlockId,
   baseVersion,
+  draftRevision,
   content,
   onContentPatched,
 }: UseDocumentSyncArgs) {
@@ -212,9 +214,11 @@ export function useDocumentSync({
       return;
     }
 
-    replaceSyncState(createInitialSyncState(docId, rootBlockId, baseVersion));
+    replaceSyncState(
+      createInitialSyncState(docId, rootBlockId, baseVersion, draftRevision),
+    );
     snapshotRef.current = latestContentRef.current;
-  }, [baseVersion, docId, replaceSyncState, rootBlockId]);
+  }, [baseVersion, docId, draftRevision, replaceSyncState, rootBlockId]);
 
   useEffect(() => {
     captureContentSnapshot(content);
@@ -282,6 +286,7 @@ export function useDocumentSync({
               docId: rebased.docId,
               rootBlockId: rebased.rootBlockId,
               baseVersion: rebased.baseVersion,
+              draftRevision: rebased.draftRevision,
               clientBatchId,
               source,
               operations,
@@ -290,6 +295,7 @@ export function useDocumentSync({
               docId: rebased.docId,
               acceptedBatchId: response.acceptedBatchId,
               serverHead: response.serverHead,
+              draftRevision: response.draftRevision,
               needsReload: response.needsReload,
               resultCount: response.results.length,
             });
@@ -316,9 +322,12 @@ export function useDocumentSync({
                     clientBatchId,
                     response.results,
                     response.serverHead,
+                    response.draftRevision,
                   )
                 : prev,
             );
+
+            captureContentSnapshot(latestContentRef.current);
 
             const createMappings = response.results
               .filter(
@@ -358,12 +367,12 @@ export function useDocumentSync({
             }
             if (currentSnapshot && serverAckMappings.length > 0) {
               const patched = applyServerAck(currentSnapshot, serverAckMappings);
+              snapshotRef.current = patched;
               if (onContentPatched && patched !== currentSnapshot) {
                 const applied = onContentPatched(patched);
-                snapshotRef.current =
-                  applied && applied.type === "doc" ? applied : patched;
-              } else {
-                snapshotRef.current = patched;
+                if (applied && applied.type === "doc") {
+                  captureContentSnapshot(applied);
+                }
               }
             }
             if (batchFailure) {
@@ -392,7 +401,7 @@ export function useDocumentSync({
         flushRunningRef.current = false;
       }
     },
-    [onContentPatched, replaceSyncState, updateSyncState],
+    [captureContentSnapshot, onContentPatched, replaceSyncState, updateSyncState],
   );
 
   const flushAndCommitBarrier = useCallback(

@@ -330,6 +330,9 @@ describe("deriveSyncEntries order handling", () => {
         (entry) => entry.opType === "move" && entry.blockId === "b_b",
       ),
     ).toBe(true);
+    expect(entries.find((entry) => entry.blockId === "b_b")?.sortKey).toBe(
+      "000500",
+    );
   });
 
   it("emits a move when existing blockId-only code blocks change relative order", () => {
@@ -370,7 +373,7 @@ describe("deriveSyncEntries order handling", () => {
     expect(move).toMatchObject({
       blockId: "b_code",
       opType: "move",
-      sortKey: "001000",
+      sortKey: "013500",
     });
     expect(move?.clientId).toEqual(expect.any(String));
     expect(move?.clientId).not.toBe("b_code");
@@ -437,7 +440,7 @@ describe("deriveSyncEntries order handling", () => {
         clientId: "c_6",
         blockId: "b_6",
         opType: "move",
-        sortKey: "001000",
+        sortKey: "000875",
       },
     ]);
   });

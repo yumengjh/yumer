@@ -349,6 +349,27 @@ describe("sync reducer", () => {
     });
   });
 
+  it("advances the draft revision from a successful batch acknowledgement", () => {
+    let state = createInitialSyncState("doc_1", "root_1", 3, 7);
+    state = enqueueChange(state, {
+      clientId: "client_update",
+      blockId: "block_update",
+      opType: "update",
+      payload: { type: "paragraph" },
+    });
+    state = markBatchInflight(state, "batch_revision", ["client_update"], false);
+
+    state = resolveBatchSuccess(
+      state,
+      "batch_revision",
+      [{ operation: "update", success: true, blockId: "block_update" }],
+      3,
+      8,
+    );
+
+    expect(state.draftRevision).toBe(8);
+  });
+
   it("turns a delete made to a newly created block while create is inflight into a follow-up delete", () => {
     let state = createInitialSyncState("doc_1", "root_1", 3);
     state = enqueueChange(state, {

@@ -339,7 +339,7 @@ function planDesiredSortKeys(
         : null;
     const nextAnchorKey =
       index < orderedNextNodes.length
-        ? (prevIndexed[orderedNextNodes[index].clientId]?.sortKey ?? null)
+        ? (prevIndexed[orderedNextNodes[index].matchKey]?.sortKey ?? null)
         : null;
     const allocatedKeys = createSortKeysBetween(
       previousDesiredKey,

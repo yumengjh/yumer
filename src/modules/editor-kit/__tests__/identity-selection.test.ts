@@ -7,6 +7,7 @@ import type { TiptapDoc } from "@/services/tiptap-converter";
 import { BlockIdAttribute } from "../extensions/blockIdAttribute";
 import {
   patchEditorBlockIdentityFromDoc,
+  patchEditorBlockIdentityFromMatchingDoc,
   patchEditorDocumentIdentity,
 } from "../editorIdentity";
 
@@ -163,6 +164,45 @@ describe("markdown editor identity patching", () => {
     expect(json.content[0]?.attrs?.clientBatchId).toBeUndefined();
     expect(json.content[0]?.attrs?.["data-sync-create-id"]).toBeUndefined();
     expect(json.content[0]?.content?.[0]?.text).toBe("typed after create dispatch");
+
+    editor.destroy();
+  });
+
+  it("does not treat external content with matching clientId as an identity-only patch", () => {
+    const editor = new Editor({
+      extensions: [
+        StarterKit.configure({
+          heading: { levels: [1, 2, 3, 4, 5, 6] },
+        }),
+        BlockIdAttribute,
+      ],
+      content: {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            attrs: { blockId: "server-1", clientId: "client-shared" },
+            content: [{ type: "text", text: "editor old content" }],
+          },
+        ],
+      },
+    });
+
+    const patched = patchEditorBlockIdentityFromMatchingDoc(editor, {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { blockId: "server-1", clientId: "client-shared" },
+          content: [{ type: "text", text: "externally loaded content" }],
+        },
+      ],
+    } as TiptapDoc);
+
+    expect(patched).toBe(false);
+    expect((editor.getJSON() as TiptapDoc).content[0]?.content?.[0]?.text).toBe(
+      "editor old content",
+    );
 
     editor.destroy();
   });

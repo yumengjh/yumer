@@ -157,9 +157,9 @@ describe("sync snapshot advancement", () => {
       clientId: generatedClientId,
       blockId: "block_code",
       opType: "move",
-      sortKey: "001000",
+      sortKey: "013500",
     });
-    expect(next.snapshot.content?.[0].attrs?.sortKey).toBe("001000");
+    expect(next.snapshot.content?.[0].attrs?.sortKey).toBe("013500");
   });
 
   it("persists generated sortKeys into the local snapshot for sequential blank-line creation", () => {

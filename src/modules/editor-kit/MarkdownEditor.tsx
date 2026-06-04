@@ -55,6 +55,7 @@ import EditorLoader from "./EditorLoader";
 import {
   BLOCK_IDENTITY_PATCH_META,
   patchEditorBlockIdentityFromDoc,
+  patchEditorBlockIdentityFromMatchingDoc,
   patchEditorDocumentIdentity,
 } from "./editorIdentity";
 import { stripUnsupportedSyncAttrs } from "./editorContentNormalization";
@@ -544,7 +545,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
       editor.commands.setContent(content || "<p></p>", { emitUpdate: false });
     } else if (content && typeof content === "object") {
       // Tiptap JSON 模式（新文档）
-      if (patchEditorBlockIdentityFromDoc(editor, content)) return;
+      if (patchEditorBlockIdentityFromMatchingDoc(editor, content)) return;
       const editorContent = stripUnsupportedSyncAttrs(content) as EditorContentType;
       // 避免重复设置相同内容导致光标重置：先比较文档子节点数，再比较 JSON
       const currentJSON = stripUnsupportedSyncAttrs(editor.getJSON()) as Record<string, unknown>;

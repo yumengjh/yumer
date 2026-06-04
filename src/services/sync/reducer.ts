@@ -37,11 +37,13 @@ export function createInitialSyncState(
   docId: string,
   rootBlockId: string,
   baseVersion: number,
+  draftRevision = 0,
 ): SyncReducerState {
   return {
     docId,
     rootBlockId,
     baseVersion,
+    draftRevision,
     localRevision: 0,
     syncState: "idle",
     entries: {},
@@ -258,6 +260,7 @@ export function resolveBatchSuccess(
   batchId: string,
   results: SyncBatchResult[],
   serverHead?: number,
+  serverDraftRevision?: number,
 ): SyncReducerState {
   if (state.inflightBatchId !== batchId) return state;
 
@@ -333,6 +336,10 @@ export function resolveBatchSuccess(
     inflightEntryRevisions: {},
     baseVersion:
       typeof serverHead === "number" ? serverHead : state.baseVersion,
+    draftRevision:
+      typeof serverDraftRevision === "number"
+        ? serverDraftRevision
+        : state.draftRevision,
     syncState: nextDirty.length > 0 ? "dirty" : "idle",
     lastError: null,
   };

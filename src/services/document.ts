@@ -85,6 +85,7 @@ export interface EditDraftMeta {
   exists: boolean;
   draftId?: string | null;
   baseDocVer?: number | null;
+  draftRevision?: number | null;
   updatedAt?: string | null;
   updatedBy?: string | null;
 }

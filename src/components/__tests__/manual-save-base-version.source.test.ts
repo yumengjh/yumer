@@ -23,4 +23,36 @@ describe("manual save baseVersion rebase source", () => {
     expect(hookSource).toContain("const latestContentRef = useRef<TiptapDoc | null>(content);");
     expect(hookSource).toContain("snapshotRef.current = latestContentRef.current;");
   });
+
+  it("captures edits made while a sync batch is in flight before accepting the ack baseline", () => {
+    const hookSource = fs.readFileSync(
+      path.resolve(process.cwd(), "src/hooks/useDocumentSync.ts"),
+      "utf8",
+    );
+    const resolvedAt = hookSource.indexOf("resolveBatchSuccess(");
+    const latestCaptureAt = hookSource.indexOf(
+      "captureContentSnapshot(latestContentRef.current);",
+      resolvedAt,
+    );
+    const orphanCheckAt = hookSource.indexOf(
+      "collectOrphanedCreateDeletes(",
+      latestCaptureAt,
+    );
+    const ackBaselineAt = hookSource.indexOf(
+      "snapshotRef.current = patched;",
+      orphanCheckAt,
+    );
+    const editorCaptureAt = hookSource.indexOf(
+      "captureContentSnapshot(applied);",
+      ackBaselineAt,
+    );
+
+    expect(resolvedAt).toBeGreaterThanOrEqual(0);
+    expect(latestCaptureAt).toBeGreaterThan(resolvedAt);
+    expect(orphanCheckAt).toBeGreaterThan(latestCaptureAt);
+    expect(ackBaselineAt).toBeGreaterThan(orphanCheckAt);
+    expect(editorCaptureAt).toBeGreaterThan(ackBaselineAt);
+    expect(hookSource).toContain("draftRevision: rebased.draftRevision,");
+    expect(hookSource).toContain("response.draftRevision,");
+  });
 });

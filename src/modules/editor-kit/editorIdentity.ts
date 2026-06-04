@@ -131,6 +131,34 @@ function sameNodeWithoutIdentity(left: TiptapNode, right: TiptapNode): boolean {
   );
 }
 
+function hasMatchingDocumentContent(
+  editor: EditorLike,
+  nextNodes: TiptapNode[],
+): boolean {
+  if (editor.state.doc.childCount !== nextNodes.length) return false;
+
+  for (let index = 0; index < nextNodes.length; index += 1) {
+    const currentNode = editor.state.doc.child(index);
+    const nextNode = nextNodes[index];
+    if (currentNode.type.name !== nextNode.type) return false;
+    if (!sameNodeWithoutIdentity(currentNode.toJSON() as TiptapNode, nextNode)) {
+      return false;
+    }
+
+    const currentIdentity = readIdentityFromAttrs(currentNode.attrs);
+    const nextIdentity = readIdentityFromAttrs(nextNode.attrs);
+    if (
+      currentIdentity.clientId &&
+      nextIdentity.clientId &&
+      currentIdentity.clientId !== nextIdentity.clientId
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 function patchEditorBlockIdentityByClientIdFromDoc(
   editor: EditorLike,
   nextNodes: TiptapNode[],
@@ -197,18 +225,27 @@ function patchEditorBlockIdentityByClientIdFromDoc(
   return matched > 0;
 }
 
+export function patchEditorBlockIdentityFromMatchingDoc(
+  editor: EditorLike,
+  nextDoc: TiptapDoc,
+): boolean {
+  const nextNodes = Array.isArray(nextDoc.content) ? nextDoc.content : [];
+  if (!hasMatchingDocumentContent(editor, nextNodes)) return false;
+  return patchEditorBlockIdentityFromDoc(editor, nextDoc);
+}
+
 /**
- * 将服务端同步确认返回的 blockId 写回编辑器，但只在内容本身完全一致时处理。
+ * 将服务端同步确认返回的 blockId 写回编辑器。
  *
- * 自动同步 create ack 只会补齐 blockId。如果直接让 React 外部 content 触发
- * editor.commands.setContent，会重建文档并把光标推到后续空块；这里用事务只更新 attrs。
+ * 显式 ACK 回调允许按 clientId 匹配请求期间继续编辑的块，只用事务更新 attrs，
+ * 避免 setContent 重建文档并移动光标。
  */
 export function patchEditorBlockIdentityFromDoc(
   editor: EditorLike,
   nextDoc: TiptapDoc,
 ): boolean {
   const nextNodes = Array.isArray(nextDoc.content) ? nextDoc.content : [];
-  if (editor.state.doc.childCount !== nextNodes.length) {
+  if (!hasMatchingDocumentContent(editor, nextNodes)) {
     return patchEditorBlockIdentityByClientIdFromDoc(editor, nextNodes);
   }
 
@@ -217,25 +254,9 @@ export function patchEditorBlockIdentityFromDoc(
   for (let index = 0; index < nextNodes.length; index += 1) {
     const currentNode = editor.state.doc.child(index);
     const nextNode = nextNodes[index];
-    if (currentNode.type.name !== nextNode.type) {
-      return patchEditorBlockIdentityByClientIdFromDoc(editor, nextNodes);
-    }
-
-    const currentJson = currentNode.toJSON() as TiptapNode;
-    if (!sameNodeWithoutIdentity(currentJson, nextNode)) {
-      return patchEditorBlockIdentityByClientIdFromDoc(editor, nextNodes);
-    }
 
     const currentIdentity = readIdentityFromAttrs(currentNode.attrs);
     const nextIdentity = readIdentityFromAttrs(nextNode.attrs);
-
-    if (
-      currentIdentity.clientId &&
-      nextIdentity.clientId &&
-      currentIdentity.clientId !== nextIdentity.clientId
-    ) {
-      return patchEditorBlockIdentityByClientIdFromDoc(editor, nextNodes);
-    }
 
     const nextAttrs = { ...currentNode.attrs };
     let changed = false;

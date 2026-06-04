@@ -39,6 +39,7 @@ export interface SyncReducerState {
   docId: string;
   rootBlockId: string;
   baseVersion: number;
+  draftRevision: number;
   localRevision: number;
   syncState: SyncState;
   entries: Record<string, SyncEntry>;

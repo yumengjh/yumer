@@ -7,6 +7,7 @@ export interface SyncBatchResponse {
   acceptedBatchId: string | null;
   appliedAt: number;
   serverHead: number;
+  draftRevision?: number;
   needsReload: boolean;
   conflicts: Array<{ code: string; message: string }>;
   results: SyncBatchResult[];
@@ -15,6 +16,7 @@ export interface SyncBatchResponse {
 export interface DocumentSyncState {
   docId: string;
   head: number;
+  draftRevision: number;
   publishedHead: number;
   hasPendingDraft: boolean;
   pendingCount: number;
@@ -160,6 +162,7 @@ export async function postSyncBatch(input: {
   docId: string;
   rootBlockId: string;
   baseVersion: number;
+  draftRevision: number;
   clientBatchId: string;
   source: SyncSource;
   operations: SyncEntry[];
@@ -171,6 +174,7 @@ export async function postSyncBatch(input: {
       acceptedBatchId: input.clientBatchId,
       appliedAt: Date.now(),
       serverHead: input.baseVersion,
+      draftRevision: input.draftRevision,
       needsReload: false,
       conflicts: [],
       results: [],
@@ -180,6 +184,7 @@ export async function postSyncBatch(input: {
   const requestBody = {
     docId: input.docId,
     baseVersion: input.baseVersion,
+    draftRevision: input.draftRevision,
     clientBatchId: input.clientBatchId,
     source: input.source,
     createVersion: false,

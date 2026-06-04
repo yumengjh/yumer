@@ -423,6 +423,7 @@ function EditorContent() {
     docId: syncEngineEnabled ? currentDoc?.docId ?? null : null,
     rootBlockId: syncEngineEnabled ? currentDoc?.rootBlockId ?? null : null,
     baseVersion: syncEngineEnabled ? currentDocVersion : null,
+    draftRevision: currentDraftMeta?.draftRevision ?? 0,
     content: syncEngineEnabled ? tiptapContent : null,
     onContentPatched: (doc) => {
       const latestEditorContent = editorRef.current?.getJSON() as TiptapDoc | undefined;
