@@ -200,30 +200,22 @@ function SyncStatus({
 function LocalSnapshotStatus({
   state,
   onClick,
-  filteredMatch,
 }: {
   state: LocalSnapshotState;
   onClick: () => void;
-  filteredMatch?: boolean;
 }) {
-  const timeLabel = state.lastSavedAt
-    ? new Date(state.lastSavedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-    : null;
-
-  const effectiveStatus: LocalSnapshotState["status"] =
-    state.status === "mismatch" && filteredMatch ? "saved" : state.status;
-
   const map: Record<LocalSnapshotState["status"], { text: string; mod: string }> = {
     idle: { text: "本地快照", mod: "idle" },
     checking: { text: "本地快照校验中", mod: "checking" },
     missing: { text: "本地快照：缺失", mod: "missing" },
-    saved: { text: timeLabel ? `本地快照：${timeLabel}` : "本地快照：已保存", mod: "saved" },
+    matched: { text: "本地快照：一致", mod: "saved" },
+    saved: { text: "已同步至本地", mod: "saved" },
     mismatch: { text: "本地快照：不一致", mod: "mismatch" },
-    saving: { text: "本地快照：写入中", mod: "saving" },
+    saving: { text: "同步至本地中", mod: "saving" },
     error: { text: "本地快照：失败", mod: "error" },
   };
 
-  const item = map[effectiveStatus];
+  const item = map[state.status];
 
   return (
     <button
@@ -492,13 +484,11 @@ export function DocumentHeader({
   }, []);
 
   const compareFilterKeySet = useMemo(() => new Set(compareFilterKeys), [compareFilterKeys]);
-  const shouldComputeSnapshotBlockCompare =
-    localSnapshotCompareOpen || localSnapshotState.status === "mismatch";
 
   const snapshotBlockCompare = useMemo(
     () => {
       if (
-        !shouldComputeSnapshotBlockCompare ||
+        !localSnapshotCompareOpen ||
         !localSnapshotState.storedSnapshot ||
         !currentDocumentContent
       ) {
@@ -514,16 +504,9 @@ export function DocumentHeader({
       localSnapshotState.storedSnapshot,
       currentDocumentContent,
       compareFilterKeySet,
-      shouldComputeSnapshotBlockCompare,
+      localSnapshotCompareOpen,
     ],
   );
-
-  const snapshotFilteredMatch = useMemo(() => {
-    const snapshot = localSnapshotState.storedSnapshot;
-    if (!snapshot || !currentDocumentContent) return false;
-    if (localSnapshotState.status !== "mismatch") return false;
-    return snapshotBlockCompare.matches;
-  }, [localSnapshotState.status, localSnapshotState.storedSnapshot, currentDocumentContent, snapshotBlockCompare]);
 
   const snapshotDiffEntries = useMemo(
     () => buildLocalSnapshotDiffEntries(snapshotBlockCompare.changes, compareFilterKeySet),
@@ -1010,7 +993,7 @@ export function DocumentHeader({
         {currentDoc && visibleSaveStatus && (
           <div className="header-start__live">
             <SyncStatus status={visibleSaveStatus} lastSavedAt={lastSavedAt} />
-            <LocalSnapshotStatus state={localSnapshotState} onClick={() => setLocalSnapshotOpen(true)} filteredMatch={snapshotFilteredMatch} />
+            <LocalSnapshotStatus state={localSnapshotState} onClick={() => setLocalSnapshotOpen(true)} />
           </div>
         )}
       </div>
@@ -1311,7 +1294,6 @@ export function DocumentHeader({
           >
             手动保存快照
           </Button>
-          <Button onClick={() => void onRefreshLocalSnapshot()}>重新校验</Button>
           <Button onClick={() => void onCopyLocalSnapshot()} disabled={!localSnapshotState.storedSnapshot}>
             复制本地快照
           </Button>
@@ -1399,6 +1381,15 @@ export function DocumentHeader({
                   </strong>
                 </div>
                 <div className="header-local-snapshot-compare__toolbar">
+                  <Button
+                    size="small"
+                    type="primary"
+                    loading={localSnapshotState.status === "checking"}
+                    onClick={() => void onRefreshLocalSnapshot()}
+                    disabled={!currentDocumentContent}
+                  >
+                    开始校验
+                  </Button>
                   <div className="header-local-snapshot-compare__filters">
                     <span className="header-local-snapshot-compare__filter-label">高级忽略字段：</span>
                     {compareFilterKeys.map((key) => (

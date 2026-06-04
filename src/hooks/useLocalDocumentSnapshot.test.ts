@@ -49,6 +49,7 @@ function SnapshotHarness(props: {
   autoSave: boolean;
   hasUnsavedChanges?: boolean;
   onState: (state: LocalSnapshotState) => void;
+  onSnapshot?: (snapshot: ReturnType<typeof useLocalDocumentSnapshot>) => void;
 }) {
   const snapshot = useLocalDocumentSnapshot({
     docId: props.docId,
@@ -61,6 +62,10 @@ function SnapshotHarness(props: {
   useEffect(() => {
     props.onState(snapshot.state);
   }, [props, snapshot.state]);
+
+  useEffect(() => {
+    props.onSnapshot?.(snapshot);
+  }, [props, snapshot]);
 
   return null;
 }
@@ -94,7 +99,7 @@ describe("useLocalDocumentSnapshot", () => {
     vi.useRealTimers();
   });
 
-  it("switches from mismatch to saving immediately when auto-save captures a new edit", async () => {
+  it("does not compare on load and switches to saving when auto-save captures a new edit", async () => {
     localStorage.setItem(
       "yuediter:local-snapshot:doc_1",
       JSON.stringify(buildLocalDocSnapshot("doc_1", storedDoc, 1000)),
@@ -116,7 +121,7 @@ describe("useLocalDocumentSnapshot", () => {
       await flushEffects();
     });
 
-    expect(latestState?.status).toBe("mismatch");
+    expect((latestState as LocalSnapshotState | null)?.status).toBe("idle");
 
     await act(async () => {
       root.render(createElement(SnapshotHarness, {
@@ -129,13 +134,14 @@ describe("useLocalDocumentSnapshot", () => {
       await flushEffects();
     });
 
-    expect(latestState?.status).toBe("saving");
+    expect((latestState as LocalSnapshotState | null)?.status).toBe("saving");
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(800);
       await flushEffects();
     });
 
+    expect((latestState as LocalSnapshotState | null)?.status).toBe("saved");
     const storedSnapshot = JSON.parse(
       localStorage.getItem("yuediter:local-snapshot:doc_1") ?? "null",
     ) as { content?: TiptapDoc } | null;
@@ -164,7 +170,7 @@ describe("useLocalDocumentSnapshot", () => {
       await flushEffects();
     });
 
-    expect(latestState?.status).toBe("mismatch");
+    expect((latestState as LocalSnapshotState | null)?.status).toBe("idle");
 
     await act(async () => {
       root.render(createElement(SnapshotHarness, {
@@ -177,6 +183,149 @@ describe("useLocalDocumentSnapshot", () => {
       await flushEffects();
     });
 
-    expect(latestState?.status).toBe("mismatch");
+    expect((latestState as LocalSnapshotState | null)?.status).toBe("idle");
+  });
+
+  it("cancels a pending auto-save instead of writing during tab refresh or unmount", async () => {
+    localStorage.setItem(
+      "yuediter:local-snapshot:doc_1",
+      JSON.stringify(buildLocalDocSnapshot("doc_1", storedDoc, 1000)),
+    );
+
+    const onState = vi.fn();
+
+    await act(async () => {
+      root.render(createElement(SnapshotHarness, {
+        docId: "doc_1",
+        content: loadedDoc,
+        autoSave: true,
+        hasUnsavedChanges: false,
+        onState,
+      }));
+      await flushEffects();
+    });
+
+    await act(async () => {
+      root.render(createElement(SnapshotHarness, {
+        docId: "doc_1",
+        content: editedDoc,
+        autoSave: true,
+        hasUnsavedChanges: true,
+        onState,
+      }));
+      await flushEffects();
+    });
+
+    await act(async () => {
+      root.render(null);
+      await flushEffects();
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(800);
+      await flushEffects();
+    });
+
+    const storedSnapshot = JSON.parse(
+      localStorage.getItem("yuediter:local-snapshot:doc_1") ?? "null",
+    ) as { content?: TiptapDoc } | null;
+    expect(storedSnapshot?.content).toEqual(storedDoc);
+  });
+
+  it("manual validation compares without flushing a pending auto-save", async () => {
+    localStorage.setItem(
+      "yuediter:local-snapshot:doc_1",
+      JSON.stringify(buildLocalDocSnapshot("doc_1", storedDoc, 1000)),
+    );
+
+    let latestState: LocalSnapshotState | null = null;
+    let latestSnapshot: ReturnType<typeof useLocalDocumentSnapshot> | null = null;
+    const onState = (state: LocalSnapshotState) => {
+      latestState = state;
+    };
+
+    await act(async () => {
+      root.render(createElement(SnapshotHarness, {
+        docId: "doc_1",
+        content: loadedDoc,
+        autoSave: true,
+        hasUnsavedChanges: false,
+        onState,
+        onSnapshot: (snapshot) => {
+          latestSnapshot = snapshot;
+        },
+      }));
+      await flushEffects();
+    });
+
+    await act(async () => {
+      root.render(createElement(SnapshotHarness, {
+        docId: "doc_1",
+        content: editedDoc,
+        autoSave: true,
+        hasUnsavedChanges: true,
+        onState,
+        onSnapshot: (snapshot) => {
+          latestSnapshot = snapshot;
+        },
+      }));
+      await flushEffects();
+    });
+
+    await act(async () => {
+      await latestSnapshot?.refreshSnapshot();
+      await flushEffects();
+    });
+
+    expect((latestState as LocalSnapshotState | null)?.status).toBe("mismatch");
+    const storedSnapshotBeforeDebounce = JSON.parse(
+      localStorage.getItem("yuediter:local-snapshot:doc_1") ?? "null",
+    ) as { content?: TiptapDoc } | null;
+    expect(storedSnapshotBeforeDebounce?.content).toEqual(storedDoc);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(800);
+      await flushEffects();
+    });
+
+    expect((latestState as LocalSnapshotState | null)?.status).toBe("saved");
+    const storedSnapshotAfterDebounce = JSON.parse(
+      localStorage.getItem("yuediter:local-snapshot:doc_1") ?? "null",
+    ) as { content?: TiptapDoc } | null;
+    expect(storedSnapshotAfterDebounce?.content).toEqual(editedDoc);
+  });
+
+  it("manual validation reports a match without marking it as a completed local sync", async () => {
+    localStorage.setItem(
+      "yuediter:local-snapshot:doc_1",
+      JSON.stringify(buildLocalDocSnapshot("doc_1", loadedDoc, 1000)),
+    );
+
+    let latestState: LocalSnapshotState | null = null;
+    let latestSnapshot: ReturnType<typeof useLocalDocumentSnapshot> | null = null;
+    const onState = (state: LocalSnapshotState) => {
+      latestState = state;
+    };
+
+    await act(async () => {
+      root.render(createElement(SnapshotHarness, {
+        docId: "doc_1",
+        content: loadedDoc,
+        autoSave: true,
+        hasUnsavedChanges: false,
+        onState,
+        onSnapshot: (snapshot) => {
+          latestSnapshot = snapshot;
+        },
+      }));
+      await flushEffects();
+    });
+
+    await act(async () => {
+      await latestSnapshot?.refreshSnapshot();
+      await flushEffects();
+    });
+
+    expect((latestState as LocalSnapshotState | null)?.status).toBe("matched");
   });
 });

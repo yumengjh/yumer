@@ -10,6 +10,8 @@ describe("DocumentHeader local snapshot compare panel", () => {
     );
 
     expect(source).toContain("header-local-snapshot-compare");
+    expect(source).toContain("开始校验");
+    expect(source).not.toContain("重新校验");
     expect(source).toContain("compareLocalSnapshotBlocks");
     expect(source).toContain("currentDocumentContent");
     expect(source).toContain("buildLocalSnapshotDiffEntries");
