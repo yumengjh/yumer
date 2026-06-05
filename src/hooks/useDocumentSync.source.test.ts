@@ -66,4 +66,18 @@ describe("useDocumentSync source guards", () => {
     expect(keyGuardAt).toBeGreaterThan(manifestKeyAt);
     expect(keyGuardAt).toBeLessThan(postReconcileAt);
   });
+
+  it("runs draft checkpoint before commit action in the manual save barrier", () => {
+    const hookSource = fs.readFileSync(
+      path.resolve(process.cwd(), "src/hooks/useDocumentSync.ts"),
+      "utf8",
+    );
+    const barrierIndex = hookSource.indexOf("const flushAndCommitBarrier");
+    const checkpointIndex = hookSource.indexOf("await runDraftCheckpoint", barrierIndex);
+    const commitIndex = hookSource.indexOf("await commitAction()", barrierIndex);
+
+    expect(barrierIndex).toBeGreaterThan(-1);
+    expect(checkpointIndex).toBeGreaterThan(barrierIndex);
+    expect(commitIndex).toBeGreaterThan(checkpointIndex);
+  });
 });
