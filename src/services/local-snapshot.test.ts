@@ -1,10 +1,16 @@
+// @vitest-environment jsdom
+
 import { describe, expect, it, vi } from "vitest";
 import type { TiptapDoc } from "@/services/tiptap-converter";
 import {
   buildLocalDocSnapshot,
+  clearLocalSnapshotRecoveryMarker,
   compareSnapshotToContent,
   createMemoryLocalSnapshotStore,
   createDebouncedLocalSnapshotWriter,
+  readLocalSnapshotRecoveryMarker,
+  shouldRestoreLocalSnapshotAfterLoad,
+  writeLocalSnapshotRecoveryBackup,
 } from "@/services/local-snapshot";
 
 const docA: TiptapDoc = {
@@ -47,6 +53,111 @@ describe("local document snapshot", () => {
 
     expect(compareSnapshotToContent(snapshot, docA).matches).toBe(true);
     expect(compareSnapshotToContent(snapshot, docB).matches).toBe(false);
+  });
+
+  it("restores a recent local snapshot when it differs from the loaded server content", () => {
+    const newerSnapshot = buildLocalDocSnapshot("doc_1", docB, 2_000);
+    const olderThanServerSnapshot = buildLocalDocSnapshot("doc_1", docB, 500);
+    const newerMarker = {
+      docId: "doc_1",
+      savedAt: newerSnapshot.savedAt,
+      hash: newerSnapshot.hash,
+      markedAt: 2_000,
+      reason: "dirty" as const,
+    };
+    const olderMarker = {
+      docId: "doc_1",
+      savedAt: olderThanServerSnapshot.savedAt,
+      hash: olderThanServerSnapshot.hash,
+      markedAt: 500,
+      reason: "flushing" as const,
+    };
+
+    expect(
+      shouldRestoreLocalSnapshotAfterLoad({
+        snapshot: newerSnapshot,
+        recoveryMarker: newerMarker,
+        serverContent: docA,
+        serverUpdatedAt: 1_000,
+        now: 2_500,
+      }),
+    ).toBe(true);
+    expect(
+      shouldRestoreLocalSnapshotAfterLoad({
+        snapshot: olderThanServerSnapshot,
+        recoveryMarker: olderMarker,
+        serverContent: docA,
+        serverUpdatedAt: 1_000,
+        now: 2_500,
+      }),
+    ).toBe(true);
+    expect(
+      shouldRestoreLocalSnapshotAfterLoad({
+        snapshot: newerSnapshot,
+        recoveryMarker: newerMarker,
+        serverContent: docB,
+        serverUpdatedAt: 1_000,
+        now: 2_500,
+      }),
+    ).toBe(false);
+  });
+
+  it("does not restore stale local snapshots", () => {
+    const snapshot = buildLocalDocSnapshot("doc_1", docB, 1_000);
+    const recoveryMarker = {
+      docId: "doc_1",
+      savedAt: snapshot.savedAt,
+      hash: snapshot.hash,
+      markedAt: 1_000,
+      reason: "dirty" as const,
+    };
+
+    expect(
+      shouldRestoreLocalSnapshotAfterLoad({
+        snapshot,
+        recoveryMarker,
+        serverContent: docA,
+        serverUpdatedAt: 0,
+        maxAgeMs: 500,
+        now: 2_000,
+      }),
+    ).toBe(false);
+  });
+
+  it("does not restore without an explicit unsynced recovery marker", () => {
+    const snapshot = buildLocalDocSnapshot("doc_1", docB, 1_000);
+
+    expect(
+      shouldRestoreLocalSnapshotAfterLoad({
+        snapshot,
+        recoveryMarker: null,
+        serverContent: docA,
+        serverUpdatedAt: 0,
+        now: 1_500,
+      }),
+    ).toBe(false);
+  });
+
+  it("persists and clears the unsynced recovery marker with its snapshot", async () => {
+    localStorage.clear();
+    const snapshot = buildLocalDocSnapshot("doc_1", docB, 1_000);
+
+    writeLocalSnapshotRecoveryBackup(snapshot, "flushing");
+
+    expect(readLocalSnapshotRecoveryMarker("doc_1")).toMatchObject({
+      docId: "doc_1",
+      savedAt: snapshot.savedAt,
+      hash: snapshot.hash,
+      reason: "flushing",
+    });
+
+    const storedSnapshot = JSON.parse(
+      localStorage.getItem("yuediter:local-snapshot:doc_1") ?? "null",
+    ) as { hash?: string } | null;
+    expect(storedSnapshot?.hash).toBe(snapshot.hash);
+
+    clearLocalSnapshotRecoveryMarker("doc_1");
+    expect(readLocalSnapshotRecoveryMarker("doc_1")).toBeNull();
   });
 
   it("ignores volatile sync metadata when comparing a stored snapshot", () => {

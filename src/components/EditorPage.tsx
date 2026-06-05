@@ -24,6 +24,17 @@ import FindReplaceBar from "@/components/FindReplaceBar";
 import { useAutoSave } from "@/hooks/useAutoSave";
 import { useLocalDocumentSnapshot } from "@/hooks/useLocalDocumentSnapshot";
 import {
+  buildLocalDocSnapshot,
+  clearLocalSnapshotRecoveryMarker,
+  createBrowserLocalSnapshotStore,
+  readLocalSnapshotRecoveryMarker,
+  shouldRestoreLocalSnapshotAfterLoad,
+  writeLocalSnapshotRecoveryBackup,
+  type LocalSnapshotStore,
+  type LocalDocSnapshot,
+  type LocalSnapshotRecoveryReason,
+} from "@/services/local-snapshot";
+import {
   commitVersion,
   discardDraft as discardDraftRequest,
   saveDocumentContentV2,
@@ -33,6 +44,7 @@ import {
 } from "@/services/document";
 import { uploadImage } from "@/services/images";
 import { useDocumentSync } from "@/hooks/useDocumentSync";
+import { SyncTraceLog, buildManifestSummary } from "@/services/sync/debug-log";
 import { readIdentityFromAttrs } from "@/services/sync/identity";
 import {
   hasDiscardableDraft,
@@ -340,6 +352,11 @@ const BLANK_CONTENT: TiptapDoc = {
   content: [{ type: "paragraph" }],
 };
 
+type PendingLocalRecovery = {
+  docId: string;
+  snapshot: LocalDocSnapshot;
+};
+
 function EditorContent() {
   const { isAuthenticated: authed, loading: authLoading } = useAuth();
   const router = useRouter();
@@ -398,6 +415,12 @@ function EditorContent() {
     const stored = localStorage.getItem("yuediter:local-snapshot:auto-save");
     return stored !== "false";
   });
+  const localSnapshotStore = useMemo<LocalSnapshotStore>(
+    () => createBrowserLocalSnapshotStore(),
+    [],
+  );
+  const [pendingLocalRecovery, setPendingLocalRecovery] =
+    useState<PendingLocalRecovery | null>(null);
   const loadedDocIdRef = useRef<string | null>(null);
   const hydratingSlugRef = useRef<string | null>(null);
   const lastPathnameRef = useRef<string | null>(null);
@@ -437,6 +460,17 @@ function EditorContent() {
           editorRef.current?.patchBlockIdentityFromDoc(merged);
           contentRef.current = merged;
           setContent(merged);
+          if (currentDoc) {
+            SyncTraceLog.add(
+              "editor:ack-merged",
+              currentDoc.docId,
+              currentSyncSession?.sessionId ?? null,
+              currentSyncSession?.sessionEpoch ?? null,
+              {
+                manifest: buildManifestSummary(merged),
+              },
+            );
+          }
         }
         return merged;
       }
@@ -453,6 +487,7 @@ function EditorContent() {
     hasUnsavedChanges,
   });
   const ignoreNextLocalSnapshotChange = localSnapshot.ignoreNextContentChange;
+  const clearLocalSnapshot = localSnapshot.clearSnapshot;
   useEffect(() => {
     contentRef.current = content;
   }, [content]);
@@ -574,30 +609,123 @@ function EditorContent() {
       markSavedAt(null);
       setSaveStatus("idle");
       loadedDocIdRef.current = null;
+      setPendingLocalRecovery(null);
       return;
     }
     if (loadedDocIdRef.current === docId) return;
 
+    let cancelled = false;
     loadedDocIdRef.current = docId;
     setLoadingDoc(true);
     setContentDirty(false);
-    loadContent(docId)
-      .then((loaded) => {
+    setPendingLocalRecovery(null);
+    void (async () => {
+      try {
+        const loaded = await loadContent(docId);
+        if (cancelled) return;
+        const loadedContent = loaded.content || BLANK_CONTENT;
         setContent(loaded.content || BLANK_CONTENT);
         setContentDirty(false);
         setHasUnsavedChanges(false);
         markSavedAt(null);
         setSaveStatus("loaded");
-      })
-      .catch(() => {
+
+        if (
+          syncEngineEnabled &&
+          typeof loadedContent === "object" &&
+          loadedContent?.type === "doc"
+        ) {
+          const snapshot = await localSnapshotStore.read(docId);
+          if (cancelled) return;
+          const recoveryMarker = readLocalSnapshotRecoveryMarker(docId);
+          const serverUpdatedAt =
+            loaded.draft.updatedAt ?? currentDoc.updatedAt ?? null;
+          if (
+            shouldRestoreLocalSnapshotAfterLoad({
+              snapshot,
+              recoveryMarker,
+              serverContent: loadedContent,
+              serverUpdatedAt,
+            })
+          ) {
+            setPendingLocalRecovery({ docId, snapshot: snapshot! });
+          }
+        }
+      } catch {
+        if (cancelled) return;
         setContent(BLANK_CONTENT);
         setContentDirty(false);
         loadedDocIdRef.current = null;
-      })
-      .finally(() => {
-        setLoadingDoc(false);
-      });
-  }, [currentDoc, loadContent, markSavedAt, setHasUnsavedChanges, setSaveStatus]);
+      } finally {
+        if (!cancelled) {
+          setLoadingDoc(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    currentDoc,
+    loadContent,
+    localSnapshotStore,
+    markSavedAt,
+    setHasUnsavedChanges,
+    setSaveStatus,
+    syncEngineEnabled,
+  ]);
+
+  useEffect(() => {
+    if (!syncEngineEnabled || !currentDoc || !tiptapContent) return;
+
+    const recoveryReason: LocalSnapshotRecoveryReason | null =
+      syncUiSaveStatus === "dirty" ||
+      syncUiSaveStatus === "flushing" ||
+      syncUiSaveStatus === "error"
+        ? syncUiSaveStatus
+        : null;
+
+    if (!recoveryReason) {
+      clearLocalSnapshotRecoveryMarker(currentDoc.docId);
+      return;
+    }
+
+    try {
+      writeLocalSnapshotRecoveryBackup(
+        buildLocalDocSnapshot(currentDoc.docId, tiptapContent),
+        recoveryReason,
+      );
+    } catch {
+      // Ignore local recovery backup quota/storage failures; normal autosync remains authoritative.
+    }
+  }, [currentDoc, syncEngineEnabled, syncUiSaveStatus, tiptapContent]);
+
+  useEffect(() => {
+    if (!pendingLocalRecovery) return;
+    if (!syncEngineEnabled) return;
+    if (!currentDoc || currentDoc.docId !== pendingLocalRecovery.docId) return;
+    if (!sync.syncState) return;
+
+    const recovery = pendingLocalRecovery;
+    const timer = window.setTimeout(() => {
+      setContent(recovery.snapshot.content);
+      setContentDirty(true);
+      setHasUnsavedChanges(true);
+      setSaveStatus("dirty");
+      setPendingLocalRecovery(null);
+      message.warning("已恢复本地未同步快照，正在重新同步");
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    currentDoc,
+    message,
+    pendingLocalRecovery,
+    setHasUnsavedChanges,
+    setSaveStatus,
+    sync.syncState,
+    syncEngineEnabled,
+  ]);
 
   const scheduleScrollToBlock = useCallback((blockId: string, onSuccess?: () => void) => {
     const tryScroll = () => editorRef.current?.scrollToBlock(blockId) ?? false;
@@ -913,6 +1041,7 @@ function EditorContent() {
         }
       }
       if (noDraftToSave) {
+        await clearLocalSnapshot();
         setContentDirty(false);
         setHasUnsavedChanges(false);
         markSavedAt(null);
@@ -929,6 +1058,7 @@ function EditorContent() {
         ignoreNextLocalSnapshotChange();
         setContent(loadedContent);
       }
+      await clearLocalSnapshot();
       setContentDirty(false);
       setHasUnsavedChanges(false);
       markSavedAt(new Date());
@@ -958,6 +1088,7 @@ function EditorContent() {
     currentSyncSession,
     tiptapContent,
     ignoreNextLocalSnapshotChange,
+    clearLocalSnapshot,
   ]);
 
   const handleDiscardDraft = useCallback(async () => {
@@ -975,6 +1106,7 @@ function EditorContent() {
       const loaded = await loadContent(currentDoc.docId);
       ignoreNextLocalSnapshotChange();
       setContent(loaded.content || BLANK_CONTENT);
+      await clearLocalSnapshot();
       setContentDirty(false);
       setHasUnsavedChanges(false);
       markSavedAt(null);
@@ -997,6 +1129,7 @@ function EditorContent() {
     currentSyncSession,
     setHasUnsavedChanges,
     setSaveStatus,
+    clearLocalSnapshot,
   ]);
 
   const handleReloadAfterRevert = useCallback(async () => {
@@ -1005,6 +1138,7 @@ function EditorContent() {
     await selectDoc(currentDoc.docId);
     const loaded = await loadContent(currentDoc.docId);
     setContent(loaded.content || BLANK_CONTENT);
+    await clearLocalSnapshot();
     setContentDirty(false);
     setHasUnsavedChanges(false);
     markSavedAt(null);
@@ -1016,6 +1150,7 @@ function EditorContent() {
     selectDoc,
     setHasUnsavedChanges,
     setSaveStatus,
+    clearLocalSnapshot,
   ]);
 
   const handleSetupComplete = useCallback(

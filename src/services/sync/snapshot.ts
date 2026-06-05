@@ -48,6 +48,41 @@ function shouldCreateInitialUnsyncedContent(snapshot: TiptapDoc): boolean {
   });
 }
 
+function collectLiveSyncKeys(snapshot: TiptapDoc): Set<string> {
+  const liveKeys = new Set<string>();
+  const nodes = Array.isArray(snapshot.content) ? snapshot.content : [];
+  for (const node of nodes) {
+    const identity = readIdentityFromAttrs(node.attrs);
+    if (identity.clientId) liveKeys.add(identity.clientId);
+    if (identity.blockId) liveKeys.add(identity.blockId);
+  }
+  return liveKeys;
+}
+
+function reconcilePendingEntriesWithSnapshot(
+  state: SyncReducerState,
+  snapshot: TiptapDoc,
+): SyncReducerState {
+  const liveKeys = collectLiveSyncKeys(snapshot);
+  let nextState = state;
+
+  for (const entry of Object.values(state.entries)) {
+    if (entry.opType === "delete") continue;
+    const hasLiveClient = liveKeys.has(entry.clientId);
+    const hasLiveBlock = entry.blockId ? liveKeys.has(entry.blockId) : false;
+    if (hasLiveClient || hasLiveBlock) continue;
+
+    nextState = enqueueChange(nextState, {
+      clientId: entry.clientId,
+      blockId: entry.blockId,
+      opType: "delete",
+      syncCreateId: entry.syncCreateId,
+    });
+  }
+
+  return nextState;
+}
+
 export function advanceSyncSnapshot(
   state: SyncReducerState,
   previousSnapshot: TiptapDoc | null,
@@ -82,6 +117,10 @@ export function advanceSyncSnapshot(
   for (const entry of entries) {
     nextState = enqueueChange(nextState, entry);
   }
+  nextState = reconcilePendingEntriesWithSnapshot(
+    nextState,
+    normalizedSnapshot,
+  );
 
   const snapshot = applyLocalSortKeys(normalizedSnapshot, nextState);
   const report = analyzeSortKeyIntegrity(snapshot);

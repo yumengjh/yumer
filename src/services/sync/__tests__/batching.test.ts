@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { selectSyncBatchOperations, type SyncBatchLimits } from "../batching";
+import { SYNC_BATCH_LIMITS, selectSyncBatchOperations, type SyncBatchLimits } from "../batching";
 import type { SyncEntry } from "../types";
 
 function entry(clientId: string, opType: SyncEntry["opType"]): SyncEntry {
@@ -50,5 +50,18 @@ describe("sync batching", () => {
     expect(() =>
       selectSyncBatchOperations(["client_1"], { client_1: entry("client_1", "update") }, limits),
     ).toThrow("limits.total must be a positive integer");
+  });
+
+  it("selects a larger default delete batch for large document clears", () => {
+    const entries: Record<string, SyncEntry> = {};
+    const dirtyOrder: string[] = [];
+    for (let i = 0; i < 250; i += 1) {
+      const clientId = `delete_${i}`;
+      dirtyOrder.push(clientId);
+      entries[clientId] = entry(clientId, "delete");
+    }
+
+    expect(SYNC_BATCH_LIMITS.byOperation.delete).toBe(500);
+    expect(selectSyncBatchOperations(dirtyOrder, entries)).toHaveLength(250);
   });
 });

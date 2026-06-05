@@ -11,7 +11,7 @@ import {
   PlayCircleOutlined,
   PauseCircleOutlined,
 } from "@ant-design/icons";
-import { SyncDebugLog, type SyncDebugRecord } from "@/services/sync/debug-log";
+import { SyncDebugLog, SyncTraceLog, type SyncDebugRecord } from "@/services/sync/debug-log";
 import "./SyncDebugModal.css";
 
 type SyncDebugModalProps = {
@@ -64,13 +64,14 @@ export function SyncDebugModal({ open, onClose }: SyncDebugModalProps) {
 
   const handleClear = useCallback(() => {
     SyncDebugLog.clear();
+    SyncTraceLog.clear();
     setRecords([]);
     message.success("已清空同步日志");
   }, []);
 
   const handleCopyAll = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(SyncDebugLog.formatAll());
+      await navigator.clipboard.writeText(SyncTraceLog.exportBundle());
       message.success("已复制到剪贴板");
     } catch {
       message.error("复制失败");

@@ -61,6 +61,8 @@ interface DocumentContextValue {
   ) => Promise<{
     content: EditorContent;
     docVer: number;
+    source: "draft" | "head";
+    draft: EditDraftMeta;
     syncSession: SyncSessionMeta | null;
   }>;
   applyCommittedVersion: (version: number, draftRevision?: number | null) => void;
@@ -209,7 +211,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     pushWindowPath(doc.docId);
   }, [setCurrentDocument, workspaceId]);
 
-  const loadContent = useCallback(async (docId: string): Promise<{ content: EditorContent; docVer: number; syncSession: SyncSessionMeta | null }> => {
+  const loadContent = useCallback(async (docId: string): Promise<{
+    content: EditorContent;
+    docVer: number;
+    source: "draft" | "head";
+    draft: EditDraftMeta;
+    syncSession: SyncSessionMeta | null;
+  }> => {
     const { content, blockIds, docVer, source, draft, lastEditPosition, syncSession } = await loadDocumentContentV2(docId);
     blockIdsRef.current = blockIds;
     setCurrentBlockIds(blockIds);
@@ -218,7 +226,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setCurrentDraftMeta(draft);
     setCurrentSyncSession(syncSession ?? null);
     setLastEditPosition(lastEditPosition);
-    return { content, docVer, syncSession: syncSession ?? null };
+    return { content, docVer, source, draft, syncSession: syncSession ?? null };
   }, []);
 
   const syncDocumentMetadata = useCallback((updated: Document) => {

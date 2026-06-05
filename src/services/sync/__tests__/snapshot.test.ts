@@ -1,5 +1,5 @@
 ﻿import { describe, expect, it } from "vitest";
-import { createInitialSyncState, markBatchInflight, resolveBatchSuccess } from "../reducer";
+import { createInitialSyncState, enqueueChange, markBatchInflight, resolveBatchSuccess } from "../reducer";
 import { advanceSyncSnapshot } from "../snapshot";
 import { selectSyncBatchOperations } from "../batching";
 import type { TiptapDoc } from "@/services/tiptap-converter";
@@ -159,6 +159,56 @@ describe("sync snapshot advancement", () => {
     expect(afterDeleteAndType.state.entries).not.toHaveProperty("paste_1");
     expect(afterDeleteAndType.state.entries).not.toHaveProperty("paste_2");
     expect(afterDeleteAndType.state.entries.final_1).toMatchObject({
+      clientId: "final_1",
+      opType: "create",
+    });
+  });
+
+  it("cancels queued creates that are absent from the current editor snapshot even when diff misses them", () => {
+    let state = createInitialSyncState("doc_1", "root_1", 1);
+    state = enqueueChange(state, {
+      clientId: "paste_missing_from_prev",
+      blockId: null,
+      opType: "create",
+      syncCreateId: "sync-create:paste_missing_from_prev",
+      blockType: "paragraph",
+      payload: {
+        type: "paragraph",
+        attrs: { clientId: "paste_missing_from_prev" },
+        content: [{ type: "text", text: "old pasted content" }],
+      },
+    });
+
+    const previousSnapshotMissedPaste: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "final_1" },
+          content: [{ type: "text", text: "new final content" }],
+        },
+      ],
+    };
+    const currentFinal: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "final_1" },
+          content: [{ type: "text", text: "new final content" }],
+        },
+      ],
+    };
+
+    const next = advanceSyncSnapshot(
+      state,
+      previousSnapshotMissedPaste,
+      currentFinal,
+    );
+
+    expect(next.state.entries.paste_missing_from_prev).toBeUndefined();
+    expect(next.state.dirtyOrder).toEqual(["final_1"]);
+    expect(next.state.entries.final_1).toMatchObject({
       clientId: "final_1",
       opType: "create",
     });

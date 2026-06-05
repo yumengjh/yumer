@@ -138,7 +138,7 @@ export function useLocalDocumentSnapshot({
 
   useEffect(() => {
     return () => {
-      snapshotWriter.cancel();
+      void snapshotWriter.flush();
     };
   }, [snapshotWriter]);
 

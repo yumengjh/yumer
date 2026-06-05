@@ -52,7 +52,12 @@ import type { PublicDocRevalidationResult } from "@/services/document";
 import type { Document as EditorDocument } from "@/services/document";
 import { downloadDocumentExport, type DocumentExportFormat } from "@/services/document-export";
 import { getDocumentSyncState } from "@/services/sync/api";
-import { SyncDebugLog, type SyncDebugRecord } from "@/services/sync/debug-log";
+import {
+  SyncDebugLog,
+  SyncTraceLog,
+  type SyncDebugRecord,
+  type SyncTraceRecord,
+} from "@/services/sync/debug-log";
 import { GcDebugModal } from "./GcDebugModal";
 import { SyncDebugModal } from "./SyncDebugModal";
 import {
@@ -317,9 +322,13 @@ async function copyCompactJsonToClipboard(text: string | null, label: string): P
   }
 }
 
-function buildCurrentDocumentSyncDebugPayload(records: SyncDebugRecord[], docId: string | null | undefined) {
-  if (!docId) return [];
-  return records
+function buildCurrentDocumentSyncDebugPayload(
+  records: SyncDebugRecord[],
+  traces: SyncTraceRecord[],
+  docId: string | null | undefined,
+) {
+  if (!docId) return { batchLog: [], traceLog: [] };
+  const batchLog = records
     .filter((record) => record.docId === docId)
     .map((record) => ({
       id: record.id,
@@ -335,6 +344,8 @@ function buildCurrentDocumentSyncDebugPayload(records: SyncDebugRecord[], docId:
       responseBody: record.responseBody ?? null,
       error: record.error ?? null,
     }));
+  const traceLog = traces.filter((record) => record.docId === docId);
+  return { batchLog, traceLog };
 }
 
 function describeBlockPosition(change: LocalSnapshotBlockChange): string {
@@ -1414,7 +1425,11 @@ export function DocumentHeader({
               diffMode !== "raw"
                 ? null
                 : stringifyCompactJson(
-                    buildCurrentDocumentSyncDebugPayload(SyncDebugLog.getAll(), currentDoc?.docId),
+                    buildCurrentDocumentSyncDebugPayload(
+                      SyncDebugLog.getAll(),
+                      SyncTraceLog.getAll(),
+                      currentDoc?.docId,
+                    ),
                   );
             const combinedCompactJson =
               diffMode !== "raw"

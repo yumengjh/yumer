@@ -15,6 +15,25 @@ export type LocalSnapshotCompareResult = {
   snapshotHash: string;
 };
 
+export type LocalSnapshotRestoreDecisionInput = {
+  snapshot: LocalDocSnapshot | null;
+  recoveryMarker: LocalSnapshotRecoveryMarker | null;
+  serverContent: TiptapDoc;
+  serverUpdatedAt?: string | number | Date | null;
+  maxAgeMs?: number;
+  now?: number;
+};
+
+export type LocalSnapshotRecoveryReason = "dirty" | "flushing" | "error";
+
+export type LocalSnapshotRecoveryMarker = {
+  docId: string;
+  savedAt: number;
+  hash: string;
+  markedAt: number;
+  reason: LocalSnapshotRecoveryReason;
+};
+
 export interface LocalSnapshotStore {
   read(docId: string): Promise<LocalDocSnapshot | null>;
   write(snapshot: LocalDocSnapshot): Promise<void>;
@@ -44,6 +63,25 @@ function storageKey(docId: string): string {
   return `yuediter:local-snapshot:${docId}`;
 }
 
+function recoveryMarkerKey(docId: string): string {
+  return `yuediter:local-snapshot-recovery:${docId}`;
+}
+
+function parseTimestamp(value: string | number | Date | null | undefined): number {
+  if (value instanceof Date) {
+    const time = value.getTime();
+    return Number.isFinite(time) ? time : 0;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : 0;
+  }
+  if (typeof value === "string" && value.trim() !== "") {
+    const time = new Date(value).getTime();
+    return Number.isFinite(time) ? time : 0;
+  }
+  return 0;
+}
+
 function hasIndexedDB(): boolean {
   return typeof indexedDB !== "undefined";
 }
@@ -62,9 +100,13 @@ async function readFromLocalStorage(docId: string): Promise<LocalDocSnapshot | n
   }
 }
 
-async function writeToLocalStorage(snapshot: LocalDocSnapshot): Promise<void> {
+function writeToLocalStorageSync(snapshot: LocalDocSnapshot): void {
   if (typeof window === "undefined" || typeof window.localStorage === "undefined") return;
   window.localStorage.setItem(storageKey(snapshot.docId), JSON.stringify(snapshot));
+}
+
+async function writeToLocalStorage(snapshot: LocalDocSnapshot): Promise<void> {
+  writeToLocalStorageSync(snapshot);
 }
 
 async function removeFromLocalStorage(docId: string): Promise<void> {
@@ -160,6 +202,67 @@ export function compareSnapshotToContent(
   };
 }
 
+export function readLocalSnapshotRecoveryMarker(
+  docId: string,
+): LocalSnapshotRecoveryMarker | null {
+  if (typeof window === "undefined" || typeof window.localStorage === "undefined") return null;
+  const raw = window.localStorage.getItem(recoveryMarkerKey(docId));
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw) as LocalSnapshotRecoveryMarker;
+    if (!parsed || parsed.docId !== docId) return null;
+    if (typeof parsed.savedAt !== "number" || typeof parsed.hash !== "string") return null;
+    if (typeof parsed.markedAt !== "number") return null;
+    if (!["dirty", "flushing", "error"].includes(parsed.reason)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function writeLocalSnapshotRecoveryBackup(
+  snapshot: LocalDocSnapshot,
+  reason: LocalSnapshotRecoveryReason,
+): void {
+  if (typeof window === "undefined" || typeof window.localStorage === "undefined") return;
+  writeToLocalStorageSync(snapshot);
+  const marker: LocalSnapshotRecoveryMarker = {
+    docId: snapshot.docId,
+    savedAt: snapshot.savedAt,
+    hash: snapshot.hash,
+    markedAt: Date.now(),
+    reason,
+  };
+  window.localStorage.setItem(recoveryMarkerKey(snapshot.docId), JSON.stringify(marker));
+}
+
+export function clearLocalSnapshotRecoveryMarker(docId: string): void {
+  if (typeof window === "undefined" || typeof window.localStorage === "undefined") return;
+  window.localStorage.removeItem(recoveryMarkerKey(docId));
+}
+
+export function shouldRestoreLocalSnapshotAfterLoad({
+  snapshot,
+  recoveryMarker,
+  serverContent,
+  serverUpdatedAt,
+  maxAgeMs = 7 * 24 * 60 * 60 * 1000,
+  now = Date.now(),
+}: LocalSnapshotRestoreDecisionInput): boolean {
+  if (!snapshot) return false;
+  if (!recoveryMarker) return false;
+  if (recoveryMarker.docId !== snapshot.docId) return false;
+  if (recoveryMarker.hash !== snapshot.hash) return false;
+  if (recoveryMarker.savedAt !== snapshot.savedAt) return false;
+  if (now - snapshot.savedAt > maxAgeMs) return false;
+  if (now - recoveryMarker.markedAt > maxAgeMs) return false;
+  if (compareSnapshotToContent(snapshot, serverContent).matches) return false;
+
+  const serverTime = parseTimestamp(serverUpdatedAt);
+  return serverTime === 0 || serverTime - snapshot.savedAt <= maxAgeMs;
+}
+
 export function createDebouncedLocalSnapshotWriter(
   writeSnapshot: (snapshot: LocalDocSnapshot) => Promise<void>,
   delayMs = 800,
@@ -237,38 +340,43 @@ export function createBrowserLocalSnapshotStore(): LocalSnapshotStore {
 
   return {
     async read(docId: string) {
+      const localSnapshot = await readFromLocalStorage(docId);
       if (useIndexedDb) {
         try {
-          return await readFromIndexedDB(docId);
+          const indexedSnapshot = await readFromIndexedDB(docId);
+          if (!indexedSnapshot) return localSnapshot;
+          if (!localSnapshot) return indexedSnapshot;
+          return localSnapshot.savedAt > indexedSnapshot.savedAt
+            ? localSnapshot
+            : indexedSnapshot;
         } catch {
-          return await readFromLocalStorage(docId);
+          return localSnapshot;
         }
       }
-      return await readFromLocalStorage(docId);
+      return localSnapshot;
     },
     async write(snapshot: LocalDocSnapshot) {
+      await writeToLocalStorage(snapshot);
       if (useIndexedDb) {
         try {
           await writeToIndexedDB(snapshot);
           return;
         } catch {
-          await writeToLocalStorage(snapshot);
           return;
         }
       }
-      await writeToLocalStorage(snapshot);
     },
     async remove(docId: string) {
+      await removeFromLocalStorage(docId);
+      clearLocalSnapshotRecoveryMarker(docId);
       if (useIndexedDb) {
         try {
           await removeFromIndexedDB(docId);
           return;
         } catch {
-          await removeFromLocalStorage(docId);
           return;
         }
       }
-      await removeFromLocalStorage(docId);
     },
   };
 }

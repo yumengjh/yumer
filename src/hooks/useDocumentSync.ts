@@ -18,6 +18,7 @@ import {
 } from "@/services/sync/reducer";
 import { advanceSyncSnapshot } from "@/services/sync/snapshot";
 import { createSortKeysBetween } from "@/services/sync/order";
+import { SyncTraceLog, buildManifestSummary } from "@/services/sync/debug-log";
 import type { SyncEntry, SyncReducerState } from "@/services/sync/types";
 
 type SyncSource = "autosync" | "manual-save";
@@ -187,9 +188,10 @@ export function useDocumentSync({
       const current = stateRef.current;
       if (!current || !nextContent) return current;
 
+      const prevSnapshot = snapshotRef.current;
       const advanced = advanceSyncSnapshot(
         current,
-        snapshotRef.current,
+        prevSnapshot,
         nextContent,
       );
       snapshotRef.current = advanced.snapshot;
@@ -202,6 +204,16 @@ export function useDocumentSync({
       if (advanced.state !== current) {
         replaceSyncState(advanced.state);
       }
+
+      // Trace: snapshot advance
+      SyncTraceLog.add("snapshot:advance", current.docId, current.sessionId, current.sessionEpoch, {
+        prevNodeCount: prevSnapshot?.content?.length ?? 0,
+        nextNodeCount: nextContent.content?.length ?? 0,
+        nextManifest: buildManifestSummary(nextContent),
+        derivedEntryCount: Object.keys(advanced.state.entries).length,
+        dirtyOrderLength: advanced.state.dirtyOrder.length,
+      });
+
       return advanced.state;
     },
     [replaceSyncState],
@@ -270,7 +282,14 @@ export function useDocumentSync({
       const initial = stateRef.current;
       if (!initial) return;
       if (initial.inflightBatchId) return;
-      if (initial.dirtyOrder.length === 0) return;
+      if (initial.dirtyOrder.length === 0) {
+        SyncTraceLog.add("idle:manifest", initial.docId, initial.sessionId, initial.sessionEpoch, {
+          manifest: buildManifestSummary(snapshotRef.current),
+          dirtyOrderLength: 0,
+          entryCount: Object.keys(initial.entries).length,
+        });
+        return;
+      }
 
       flushRunningRef.current = true;
       try {
@@ -278,7 +297,14 @@ export function useDocumentSync({
           const current = stateRef.current;
           if (!current) return;
           if (current.inflightBatchId) return;
-          if (current.dirtyOrder.length === 0) return;
+          if (current.dirtyOrder.length === 0) {
+            SyncTraceLog.add("idle:manifest", current.docId, current.sessionId, current.sessionEpoch, {
+              manifest: buildManifestSummary(snapshotRef.current),
+              dirtyOrderLength: 0,
+              entryCount: Object.keys(current.entries).length,
+            });
+            return;
+          }
 
           const rebased = rebasePendingCreatesToSnapshotOrder(
             current,
@@ -287,6 +313,20 @@ export function useDocumentSync({
           if (rebased !== current) {
             replaceSyncState(rebased);
           }
+
+          SyncTraceLog.add("queue:before-select", rebased.docId, rebased.sessionId, rebased.sessionEpoch, {
+            dirtyOrderLength: rebased.dirtyOrder.length,
+            entryCount: Object.keys(rebased.entries).length,
+            dirtyOrder: rebased.dirtyOrder.slice(0, 50),
+            entrySummary: Object.values(rebased.entries).slice(0, 50).map((e) => ({
+              clientId: e.clientId,
+              blockId: e.blockId,
+              syncCreateId: e.syncCreateId ?? null,
+              opType: e.opType,
+              revision: e.revision,
+              sortKey: e.sortKey ?? null,
+            })),
+          });
 
           const operations = selectSyncBatchOperations(
             rebased.dirtyOrder,
@@ -310,6 +350,21 @@ export function useDocumentSync({
             deleteCount: operations.filter((op) => op.opType === "delete")
               .length,
             moveCount: operations.filter((op) => op.opType === "move").length,
+          });
+
+          SyncTraceLog.add("flush:dispatch", rebased.docId, rebased.sessionId, rebased.sessionEpoch, {
+            clientBatchId,
+            baseVersion: rebased.baseVersion,
+            draftRevision: rebased.draftRevision,
+            operationCount: operations.length,
+            operations: operations.map((op) => ({
+              clientId: op.clientId,
+              blockId: op.blockId,
+              syncCreateId: op.syncCreateId ?? null,
+              opType: op.opType,
+              revision: op.revision,
+              sortKey: op.sortKey ?? null,
+            })),
           });
           replaceSyncState(
             markBatchInflight(
@@ -339,6 +394,28 @@ export function useDocumentSync({
               draftRevision: response.draftRevision,
               needsReload: response.needsReload,
               resultCount: response.results.length,
+            });
+
+            SyncTraceLog.add("flush:response", rebased.docId, rebased.sessionId, rebased.sessionEpoch, {
+              clientBatchId,
+              acceptedBatchId: response.acceptedBatchId,
+              serverHead: response.serverHead,
+              draftRevision: response.draftRevision,
+              ackedThroughOpSeq: response.ackedThroughOpSeq,
+              needsReload: response.needsReload,
+              resultCount: response.results.length,
+              results: response.results.map((r) => ({
+                operation: r.operation,
+                success: r.success,
+                clientId: r.clientId ?? null,
+                blockId: r.blockId ?? null,
+                sortKey: r.sortKey ?? null,
+                version: r.version ?? null,
+                error: r.error ?? null,
+                matchBy: r.matchBy ?? null,
+                diagnosticCode: r.diagnosticCode ?? null,
+                tombstoned: r.tombstoned ?? false,
+              })),
             });
             const batchFailure = summarizeSyncBatchFailures(response.results);
 
@@ -412,6 +489,19 @@ export function useDocumentSync({
               createMappings,
             );
             if (orphanedCreateDeletes.length > 0) {
+              SyncTraceLog.add(
+                "orphaned-create:delete-enqueued",
+                rebased.docId,
+                rebased.sessionId,
+                rebased.sessionEpoch,
+                {
+                  deletes: orphanedCreateDeletes.map((entry) => ({
+                    clientId: entry.clientId,
+                    blockId: entry.blockId,
+                    syncCreateId: entry.syncCreateId ?? null,
+                  })),
+                },
+              );
               updateSyncState((prev) => {
                 if (!prev) return prev;
                 return orphanedCreateDeletes.reduce(
@@ -421,7 +511,14 @@ export function useDocumentSync({
               });
             }
             if (currentSnapshot && serverAckMappings.length > 0) {
+              const beforeManifest = buildManifestSummary(currentSnapshot);
               const patched = applyServerAck(currentSnapshot, serverAckMappings);
+              SyncTraceLog.add("ack:patch", rebased.docId, rebased.sessionId, rebased.sessionEpoch, {
+                clientBatchId,
+                mappings: serverAckMappings,
+                beforeManifest,
+                afterManifest: buildManifestSummary(patched),
+              });
               snapshotRef.current = patched;
               if (onContentPatched && patched !== currentSnapshot) {
                 try {

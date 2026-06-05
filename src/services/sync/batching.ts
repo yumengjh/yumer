@@ -6,11 +6,11 @@ export type SyncBatchLimits = {
 };
 
 export const SYNC_BATCH_LIMITS: SyncBatchLimits = {
-  total: 100,
+  total: 500,
   byOperation: {
     create: 100,
     update: 100,
-    delete: 100,
+    delete: 500,
     move: 100,
   },
 };

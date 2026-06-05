@@ -459,6 +459,33 @@ describe("sync reducer", () => {
     expect(state.entries.client_deleted_new.blockId).toBe("server_block_deleted_new");
   });
 
+  it("clears a create entry when the server suppresses it by tombstone", () => {
+    let state = createInitialSyncState("doc_1", "root_1", 3);
+    state = enqueueChange(state, {
+      clientId: "client_tombstoned_create",
+      blockId: null,
+      opType: "create",
+      syncCreateId: "sync-create:client_tombstoned_create",
+      blockType: "paragraph",
+      payload: { type: "paragraph", attrs: { clientId: "client_tombstoned_create" } },
+    });
+    state = markBatchInflight(state, "batch_tombstoned_create", ["client_tombstoned_create"], false);
+
+    state = resolveBatchSuccess(state, "batch_tombstoned_create", [
+      {
+        operation: "create",
+        success: true,
+        clientId: "client_tombstoned_create",
+        tombstoned: true,
+        diagnosticCode: "CREATE_SUPPRESSED_BY_TOMBSTONE",
+      },
+    ]);
+
+    expect(state.entries.client_tombstoned_create).toBeUndefined();
+    expect(state.dirtyOrder).toEqual([]);
+    expect(state.syncState).toBe("idle");
+  });
+
   it("normalizes create payload attrs after create+update merge", () => {
     let state = createInitialSyncState("doc_1", "root_1", 3);
     state = enqueueChange(state, {

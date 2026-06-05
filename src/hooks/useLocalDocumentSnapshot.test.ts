@@ -186,7 +186,7 @@ describe("useLocalDocumentSnapshot", () => {
     expect((latestState as LocalSnapshotState | null)?.status).toBe("idle");
   });
 
-  it("cancels a pending auto-save instead of writing during tab refresh or unmount", async () => {
+  it("flushes a pending auto-save during tab refresh or unmount", async () => {
     localStorage.setItem(
       "yuediter:local-snapshot:doc_1",
       JSON.stringify(buildLocalDocSnapshot("doc_1", storedDoc, 1000)),
@@ -229,7 +229,7 @@ describe("useLocalDocumentSnapshot", () => {
     const storedSnapshot = JSON.parse(
       localStorage.getItem("yuediter:local-snapshot:doc_1") ?? "null",
     ) as { content?: TiptapDoc } | null;
-    expect(storedSnapshot?.content).toEqual(storedDoc);
+    expect(storedSnapshot?.content).toEqual(editedDoc);
   });
 
   it("manual validation compares without flushing a pending auto-save", async () => {

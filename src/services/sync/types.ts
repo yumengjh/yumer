@@ -81,4 +81,7 @@ export interface SyncBatchResult {
   sortKey?: string;
   version?: number;
   error?: string;
+  diagnosticCode?: string;
+  matchBy?: string;
+  tombstoned?: boolean;
 }
