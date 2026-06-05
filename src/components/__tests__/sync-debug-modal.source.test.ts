@@ -18,6 +18,9 @@ describe("SyncDebugModal source guards", () => {
     expect(modalSource).toContain('"debug:bookmark"');
     expect(modalSource).toContain("identity:resurrected");
     expect(modalSource).toContain("标记现场");
+    expect(modalSource).toContain("exportAiBundle");
+    expect(modalSource).toContain("复制 AI 包");
+    expect(modalSource).toContain("完整包");
     expect(headerSource).toContain("docId={currentDoc?.docId}");
     expect(headerSource).toContain("docTitle={currentDoc?.title}");
   });

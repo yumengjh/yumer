@@ -136,4 +136,70 @@ describe("sync debug log", () => {
     expect(exported.deletedIdentityWatch).toHaveLength(1);
     expect(exported.incidents).toEqual([]);
   });
+
+  it("exports a compact AI bundle without large raw payload content", () => {
+    installBrowserStorage();
+    SyncDebugLog.setEnabled(true);
+    const largeText = "x".repeat(500_000);
+    SyncDebugLog.add({
+      id: "batch_large",
+      timestamp: Date.now(),
+      source: "autosync",
+      docId: "doc_1",
+      baseVersion: 7,
+      clientBatchId: "batch_large",
+      operationCount: 1,
+      requestBody: {
+        docId: "doc_1",
+        baseVersion: 7,
+        draftRevision: 2,
+        clientBatchId: "batch_large",
+        source: "autosync",
+        operations: [
+          {
+            type: "update",
+            blockId: "block_large",
+            data: {
+              payload: {
+                type: "paragraph",
+                content: [{ type: "text", text: largeText }],
+              },
+              plainText: largeText,
+            },
+          },
+        ],
+      },
+      responseBody: {
+        acceptedBatchId: "batch_large",
+        appliedAt: Date.now(),
+        serverHead: 7,
+        draftRevision: 3,
+        needsReload: false,
+        conflicts: [],
+        results: [
+          {
+            operation: "update",
+            success: true,
+            blockId: "block_large",
+          },
+        ],
+      },
+      duration: 12,
+      success: true,
+    });
+
+    const compactText = SyncTraceLog.exportAiBundle({ docId: "doc_1" });
+    const compact = JSON.parse(compactText);
+
+    expect(compact.bundleType).toBe("sync-ai-debug");
+    expect(compact.batchLog).toHaveLength(1);
+    expect(compact.batchLog[0].request.operations[0]).toMatchObject({
+      type: "update",
+      blockId: "block_large",
+      payloadType: "paragraph",
+      plainTextLength: 500_000,
+    });
+    expect(compactText.length).toBeLessThan(20_000);
+    expect(compactText).not.toContain(largeText.slice(0, 1000));
+  });
 });

@@ -148,10 +148,21 @@ export function SyncDebugModal({ open, onClose, docId, docTitle }: SyncDebugModa
     message.success("已清空同步日志");
   }, [refresh]);
 
-  const handleCopyAll = useCallback(async () => {
+  const handleCopyAiBundle = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(SyncTraceLog.exportBundle());
-      message.success("已复制到剪贴板");
+      const bundle = SyncTraceLog.exportAiBundle({ docId });
+      await navigator.clipboard.writeText(bundle);
+      message.success(`已复制轻量 AI 包（${Math.ceil(bundle.length / 1024)} KB）`);
+    } catch {
+      message.error("复制失败");
+    }
+  }, [docId]);
+
+  const handleCopyFullBundle = useCallback(async () => {
+    try {
+      const bundle = SyncTraceLog.exportBundle();
+      await navigator.clipboard.writeText(bundle);
+      message.success(`已复制完整包（${Math.ceil(bundle.length / 1024)} KB）`);
     } catch {
       message.error("复制失败");
     }
@@ -244,7 +255,7 @@ export function SyncDebugModal({ open, onClose, docId, docTitle }: SyncDebugModa
             type={incidents.length > 0 ? "error" : "info"}
             showIcon
             message={incidents.length > 0 ? "检测到已删除身份再次出现在前端快照中" : "记录开启后会自动捕捉请求、ACK、manifest 和删除身份回流"}
-            description="遇到删除块又回来时，先点“标记现场”，再复制全部 JSON。导出包会包含请求、trace、删除观察表和异常证据。"
+            description="遇到删除块又回来时，先点“标记现场”，再复制 AI 包。AI 包会过滤当前文档并压缩 manifest；完整包只在需要原始请求体时使用。"
           />
           {docId ? (
             <div className="sync-debug-scope">
@@ -334,9 +345,14 @@ export function SyncDebugModal({ open, onClose, docId, docTitle }: SyncDebugModa
               刷新
             </Button>
           </Tooltip>
-          <Tooltip title="复制全部（JSON）">
-            <Button size="small" icon={<CopyOutlined />} onClick={handleCopyAll}>
-              复制全部
+          <Tooltip title="复制轻量 AI 诊断包">
+            <Button size="small" type="primary" icon={<CopyOutlined />} onClick={handleCopyAiBundle}>
+              复制 AI 包
+            </Button>
+          </Tooltip>
+          <Tooltip title="复制完整原始 JSON，体积可能很大">
+            <Button size="small" icon={<CopyOutlined />} onClick={handleCopyFullBundle}>
+              完整包
             </Button>
           </Tooltip>
           <Tooltip title="清空日志">
