@@ -2,6 +2,7 @@ import { apiGet, apiPost } from "@/services/api-client";
 import { createSortKeyBetween } from "./order";
 import { SyncDebugLog, SyncIdentityWatch, type SyncIdentity } from "./debug-log";
 import type { SyncEntry, SyncBatchResult } from "./types";
+import type { DraftCheckpointMapping, DraftCheckpointRequest } from "./checkpoint";
 
 export interface SyncBatchResponse {
   acceptedBatchId: string | null;
@@ -41,6 +42,22 @@ export interface SyncManifestReconcileResponse {
     version: number;
     clientId: string | null;
     syncCreateId: string | null;
+  }>;
+}
+
+export interface DraftCheckpointResponse {
+  acceptedCheckpointId: string;
+  appliedAt: number;
+  serverHead: number;
+  draftRevision: number;
+  needsReload: boolean;
+  conflicts: Array<{ code: string; message: string }>;
+  contentHash: string;
+  mappings: DraftCheckpointMapping[];
+  tombstoned: Array<{
+    blockId: string;
+    clientId?: string | null;
+    syncCreateId?: string | null;
   }>;
 }
 
@@ -324,6 +341,16 @@ export async function postSyncBatch(input: {
 
 export async function getDocumentSyncState(docId: string): Promise<DocumentSyncState> {
   return apiGet<DocumentSyncState>(`/documents/${docId}/sync-state`);
+}
+
+export async function postDraftCheckpoint(
+  docId: string,
+  request: DraftCheckpointRequest,
+): Promise<DraftCheckpointResponse> {
+  return apiPost<DraftCheckpointResponse>(
+    `/documents/${docId}/draft-checkpoint`,
+    request,
+  );
 }
 
 export async function postSyncManifestReconcile(input: {
