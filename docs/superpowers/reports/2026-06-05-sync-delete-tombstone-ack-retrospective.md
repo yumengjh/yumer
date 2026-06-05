@@ -86,7 +86,7 @@ pnpm vitest run src/services/sync/__tests__/reducer.test.ts src/services/sync/__
 
 后续前端实测发现，全选删除多个已有块后，控制台会持续发送同一组 delete 请求。
 
-这次不是后端 tombstone 未生效，而是前端 reducer 的 revision 保护过于保守：
+第一轮修复先处理了 reducer 的 revision 保护过于保守：
 
 1. 一组 delete entry 被标记为 inflight；
 2. 编辑器空文档状态或快照推进又派生了一次相同 delete；
@@ -100,5 +100,19 @@ pnpm vitest run src/services/sync/__tests__/reducer.test.ts src/services/sync/__
 
 - 当当前 entry 仍为 `delete`，服务端 ACK 也是成功或幂等成功的 `delete` 时，即使 revision 已变化，也清除该 entry。
 - 新增 reducer 回归测试覆盖 “same delete re-enqueued while inflight”。
+
+随后真实前端测试仍复现无限请求，最终定位到另一个更直接的问题：
+
+- 后端为了让 delete ACK 更容易关联，开始回显 `clientId`；
+- `useDocumentSync` 里 `createMappings` 原来只判断 `success && clientId && blockId`；
+- delete ACK 现在也满足这个条件；
+- 前端因此把每个 delete ACK 误当成 create ACK；
+- `collectOrphanedCreateDeletes()` 看到当前快照里没有这些 clientId，就把它们当作“刚创建但已经消失的孤儿 create”，再次 enqueue 同一组 delete。
+
+最终修复：
+
+- `createMappings` 必须要求 `result.operation === "create"`；
+- `serverAckMappings` 排除 `result.operation === "delete"`，避免把删除结果 patch 回编辑器快照；
+- 新增 `useDocumentSync.source.test.ts` 锁住这两个源码约束。
 
 这补上了全选删除、批量删除、大文档弱网删除场景中最容易触发的重复请求入口。

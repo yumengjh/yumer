@@ -474,7 +474,11 @@ export function useDocumentSync({
 
             const createMappings = response.results
               .filter(
-                (result) => result.success && result.clientId && result.blockId,
+                (result) =>
+                  result.operation === "create" &&
+                  result.success &&
+                  result.clientId &&
+                  result.blockId,
               )
               .map((result) => ({
                 clientId: result.clientId!,
@@ -484,6 +488,7 @@ export function useDocumentSync({
             const serverAckMappings = response.results
               .filter(
                 (result) =>
+                  result.operation !== "delete" &&
                   result.success &&
                   result.blockId &&
                   (result.clientId || result.sortKey),
