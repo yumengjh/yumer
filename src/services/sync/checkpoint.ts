@@ -171,7 +171,7 @@ export function applyCheckpointAck(
     if (!mapping) return node;
 
     const sortKey = mapping.sortKey ?? mapping.orderKey;
-    const attrs = {
+    const attrs: Record<string, unknown> = {
       ...(node.attrs ?? {}),
       blockId: mapping.blockId,
       "data-block-id": mapping.blockId,
