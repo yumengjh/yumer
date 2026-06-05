@@ -225,6 +225,8 @@ export function useDocumentSync({
   const reconcileRunningRef = useRef(false);
   const lastReconciledManifestKeyRef = useRef<string | null>(null);
   const autosyncPausedRef = useRef(false);
+  const batchFailureCountRef = useRef(0);
+  const MAX_BATCH_FAILURES_BEFORE_CHECKPOINT = 2;
 
   const replaceSyncState = useCallback((next: SyncReducerState | null) => {
     stateRef.current = next;
@@ -416,6 +418,98 @@ export function useDocumentSync({
     [updateSyncState],
   );
 
+  const runDraftCheckpoint = useCallback(
+    async (latestContent?: TiptapDoc | null): Promise<boolean> => {
+      const current = stateRef.current;
+      const contentForCheckpoint = latestContent ?? latestContentRef.current;
+      if (!current || !contentForCheckpoint) return false;
+      if (!current.sessionId || typeof current.sessionEpoch !== "number") {
+        updateSyncState((prev) =>
+          prev
+            ? markSyncSessionLost(prev, "当前编辑会话缺失，无法执行最终态同步")
+            : prev,
+        );
+        return false;
+      }
+
+      try {
+        const checkpoint = await buildDraftCheckpoint({
+          docId: current.docId,
+          rootBlockId: current.rootBlockId,
+          content: contentForCheckpoint,
+          baseVersion: current.baseVersion,
+          draftRevision: current.draftRevision,
+          sessionId: current.sessionId,
+          sessionEpoch: current.sessionEpoch,
+          clientId: current.sessionId,
+          clientCheckpointId: createCheckpointClientId(),
+        });
+
+        const response = await postDraftCheckpoint(current.docId, checkpoint);
+        if (response.needsReload) {
+          updateSyncState((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  syncState: "conflicted",
+                  lastError:
+                    response.conflicts[0]?.message ??
+                    "最终态同步需要刷新后重试",
+                  draftRevision: response.draftRevision,
+                }
+              : prev,
+          );
+          return false;
+        }
+
+        updateSyncState((prev) =>
+          prev
+            ? {
+                ...prev,
+                baseVersion: response.serverHead,
+                draftRevision: response.draftRevision,
+                entries: {},
+                dirtyOrder: [],
+                inflightBatchId: null,
+                inflightEntryIds: [],
+                inflightEntryRevisions: {},
+                syncState: "idle",
+                lastError: null,
+              }
+            : prev,
+        );
+
+        const patched = applyCheckpointAck(
+          contentForCheckpoint,
+          response.mappings,
+        );
+        snapshotRef.current = patched;
+        if (onContentPatched && patched !== contentForCheckpoint) {
+          const applied = onContentPatched(patched);
+          if (applied && applied.type === "doc") {
+            snapshotRef.current = applied;
+            latestContentRef.current = applied;
+          }
+        }
+        return true;
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "最终态同步失败";
+        updateSyncState((prev) =>
+          prev
+            ? {
+                ...prev,
+                syncState: "error",
+                lastError: message,
+              }
+            : prev,
+        );
+        return false;
+      }
+    },
+    [onContentPatched, updateSyncState],
+  );
+
   const flush = useCallback(
     async (source: SyncSource = "autosync") => {
       if (source === "autosync" && autosyncPausedRef.current) return;
@@ -562,6 +656,9 @@ export function useDocumentSync({
               })),
             }));
             const batchFailure = summarizeSyncBatchFailures(response.results);
+            if (!response.needsReload && !batchFailure) {
+              batchFailureCountRef.current = 0;
+            }
 
             if (response.needsReload) {
               const lostSession = response.conflicts.some((conflict) =>
@@ -693,6 +790,13 @@ export function useDocumentSync({
                     }
                   : prev,
               );
+              batchFailureCountRef.current += 1;
+              if (batchFailureCountRef.current >= MAX_BATCH_FAILURES_BEFORE_CHECKPOINT) {
+                const recovered = await runDraftCheckpoint(latestContentRef.current);
+                if (recovered) {
+                  batchFailureCountRef.current = 0;
+                }
+              }
               return;
             }
           } catch (error) {
@@ -702,6 +806,13 @@ export function useDocumentSync({
                 ? resolveBatchFailure(prev, clientBatchId, message, false)
                 : prev,
             );
+            batchFailureCountRef.current += 1;
+            if (batchFailureCountRef.current >= MAX_BATCH_FAILURES_BEFORE_CHECKPOINT) {
+              const recovered = await runDraftCheckpoint(latestContentRef.current);
+              if (recovered) {
+                batchFailureCountRef.current = 0;
+              }
+            }
             return;
           }
         }
@@ -709,99 +820,7 @@ export function useDocumentSync({
         flushRunningRef.current = false;
       }
     },
-    [captureContentSnapshot, onContentPatched, reconcileIdleManifest, replaceSyncState, updateSyncState],
-  );
-
-  const runDraftCheckpoint = useCallback(
-    async (latestContent?: TiptapDoc | null): Promise<boolean> => {
-      const current = stateRef.current;
-      const contentForCheckpoint = latestContent ?? latestContentRef.current;
-      if (!current || !contentForCheckpoint) return false;
-      if (!current.sessionId || typeof current.sessionEpoch !== "number") {
-        updateSyncState((prev) =>
-          prev
-            ? markSyncSessionLost(prev, "当前编辑会话缺失，无法执行最终态同步")
-            : prev,
-        );
-        return false;
-      }
-
-      try {
-        const checkpoint = await buildDraftCheckpoint({
-          docId: current.docId,
-          rootBlockId: current.rootBlockId,
-          content: contentForCheckpoint,
-          baseVersion: current.baseVersion,
-          draftRevision: current.draftRevision,
-          sessionId: current.sessionId,
-          sessionEpoch: current.sessionEpoch,
-          clientId: current.sessionId,
-          clientCheckpointId: createCheckpointClientId(),
-        });
-
-        const response = await postDraftCheckpoint(current.docId, checkpoint);
-        if (response.needsReload) {
-          updateSyncState((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  syncState: "conflicted",
-                  lastError:
-                    response.conflicts[0]?.message ??
-                    "最终态同步需要刷新后重试",
-                  draftRevision: response.draftRevision,
-                }
-              : prev,
-          );
-          return false;
-        }
-
-        updateSyncState((prev) =>
-          prev
-            ? {
-                ...prev,
-                baseVersion: response.serverHead,
-                draftRevision: response.draftRevision,
-                entries: {},
-                dirtyOrder: [],
-                inflightBatchId: null,
-                inflightEntryIds: [],
-                inflightEntryRevisions: {},
-                syncState: "idle",
-                lastError: null,
-              }
-            : prev,
-        );
-
-        const patched = applyCheckpointAck(
-          contentForCheckpoint,
-          response.mappings,
-        );
-        snapshotRef.current = patched;
-        if (onContentPatched && patched !== contentForCheckpoint) {
-          const applied = onContentPatched(patched);
-          if (applied && applied.type === "doc") {
-            snapshotRef.current = applied;
-            latestContentRef.current = applied;
-          }
-        }
-        return true;
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "最终态同步失败";
-        updateSyncState((prev) =>
-          prev
-            ? {
-                ...prev,
-                syncState: "error",
-                lastError: message,
-              }
-            : prev,
-        );
-        return false;
-      }
-    },
-    [onContentPatched, updateSyncState],
+    [captureContentSnapshot, onContentPatched, reconcileIdleManifest, replaceSyncState, runDraftCheckpoint, updateSyncState],
   );
 
   const flushAndCommitBarrier = useCallback(
