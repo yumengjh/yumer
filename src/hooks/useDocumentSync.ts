@@ -1,9 +1,10 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { renewSyncSession, type SyncSessionMeta } from "@/services/document";
 import type { TiptapDoc } from "@/services/tiptap-converter";
-import { postSyncBatch, postSyncManifestReconcile, type SyncManifestIdentity } from "@/services/sync/api";
+import { postDraftCheckpoint, postSyncBatch, postSyncManifestReconcile, type SyncManifestIdentity } from "@/services/sync/api";
 import { selectSyncBatchOperations } from "@/services/sync/batching";
 import { summarizeSyncBatchFailures } from "@/services/sync/batch-failure";
+import { applyCheckpointAck, buildDraftCheckpoint } from "@/services/sync/checkpoint";
 import { applyServerAck } from "@/services/sync/engine";
 import { collectOrphanedCreateDeletes } from "@/services/sync/orphaned-create";
 import {
@@ -35,6 +36,10 @@ type UseDocumentSyncArgs = {
 
 function createBatchId(): string {
   return `batch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createCheckpointClientId(): string {
+  return `checkpoint_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function createReconcileId(): string {
@@ -707,6 +712,98 @@ export function useDocumentSync({
     [captureContentSnapshot, onContentPatched, reconcileIdleManifest, replaceSyncState, updateSyncState],
   );
 
+  const runDraftCheckpoint = useCallback(
+    async (latestContent?: TiptapDoc | null): Promise<boolean> => {
+      const current = stateRef.current;
+      const contentForCheckpoint = latestContent ?? latestContentRef.current;
+      if (!current || !contentForCheckpoint) return false;
+      if (!current.sessionId || typeof current.sessionEpoch !== "number") {
+        updateSyncState((prev) =>
+          prev
+            ? markSyncSessionLost(prev, "当前编辑会话缺失，无法执行最终态同步")
+            : prev,
+        );
+        return false;
+      }
+
+      try {
+        const checkpoint = await buildDraftCheckpoint({
+          docId: current.docId,
+          rootBlockId: current.rootBlockId,
+          content: contentForCheckpoint,
+          baseVersion: current.baseVersion,
+          draftRevision: current.draftRevision,
+          sessionId: current.sessionId,
+          sessionEpoch: current.sessionEpoch,
+          clientId: current.sessionId,
+          clientCheckpointId: createCheckpointClientId(),
+        });
+
+        const response = await postDraftCheckpoint(current.docId, checkpoint);
+        if (response.needsReload) {
+          updateSyncState((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  syncState: "conflicted",
+                  lastError:
+                    response.conflicts[0]?.message ??
+                    "最终态同步需要刷新后重试",
+                  draftRevision: response.draftRevision,
+                }
+              : prev,
+          );
+          return false;
+        }
+
+        updateSyncState((prev) =>
+          prev
+            ? {
+                ...prev,
+                baseVersion: response.serverHead,
+                draftRevision: response.draftRevision,
+                entries: {},
+                dirtyOrder: [],
+                inflightBatchId: null,
+                inflightEntryIds: [],
+                inflightEntryRevisions: {},
+                syncState: "idle",
+                lastError: null,
+              }
+            : prev,
+        );
+
+        const patched = applyCheckpointAck(
+          contentForCheckpoint,
+          response.mappings,
+        );
+        snapshotRef.current = patched;
+        if (onContentPatched && patched !== contentForCheckpoint) {
+          const applied = onContentPatched(patched);
+          if (applied && applied.type === "doc") {
+            snapshotRef.current = applied;
+            latestContentRef.current = applied;
+          }
+        }
+        return true;
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "最终态同步失败";
+        updateSyncState((prev) =>
+          prev
+            ? {
+                ...prev,
+                syncState: "error",
+                lastError: message,
+              }
+            : prev,
+        );
+        return false;
+      }
+    },
+    [onContentPatched, updateSyncState],
+  );
+
   const flushAndCommitBarrier = useCallback(
     async (
       latestContent?: TiptapDoc | null,
@@ -720,6 +817,10 @@ export function useDocumentSync({
       updateSyncState((prev) => (prev ? markPendingCommit(prev) : prev));
       try {
         await flush("manual-save");
+        const checkpointOk = await runDraftCheckpoint(
+          latestContent ?? latestContentRef.current,
+        );
+        if (!checkpointOk) return false;
         const current = stateRef.current;
         if (!current) return false;
         if (
@@ -740,7 +841,7 @@ export function useDocumentSync({
         updateSyncState((prev) => (prev ? clearPendingCommit(prev) : prev));
       }
     },
-    [captureContentSnapshot, flush, updateSyncState],
+    [captureContentSnapshot, flush, runDraftCheckpoint, updateSyncState],
   );
 
   const uiSaveStatus = useMemo(() => {
