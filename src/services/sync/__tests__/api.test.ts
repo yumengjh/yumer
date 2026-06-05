@@ -102,6 +102,29 @@ describe("sync api payload builder", () => {
     ).rejects.toThrow("同步协议错误");
   });
 
+  it("sends delete tombstones by client identity when a deleted create has no server blockId", () => {
+    const bodyOperations = buildSyncBatchOperations({
+      docId: "doc_1",
+      rootBlockId: "root_1",
+      operations: [
+        {
+          clientId: "client_deleted_before_ack",
+          blockId: null,
+          opType: "delete",
+          syncCreateId: "sync-create:client_deleted_before_ack",
+        },
+      ],
+    });
+
+    expect(bodyOperations).toEqual([
+      {
+        type: "delete",
+        clientId: "client_deleted_before_ack",
+        syncCreateId: "sync-create:client_deleted_before_ack",
+      },
+    ]);
+  });
+
   it("preserves conflict responses with empty results so the caller can enter reload state", async () => {
     apiPost.mockResolvedValue({
       acceptedBatchId: "batch_stale_session",

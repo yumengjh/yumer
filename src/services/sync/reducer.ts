@@ -100,6 +100,7 @@ export function enqueueChange(
         clientId: incoming.clientId,
         blockId: incoming.blockId ?? current.blockId,
         opType: "delete",
+        syncCreateId: current.syncCreateId,
       });
     }
 

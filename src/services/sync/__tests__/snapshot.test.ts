@@ -204,6 +204,7 @@ describe("sync snapshot advancement", () => {
       clientId: "paste_1",
       blockId: null,
       opType: "delete",
+      syncCreateId: "sync-create:paste_1",
     });
 
     const afterAck = resolveBatchSuccess(afterDeleteAndType.state, "batch_1", [

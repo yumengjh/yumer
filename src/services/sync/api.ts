@@ -50,7 +50,9 @@ type BatchUpdateBody = {
 
 type BatchDeleteBody = {
   type: "delete";
-  blockId: string;
+  blockId?: string;
+  clientId?: string;
+  syncCreateId?: string;
 };
 
 type BatchMoveBody = {
@@ -149,10 +151,11 @@ export function buildSyncBatchOperations(input: {
       continue;
     }
 
-    if (!entry.blockId) continue;
     bodyOperations.push({
       type: "delete",
-      blockId: entry.blockId,
+      ...(entry.blockId ? { blockId: entry.blockId } : {}),
+      clientId: entry.clientId,
+      ...(entry.syncCreateId ? { syncCreateId: entry.syncCreateId } : {}),
     });
   }
 
