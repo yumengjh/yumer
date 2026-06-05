@@ -236,6 +236,34 @@ describe("sync reducer", () => {
     expect(state.syncState).toBe("idle");
   });
 
+  it("clears a duplicate delete re-enqueued while the same delete is inflight", () => {
+    let state = createInitialSyncState("doc_1", "root_1", 3);
+    state = enqueueChange(state, {
+      clientId: "client_delete_repeat",
+      blockId: "block_delete_repeat",
+      opType: "delete",
+    });
+    state = markBatchInflight(state, "batch_delete_repeat", ["client_delete_repeat"], false);
+
+    state = enqueueChange(state, {
+      clientId: "client_delete_repeat",
+      blockId: "block_delete_repeat",
+      opType: "delete",
+    });
+
+    state = resolveBatchSuccess(state, "batch_delete_repeat", [
+      {
+        operation: "delete",
+        success: true,
+        blockId: "block_delete_repeat",
+      },
+    ]);
+
+    expect(state.entries.client_delete_repeat).toBeUndefined();
+    expect(state.dirtyOrder).toEqual([]);
+    expect(state.syncState).toBe("idle");
+  });
+
   it("treats an empty ack for inflight entries as a protocol error", () => {
     let state = createInitialSyncState("doc_1", "root_1", 3);
     state = enqueueChange(state, {

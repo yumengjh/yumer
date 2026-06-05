@@ -343,6 +343,10 @@ export function resolveBatchSuccess(
       delete nextEntries[clientId];
       continue;
     }
+    if (currentEntry.opType === "delete" && result.operation === "delete") {
+      delete nextEntries[clientId];
+      continue;
+    }
 
     if (result.operation === "create" && result.blockId) {
       nextEntries[clientId] = withServerBlockId(

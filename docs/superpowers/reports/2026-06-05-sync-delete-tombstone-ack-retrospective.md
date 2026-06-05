@@ -81,3 +81,24 @@ pnpm vitest run src/services/sync/__tests__/reducer.test.ts src/services/sync/__
 1. update/move 失败路径是否都能回显足够身份信息；
 2. batch operation 是否需要显式 `clientOpId`，减少依赖结果下标；
 3. 调试面板把 `clientId/syncCreateId/matchBy/diagnosticCode/tombstoned` 放在同一行展示，方便定位类似队列残留问题。
+
+## 补充：全选删除后的重复请求
+
+后续前端实测发现，全选删除多个已有块后，控制台会持续发送同一组 delete 请求。
+
+这次不是后端 tombstone 未生效，而是前端 reducer 的 revision 保护过于保守：
+
+1. 一组 delete entry 被标记为 inflight；
+2. 编辑器空文档状态或快照推进又派生了一次相同 delete；
+3. entry revision 被刷新；
+4. 第一次 delete ACK 回来时，reducer 看到当前 revision 不等于 inflight revision，于是保留 entry；
+5. autosync 继续发送同一组 delete。
+
+原本 revision 检查是为了保护“flush 中用户又编辑了同一块”的情况，这对 update/create 是必要的；但 delete 是终态操作，如果当前 entry 仍然是同一个 delete，成功 ACK 应该清掉，而不是当作新变更保留。
+
+修复策略：
+
+- 当当前 entry 仍为 `delete`，服务端 ACK 也是成功或幂等成功的 `delete` 时，即使 revision 已变化，也清除该 entry。
+- 新增 reducer 回归测试覆盖 “same delete re-enqueued while inflight”。
+
+这补上了全选删除、批量删除、大文档弱网删除场景中最容易触发的重复请求入口。
