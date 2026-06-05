@@ -80,4 +80,15 @@ describe("useDocumentSync source guards", () => {
     expect(checkpointIndex).toBeGreaterThan(barrierIndex);
     expect(commitIndex).toBeGreaterThan(checkpointIndex);
   });
+
+  it("falls back to draft checkpoint after repeated batch failures", () => {
+    const hookSource = fs.readFileSync(
+      path.resolve(process.cwd(), "src/hooks/useDocumentSync.ts"),
+      "utf8",
+    );
+
+    expect(hookSource).toContain("batchFailureCountRef");
+    expect(hookSource).toContain("MAX_BATCH_FAILURES_BEFORE_CHECKPOINT");
+    expect(hookSource).toContain("await runDraftCheckpoint(latestContentRef.current)");
+  });
 });
