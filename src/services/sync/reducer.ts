@@ -205,7 +205,14 @@ function getAckedClientId(
 ): string | null {
   if (result.clientId) return result.clientId;
 
-  if (byIndex && (!result.blockId || byIndex.blockId === result.blockId)) {
+  if (
+    byIndex &&
+    (!result.blockId ||
+      byIndex.blockId === result.blockId ||
+      (byIndex.opType === "delete" &&
+        result.operation === "delete" &&
+        (result.tombstoned || result.matchBy === "not_found")))
+  ) {
     return byIndex.clientId;
   }
 

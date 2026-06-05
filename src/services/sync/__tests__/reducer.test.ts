@@ -486,6 +486,37 @@ describe("sync reducer", () => {
     expect(state.syncState).toBe("idle");
   });
 
+  it("clears a client-identity delete when the server stores a tombstone ack", () => {
+    let state = createInitialSyncState("doc_1", "root_1", 3);
+    state = enqueueChange(state, {
+      clientId: "client_deleted_before_create_ack",
+      blockId: null,
+      opType: "delete",
+      syncCreateId: "sync-create:client_deleted_before_create_ack",
+    });
+    state = markBatchInflight(
+      state,
+      "batch_delete_tombstone",
+      ["client_deleted_before_create_ack"],
+      false,
+    );
+
+    state = resolveBatchSuccess(state, "batch_delete_tombstone", [
+      {
+        operation: "delete",
+        success: true,
+        blockId: "client_deleted_before_create_ack",
+        matchBy: "not_found",
+        diagnosticCode: "DELETE_TARGET_NOT_FOUND_BY_CLIENT_IDENTITY",
+        tombstoned: true,
+      },
+    ]);
+
+    expect(state.entries.client_deleted_before_create_ack).toBeUndefined();
+    expect(state.dirtyOrder).toEqual([]);
+    expect(state.syncState).toBe("idle");
+  });
+
   it("normalizes create payload attrs after create+update merge", () => {
     let state = createInitialSyncState("doc_1", "root_1", 3);
     state = enqueueChange(state, {
