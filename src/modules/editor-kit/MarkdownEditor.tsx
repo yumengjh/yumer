@@ -58,6 +58,10 @@ import {
   patchEditorBlockIdentityFromMatchingDoc,
   patchEditorDocumentIdentity,
 } from "./editorIdentity";
+import {
+  BLOCK_IDENTITY_NODE_TYPES,
+  readIdentityFromAttrs,
+} from "./utils/identity";
 import { stripUnsupportedSyncAttrs } from "./editorContentNormalization";
 import { resolveEditorScrollContainer, resolveEditorViewportTop } from "./scrollContainer";
 import type { EditorContent as EditorContentType, EditorImageUploadHandler, TiptapDoc } from "./types";
@@ -253,6 +257,46 @@ function scrollElementIntoEditorView(element: HTMLElement): void {
   window.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
 }
 
+const IDENTITY_NODE_TYPES = new Set<string>(BLOCK_IDENTITY_NODE_TYPES);
+const CHANGE_EMIT_DELAY_MS = 80;
+
+function jsonContainsIdentityNode(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  if (Array.isArray(value)) {
+    return value.some(jsonContainsIdentityNode);
+  }
+
+  const node = value as Record<string, unknown>;
+  if (typeof node.type === "string" && IDENTITY_NODE_TYPES.has(node.type)) {
+    return true;
+  }
+  return jsonContainsIdentityNode(node.content);
+}
+
+function selectionNeedsIdentityPatch(editor: Editor): boolean {
+  const { $from } = editor.state.selection;
+  for (let depth = $from.depth; depth >= 1; depth -= 1) {
+    const node = $from.node(depth);
+    if (!IDENTITY_NODE_TYPES.has(node.type.name)) continue;
+    const identity = readIdentityFromAttrs(node.attrs);
+    if (!identity.clientId) return true;
+  }
+  return false;
+}
+
+function transactionMayNeedIdentityPatch(
+  editor: Editor,
+  transaction: import("@tiptap/pm/state").Transaction,
+): boolean {
+  if (!transaction.docChanged) return false;
+  if (selectionNeedsIdentityPatch(editor)) return true;
+  if (transaction.before.childCount !== editor.state.doc.childCount) return true;
+  return transaction.steps.some((step) => {
+    const json = step.toJSON() as Record<string, unknown>;
+    return jsonContainsIdentityNode(json.slice);
+  });
+}
+
 const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(function MarkdownEditor({
   content = "",
   onChange,
@@ -285,6 +329,12 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
   const wrapperRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const titleSavedRef = useRef(title);
+  const lastEmittedContentRef = useRef<EditorContentType | null>(null);
+  const emittedContentRefs = useRef<WeakSet<object>>(new WeakSet());
+  const onChangeRef = useRef(onChange);
+  const pendingChangeEditorRef = useRef<Editor | null>(null);
+  const changeEmitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingIdentityPatchRef = useRef(false);
   const floatingToolbarItemSet = useMemo(
     () => new Set(floatingToolbarItemIds),
     [floatingToolbarItemIds],
@@ -303,6 +353,51 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
       onTitleChange?.(next);
     }
   }, [onTitleChange]);
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
+  const flushPendingChange = useCallback(() => {
+    if (changeEmitTimerRef.current) {
+      clearTimeout(changeEmitTimerRef.current);
+      changeEmitTimerRef.current = null;
+    }
+
+    const ed = pendingChangeEditorRef.current;
+    pendingChangeEditorRef.current = null;
+    if (!ed) return;
+
+    if (pendingIdentityPatchRef.current) {
+      pendingIdentityPatchRef.current = false;
+      patchEditorDocumentIdentity(ed);
+    }
+
+    const emitChange = onChangeRef.current;
+    if (!emitChange) return;
+
+    const nextContent = ed.getJSON() as EditorContentType;
+    lastEmittedContentRef.current = nextContent;
+    if (nextContent && typeof nextContent === "object") {
+      emittedContentRefs.current.add(nextContent);
+    }
+    emitChange(nextContent);
+  }, []);
+
+  const schedulePendingChange = useCallback((ed: Editor) => {
+    pendingChangeEditorRef.current = ed;
+    if (changeEmitTimerRef.current) return;
+    changeEmitTimerRef.current = setTimeout(flushPendingChange, CHANGE_EMIT_DELAY_MS);
+  }, [flushPendingChange]);
+
+  useEffect(() => {
+    return () => {
+      if (changeEmitTimerRef.current) {
+        clearTimeout(changeEmitTimerRef.current);
+        changeEmitTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // 主题检测
   useEffect(() => {
@@ -373,12 +468,14 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
       editor: import("@tiptap/core").Editor;
       transaction: import("@tiptap/pm/state").Transaction;
     }) => {
-      if (!onChange || transaction.getMeta(BLOCK_IDENTITY_PATCH_META)) return;
+      if (!onChangeRef.current || transaction.getMeta(BLOCK_IDENTITY_PATCH_META)) return;
 
-      patchEditorDocumentIdentity(ed);
-      onChange(ed.getJSON() as EditorContentType);
+      if (transactionMayNeedIdentityPatch(ed as Editor, transaction)) {
+        pendingIdentityPatchRef.current = true;
+      }
+      schedulePendingChange(ed as Editor);
     },
-    [onChange],
+    [schedulePendingChange],
   );
 
   const handleUploadImageFile = useCallback(
@@ -545,6 +642,8 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
   // 同步外部 content 变化
   useEffect(() => {
     if (!editor || !editor.schema) return;
+    if (content === lastEmittedContentRef.current) return;
+    if (content && typeof content === "object" && emittedContentRefs.current.has(content)) return;
 
     if (typeof content === "string") {
       // HTML 字符串模式（旧文档回退）

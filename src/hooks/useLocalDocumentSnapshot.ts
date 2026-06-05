@@ -62,6 +62,7 @@ export function useLocalDocumentSnapshot({
   const [state, setState] = useState<LocalSnapshotState>(EMPTY_STATE);
   const docIdRef = useRef<string | null>(null);
   const lastObservedHashRef = useRef<string | null>(null);
+  const lastObservedContentRef = useRef<TiptapDoc | null>(null);
   const latestSnapshotWriteKeyRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
   const suppressNextCaptureRef = useRef(false);
@@ -124,9 +125,12 @@ export function useLocalDocumentSnapshot({
 
   const scheduleSnapshotWrite = useCallback(
     (nextDocId: string, nextContent: TiptapDoc) => {
-      const snapshot = buildLocalDocSnapshot(nextDocId, nextContent);
-      latestSnapshotWriteKeyRef.current = snapshotWriteKey(snapshot);
-      snapshotWriter.schedule(snapshot);
+      snapshotWriter.schedule(() => {
+        const snapshot = buildLocalDocSnapshot(nextDocId, nextContent);
+        latestSnapshotWriteKeyRef.current = snapshotWriteKey(snapshot);
+        lastObservedHashRef.current = snapshot.hash;
+        return snapshot;
+      });
     },
     [snapshotWriter],
   );
@@ -147,12 +151,12 @@ export function useLocalDocumentSnapshot({
       snapshotWriter.cancel();
       docIdRef.current = null;
       lastObservedHashRef.current = null;
+      lastObservedContentRef.current = null;
       latestSnapshotWriteKeyRef.current = null;
       setState(EMPTY_STATE);
       return;
     }
 
-    const currentHash = hashEditorDoc(content);
     const isNewDoc = docIdRef.current !== docId;
     if (isNewDoc && docIdRef.current) {
       snapshotWriter.cancel();
@@ -161,8 +165,10 @@ export function useLocalDocumentSnapshot({
     docIdRef.current = docId;
 
     if (isNewDoc) {
+      const currentHash = hashEditorDoc(content);
       // New document load: read existing snapshot metadata only; do not write or compare.
       lastObservedHashRef.current = currentHash;
+      lastObservedContentRef.current = content;
       setState((current) => ({
         ...current,
         status: "idle",
@@ -215,15 +221,16 @@ export function useLocalDocumentSnapshot({
       };
     }
 
-    // \u5185\u5bb9\u54c8\u5e0c\u672a\u53d8\u5316\uff0c\u8df3\u8fc7
-    if (lastObservedHashRef.current === currentHash) {
+    if (lastObservedContentRef.current === content) {
       return;
     }
+    lastObservedContentRef.current = content;
 
     const suppressCapture = suppressNextCaptureRef.current;
     suppressNextCaptureRef.current = false;
 
     if (suppressCapture) {
+      const currentHash = hashEditorDoc(content);
       lastObservedHashRef.current = currentHash;
       setState((current) => ({
         ...current,
@@ -234,25 +241,29 @@ export function useLocalDocumentSnapshot({
     }
 
     // \u52a0\u8f7d/\u5237\u65b0\u540e\u4ec5 compare 不写\u5165\uff1b\u8fdb\u5165\u8fd9\u4e2a\u5206\u652f\u8bf4\u660e\u5df2\u7ecf\u662f\u771f\u5b9e\u7528\u6237\u7f16\u8f91\uff0c\u7b2c\u4e00\u7b14\u4e5f\u8981\u81ea\u52a8\u6355\u83b7
-    lastObservedHashRef.current = currentHash;
-
     if (shouldCaptureLocalSnapshotChange({ autoSave, hasUnsavedChanges, suppressCapture: false })) {
-      setSafeState((current) => ({
-        ...current,
-        status: "saving",
-        currentHash,
-        error: null,
-      }));
+      setSafeState((current) =>
+        current.status === "saving" && current.error === null
+          ? current
+          : {
+              ...current,
+              status: "saving",
+              error: null,
+            },
+      );
       scheduleSnapshotWrite(docId, content);
       return;
     }
 
-    setSafeState((current) => ({
-      ...current,
-      status: current.status === "saving" ? "saving" : "idle",
-      currentHash,
-      error: null,
-    }));
+    setSafeState((current) => {
+      const nextStatus = current.status === "saving" ? "saving" : "idle";
+      if (current.status === nextStatus && current.error === null) return current;
+      return {
+        ...current,
+        status: nextStatus,
+        error: null,
+      };
+    });
   }, [content, docId, enabled, autoSave, hasUnsavedChanges, scheduleSnapshotWrite, setSafeState, snapshotWriter, store]);
 
   const refreshSnapshot = useCallback(async () => {

@@ -234,6 +234,7 @@ const updatePosition = useCallback((block: HTMLElement) => {
       const editorDom = editor.view.dom;
       const currentBlock = hoveredBlockRef.current;
       const currentAnchor = hoveredAnchorRef.current;
+      if (!currentBlock && !currentAnchor) return;
 
       if (
         (currentBlock && !editorDom.contains(currentBlock)) ||

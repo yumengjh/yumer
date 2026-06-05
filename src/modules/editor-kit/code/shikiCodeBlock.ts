@@ -1,6 +1,6 @@
 import CodeBlock from "@tiptap/extension-code-block";
 import { ReactNodeViewRenderer } from "@tiptap/react";
-import { Plugin, PluginKey } from "prosemirror-state";
+import { Plugin, PluginKey, type EditorState, type Transaction } from "prosemirror-state";
 import type { Node as ProseMirrorNode } from "prosemirror-model";
 import { Decoration, DecorationSet } from "prosemirror-view";
 import type { TokenStyles } from "shiki";
@@ -54,6 +54,39 @@ const tokenStylesToCssText = (token: TokenStyles): string => {
   styles.push(...fontStyleToCss(token.fontStyle));
   return styles.join("; ");
 };
+
+function rangeHasCodeBlock(state: EditorState, from: number, to: number): boolean {
+  let found = false;
+  const safeFrom = Math.max(0, Math.min(from, state.doc.content.size));
+  const safeTo = Math.max(safeFrom, Math.min(to, state.doc.content.size));
+  state.doc.nodesBetween(safeFrom, safeTo, (node) => {
+    if (node.type.name === "codeBlock") {
+      found = true;
+      return false;
+    }
+    return !found;
+  });
+  return found;
+}
+
+function transactionTouchesCodeBlock(
+  tr: Transaction,
+  oldState: EditorState,
+  newState: EditorState,
+): boolean {
+  if (!tr.docChanged) return false;
+  let touched = false;
+  tr.mapping.maps.forEach((map) => {
+    if (touched) return;
+    map.forEach((oldStart, oldEnd, newStart, newEnd) => {
+      if (touched) return;
+      touched =
+        rangeHasCodeBlock(oldState, oldStart, oldEnd) ||
+        rangeHasCodeBlock(newState, newStart, newEnd);
+    });
+  });
+  return touched;
+}
 
 const buildDecorations = (
   doc: ProseMirrorNode,
@@ -163,6 +196,9 @@ export const createShikiCodeBlockExtension = ({
             apply: (tr, old, _oldState, newState) => {
               const force = Boolean(tr.getMeta(SHIKI_CODE_BLOCK_PLUGIN_KEY));
               if (!tr.docChanged && !force) {
+                return old.map(tr.mapping, tr.doc);
+              }
+              if (!force && !transactionTouchesCodeBlock(tr, _oldState, newState)) {
                 return old.map(tr.mapping, tr.doc);
               }
               return buildDecorations(newState.doc, highlighter, getThemeMode, defaultLanguage);

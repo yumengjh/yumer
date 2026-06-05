@@ -5,6 +5,7 @@ import { useMarkdownEditor } from "../EditorContext";
 import { App } from "antd";
 import {
   getToolbarState,
+  getToolbarStateSignature,
   isToolbarItemActive,
   runInlineMarkCommand,
 } from "./toolbarState";
@@ -14,13 +15,18 @@ export function useToolbarActions() {
   const editor = useMarkdownEditor();
   const tiptap = editor as Editor | null;
   const savedSelectionRef = useRef<Selection | null>(null);
+  const toolbarStateSignatureRef = useRef(getToolbarStateSignature(getToolbarState(tiptap)));
 
   const [, forceUpdate] = useState(0);
 
   useEffect(() => {
     if (!tiptap) return;
+    toolbarStateSignatureRef.current = getToolbarStateSignature(getToolbarState(tiptap));
 
     const rerender = () => {
+      const nextSignature = getToolbarStateSignature(getToolbarState(tiptap));
+      if (nextSignature === toolbarStateSignatureRef.current) return;
+      toolbarStateSignatureRef.current = nextSignature;
       forceUpdate((v) => v + 1);
     };
 

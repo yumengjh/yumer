@@ -41,7 +41,7 @@ export interface LocalSnapshotStore {
 }
 
 export interface DebouncedLocalSnapshotWriter {
-  schedule(snapshot: LocalDocSnapshot): void;
+  schedule(snapshot: LocalDocSnapshot | (() => LocalDocSnapshot)): void;
   flush(): Promise<void>;
   cancel(): void;
 }
@@ -268,7 +268,7 @@ export function createDebouncedLocalSnapshotWriter(
   delayMs = 800,
 ): DebouncedLocalSnapshotWriter {
   let timer: ReturnType<typeof setTimeout> | null = null;
-  let pendingSnapshot: LocalDocSnapshot | null = null;
+  let pendingSnapshot: LocalDocSnapshot | (() => LocalDocSnapshot) | null = null;
   let writeChain = Promise.resolve();
 
   const enqueueWrite = (snapshot: LocalDocSnapshot) => {
@@ -280,14 +280,18 @@ export function createDebouncedLocalSnapshotWriter(
 
   const flushPending = () => {
     if (!pendingSnapshot) return;
-    const snapshot = pendingSnapshot;
+    const pending = pendingSnapshot;
     pendingSnapshot = null;
+    const snapshot = typeof pending === "function" ? pending() : pending;
     void enqueueWrite(snapshot);
   };
 
   return {
-    schedule(snapshot: LocalDocSnapshot) {
-      pendingSnapshot = cloneSnapshot(snapshot);
+    schedule(snapshot: LocalDocSnapshot | (() => LocalDocSnapshot)) {
+      pendingSnapshot =
+        typeof snapshot === "function"
+          ? snapshot
+          : cloneSnapshot(snapshot);
       if (timer) {
         clearTimeout(timer);
       }

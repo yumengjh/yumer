@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect, useRef, type CSSProperties } from "react";
+import { startTransition, useState, useMemo, useCallback, useEffect, useRef, type CSSProperties } from "react";
 import { App } from "antd";
 import { usePathname, useRouter } from "next/navigation";
 import TurndownService from "turndown";
@@ -433,6 +433,8 @@ function EditorContent() {
   const forceRememberPositionRef = useRef(false);
   const [queuedLastEditPosition, setQueuedLastEditPosition] = useState<LastEditPosition | null>(null);
   const [rememberingPosition, setRememberingPosition] = useState(false);
+  const queuedEditBlockIdRef = useRef<string | null>(null);
+  const queuedEditAtRef = useRef(0);
   const tiptapContent = typeof content === "object" && content?.type === "doc"
     ? (content as TiptapDoc)
     : null;
@@ -460,7 +462,7 @@ function EditorContent() {
           editorRef.current?.patchBlockIdentityFromDoc(merged);
           contentRef.current = merged;
           setContent(merged);
-          if (currentDoc) {
+          if (currentDoc && SyncTraceLog.isEnabled()) {
             SyncTraceLog.add(
               "editor:ack-merged",
               currentDoc.docId,
@@ -522,6 +524,8 @@ function EditorContent() {
     lastPersistedEditBlockIdRef.current = lastEditPosition?.blockId ?? null;
     lastEditPersistInflightRef.current = false;
     forceRememberPositionRef.current = false;
+    queuedEditBlockIdRef.current = null;
+    queuedEditAtRef.current = 0;
     setQueuedLastEditPosition(null);
   }, [currentDoc?.docId, lastEditPosition?.blockId]);
 
@@ -690,14 +694,21 @@ function EditorContent() {
       return;
     }
 
-    try {
-      writeLocalSnapshotRecoveryBackup(
-        buildLocalDocSnapshot(currentDoc.docId, tiptapContent),
-        recoveryReason,
-      );
-    } catch {
-      // Ignore local recovery backup quota/storage failures; normal autosync remains authoritative.
-    }
+    const docId = currentDoc.docId;
+    const timer = window.setTimeout(() => {
+      const latestEditorContent = editorRef.current?.getJSON() as TiptapDoc | undefined;
+      const backupContent = latestEditorContent?.type === "doc" ? latestEditorContent : tiptapContent;
+      try {
+        writeLocalSnapshotRecoveryBackup(
+          buildLocalDocSnapshot(docId, backupContent),
+          recoveryReason,
+        );
+      } catch {
+        // Ignore local recovery backup quota/storage failures; normal autosync remains authoritative.
+      }
+    }, 1200);
+
+    return () => window.clearTimeout(timer);
   }, [currentDoc, syncEngineEnabled, syncUiSaveStatus, tiptapContent]);
 
   useEffect(() => {
@@ -825,29 +836,52 @@ function EditorContent() {
         : editorRef.current?.getSelectionBlockPosition();
     if (!position) return false;
 
+    const now = Date.now();
+    if (
+      !force &&
+      queuedEditBlockIdRef.current === position.blockId &&
+      now - queuedEditAtRef.current < 2000
+    ) {
+      return true;
+    }
+
     forceRememberPositionRef.current = force;
+    queuedEditBlockIdRef.current = position.blockId;
+    queuedEditAtRef.current = now;
     setQueuedLastEditPosition({
       ...position,
-      updatedAt: new Date().toISOString(),
+      updatedAt: new Date(now).toISOString(),
     });
     return true;
   }, []);
 
   const handleEditorChange = useCallback((nextContent: EditorContent) => {
-    setContent(nextContent);
-    setContentDirty(true);
+    contentRef.current = nextContent;
+    startTransition(() => {
+      setContent(nextContent);
+    });
+    if (!contentDirty) {
+      setContentDirty(true);
+    }
     if (loadingDoc) return;
     if (currentDoc) {
-      setHasUnsavedChanges(true);
-      setSaveStatus("dirty");
+      if (!hasUnsavedChanges) {
+        setHasUnsavedChanges(true);
+      }
+      if (saveStatus !== "dirty") {
+        setSaveStatus("dirty");
+      }
       if (syncPreferences.autoRememberEditPosition) {
         void queueEditorPosition("selection", false);
       }
     }
   }, [
     currentDoc,
+    contentDirty,
+    hasUnsavedChanges,
     loadingDoc,
     queueEditorPosition,
+    saveStatus,
     setHasUnsavedChanges,
     setSaveStatus,
     syncPreferences.autoRememberEditPosition,
@@ -1163,14 +1197,14 @@ function EditorContent() {
     [pathname, router, setWorkspace],
   );
 
-  const previewHtml = useMemo(() => contentToHtml(content), [content]);
-  const markdown = useMemo(() => htmlToMarkdown(previewHtml), [previewHtml]);
-  const jsonContent = useMemo(() => {
-    if (activeTab !== "json") return "";
-    if (typeof content === "object") return JSON.stringify(content, null, 2);
-    return "{}";
-  }, [activeTab, content]);
-  const outputContent = activeTab === "html" ? previewHtml : activeTab === "json" ? jsonContent : markdown;
+  const outputContent = useMemo(() => {
+    if (!outputModalOpen) return "";
+    if (activeTab === "json") {
+      return typeof content === "object" ? JSON.stringify(content, null, 2) : "{}";
+    }
+    const previewHtml = contentToHtml(content);
+    return activeTab === "html" ? previewHtml : htmlToMarkdown(previewHtml);
+  }, [activeTab, content, outputModalOpen]);
   const copyLabel = activeTab === "html" ? "复制 HTML" : activeTab === "json" ? "复制 JSON" : "复制 Markdown";
 
   const setupOpen = shouldShowSetupModal({

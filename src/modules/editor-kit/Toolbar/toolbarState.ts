@@ -291,6 +291,31 @@ export function isToolbarItemActive(state: ToolbarState, id: string): boolean {
   }
 }
 
+export function getToolbarStateSignature(state: ToolbarState): string {
+  return [
+    state.headingLevel,
+    state.textAlign,
+    state.fontSize,
+    state.lineHeight,
+    state.orderedListType,
+    state.codeLanguage,
+    Number(state.marks.bold),
+    Number(state.marks.italic),
+    Number(state.marks.strike),
+    Number(state.marks.underline),
+    Number(state.marks.code),
+    Number(state.marks.link),
+    Number(state.marks.highlight),
+    Number(state.nodes.bulletList),
+    Number(state.nodes.orderedList),
+    Number(state.nodes.taskList),
+    Number(state.nodes.blockquote),
+    Number(state.nodes.codeBlock),
+    Number(state.nodes.horizontalRule),
+    Number(state.nodes.highlightBlock),
+  ].join("|");
+}
+
 export function runInlineMarkCommand(
   editor: Editor | null,
   markName: "bold" | "italic" | "strike" | "underline" | "code",

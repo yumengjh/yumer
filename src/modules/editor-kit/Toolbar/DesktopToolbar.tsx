@@ -62,6 +62,7 @@ import {
 } from "../code/editorCleanup";
 import {
   getToolbarState,
+  getToolbarStateSignature,
   isToolbarItemActive,
   runInlineMarkCommand,
 } from "./toolbarState";
@@ -103,6 +104,7 @@ export default function DesktopToolbar({
   const editorReady = Boolean(tiptap);
   const [, forceUpdate] = useState(0);
   const savedSelectionRef = useRef<Selection | null>(null);
+  const toolbarStateSignatureRef = useRef(getToolbarStateSignature(toolbarState));
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [tooltipOpen, setTooltipOpen] = useState<Record<string, boolean>>({});
   const [copiedMarks, setCopiedMarks] = useState<Array<{ type: string; attrs?: Record<string, any> }>>([]);
@@ -116,8 +118,12 @@ export default function DesktopToolbar({
 
   useEffect(() => {
     if (!tiptap) return;
+    toolbarStateSignatureRef.current = getToolbarStateSignature(getToolbarState(tiptap, { defaultFontSize }));
 
     const rerender = () => {
+      const nextSignature = getToolbarStateSignature(getToolbarState(tiptap, { defaultFontSize }));
+      if (nextSignature === toolbarStateSignatureRef.current) return;
+      toolbarStateSignatureRef.current = nextSignature;
       forceUpdate((v) => v + 1);
     };
 
@@ -128,7 +134,7 @@ export default function DesktopToolbar({
       tiptap.off("transaction", rerender);
       tiptap.off("selectionUpdate", rerender);
     };
-  }, [tiptap]);
+  }, [defaultFontSize, tiptap]);
 
   const openLinkPopup = () => {
     if (!tiptap) return;

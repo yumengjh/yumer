@@ -18,7 +18,7 @@ import {
 } from "@/services/sync/reducer";
 import { advanceSyncSnapshot } from "@/services/sync/snapshot";
 import { createSortKeysBetween } from "@/services/sync/order";
-import { SyncTraceLog, buildManifestSummary } from "@/services/sync/debug-log";
+import { SyncTraceLog, buildManifestSummary, type SyncTraceEvent } from "@/services/sync/debug-log";
 import type { SyncEntry, SyncReducerState } from "@/services/sync/types";
 
 type SyncSource = "autosync" | "manual-save";
@@ -40,6 +40,17 @@ function createBatchId(): string {
 function logSyncEvent(event: string, details: Record<string, unknown>) {
   if (process.env.NODE_ENV === "production") return;
   console.debug(`[sync] ${event}`, details);
+}
+
+function addSyncTrace(
+  event: SyncTraceEvent,
+  docId: string,
+  sessionId: string | null,
+  sessionEpoch: number | null,
+  createPayload: () => Record<string, unknown>,
+) {
+  if (!SyncTraceLog.isEnabled()) return;
+  SyncTraceLog.add(event, docId, sessionId, sessionEpoch, createPayload());
 }
 
 function readClientId(node: TiptapDoc["content"][number]): string | null {
@@ -206,13 +217,13 @@ export function useDocumentSync({
       }
 
       // Trace: snapshot advance
-      SyncTraceLog.add("snapshot:advance", current.docId, current.sessionId, current.sessionEpoch, {
+      addSyncTrace("snapshot:advance", current.docId, current.sessionId, current.sessionEpoch, () => ({
         prevNodeCount: prevSnapshot?.content?.length ?? 0,
         nextNodeCount: nextContent.content?.length ?? 0,
         nextManifest: buildManifestSummary(nextContent),
         derivedEntryCount: Object.keys(advanced.state.entries).length,
         dirtyOrderLength: advanced.state.dirtyOrder.length,
-      });
+      }));
 
       return advanced.state;
     },
@@ -283,11 +294,11 @@ export function useDocumentSync({
       if (!initial) return;
       if (initial.inflightBatchId) return;
       if (initial.dirtyOrder.length === 0) {
-        SyncTraceLog.add("idle:manifest", initial.docId, initial.sessionId, initial.sessionEpoch, {
+        addSyncTrace("idle:manifest", initial.docId, initial.sessionId, initial.sessionEpoch, () => ({
           manifest: buildManifestSummary(snapshotRef.current),
           dirtyOrderLength: 0,
           entryCount: Object.keys(initial.entries).length,
-        });
+        }));
         return;
       }
 
@@ -298,11 +309,11 @@ export function useDocumentSync({
           if (!current) return;
           if (current.inflightBatchId) return;
           if (current.dirtyOrder.length === 0) {
-            SyncTraceLog.add("idle:manifest", current.docId, current.sessionId, current.sessionEpoch, {
+            addSyncTrace("idle:manifest", current.docId, current.sessionId, current.sessionEpoch, () => ({
               manifest: buildManifestSummary(snapshotRef.current),
               dirtyOrderLength: 0,
               entryCount: Object.keys(current.entries).length,
-            });
+            }));
             return;
           }
 
@@ -314,7 +325,7 @@ export function useDocumentSync({
             replaceSyncState(rebased);
           }
 
-          SyncTraceLog.add("queue:before-select", rebased.docId, rebased.sessionId, rebased.sessionEpoch, {
+          addSyncTrace("queue:before-select", rebased.docId, rebased.sessionId, rebased.sessionEpoch, () => ({
             dirtyOrderLength: rebased.dirtyOrder.length,
             entryCount: Object.keys(rebased.entries).length,
             dirtyOrder: rebased.dirtyOrder.slice(0, 50),
@@ -326,7 +337,7 @@ export function useDocumentSync({
               revision: e.revision,
               sortKey: e.sortKey ?? null,
             })),
-          });
+          }));
 
           const operations = selectSyncBatchOperations(
             rebased.dirtyOrder,
@@ -352,7 +363,7 @@ export function useDocumentSync({
             moveCount: operations.filter((op) => op.opType === "move").length,
           });
 
-          SyncTraceLog.add("flush:dispatch", rebased.docId, rebased.sessionId, rebased.sessionEpoch, {
+          addSyncTrace("flush:dispatch", rebased.docId, rebased.sessionId, rebased.sessionEpoch, () => ({
             clientBatchId,
             baseVersion: rebased.baseVersion,
             draftRevision: rebased.draftRevision,
@@ -365,7 +376,7 @@ export function useDocumentSync({
               revision: op.revision,
               sortKey: op.sortKey ?? null,
             })),
-          });
+          }));
           replaceSyncState(
             markBatchInflight(
               rebased,
@@ -396,7 +407,7 @@ export function useDocumentSync({
               resultCount: response.results.length,
             });
 
-            SyncTraceLog.add("flush:response", rebased.docId, rebased.sessionId, rebased.sessionEpoch, {
+            addSyncTrace("flush:response", rebased.docId, rebased.sessionId, rebased.sessionEpoch, () => ({
               clientBatchId,
               acceptedBatchId: response.acceptedBatchId,
               serverHead: response.serverHead,
@@ -416,7 +427,7 @@ export function useDocumentSync({
                 diagnosticCode: r.diagnosticCode ?? null,
                 tombstoned: r.tombstoned ?? false,
               })),
-            });
+            }));
             const batchFailure = summarizeSyncBatchFailures(response.results);
 
             if (response.needsReload) {
@@ -489,18 +500,18 @@ export function useDocumentSync({
               createMappings,
             );
             if (orphanedCreateDeletes.length > 0) {
-              SyncTraceLog.add(
+              addSyncTrace(
                 "orphaned-create:delete-enqueued",
                 rebased.docId,
                 rebased.sessionId,
                 rebased.sessionEpoch,
-                {
+                () => ({
                   deletes: orphanedCreateDeletes.map((entry) => ({
                     clientId: entry.clientId,
                     blockId: entry.blockId,
                     syncCreateId: entry.syncCreateId ?? null,
                   })),
-                },
+                }),
               );
               updateSyncState((prev) => {
                 if (!prev) return prev;
@@ -511,14 +522,13 @@ export function useDocumentSync({
               });
             }
             if (currentSnapshot && serverAckMappings.length > 0) {
-              const beforeManifest = buildManifestSummary(currentSnapshot);
               const patched = applyServerAck(currentSnapshot, serverAckMappings);
-              SyncTraceLog.add("ack:patch", rebased.docId, rebased.sessionId, rebased.sessionEpoch, {
+              addSyncTrace("ack:patch", rebased.docId, rebased.sessionId, rebased.sessionEpoch, () => ({
                 clientBatchId,
                 mappings: serverAckMappings,
-                beforeManifest,
+                beforeManifest: buildManifestSummary(currentSnapshot),
                 afterManifest: buildManifestSummary(patched),
-              });
+              }));
               snapshotRef.current = patched;
               if (onContentPatched && patched !== currentSnapshot) {
                 try {
