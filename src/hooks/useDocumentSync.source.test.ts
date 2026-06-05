@@ -46,4 +46,24 @@ describe("useDocumentSync source guards", () => {
     expect(operationDeleteAt).toBeGreaterThan(serverAckMappingsAt);
     expect(operationDeleteAt).toBeLessThan(applyServerAckAt);
   });
+
+  it("deduplicates idle manifest reconciliation requests", () => {
+    const hookSource = fs.readFileSync(
+      path.resolve(process.cwd(), "src/hooks/useDocumentSync.ts"),
+      "utf8",
+    );
+
+    const lastKeyRefAt = hookSource.indexOf("lastReconciledManifestKeyRef");
+    const manifestKeyAt = hookSource.indexOf("const manifestKey = buildReconcileKey");
+    const keyGuardAt = hookSource.indexOf(
+      "lastReconciledManifestKeyRef.current === manifestKey",
+      manifestKeyAt,
+    );
+    const postReconcileAt = hookSource.indexOf("postSyncManifestReconcile", manifestKeyAt);
+
+    expect(lastKeyRefAt).toBeGreaterThanOrEqual(0);
+    expect(manifestKeyAt).toBeGreaterThan(lastKeyRefAt);
+    expect(keyGuardAt).toBeGreaterThan(manifestKeyAt);
+    expect(keyGuardAt).toBeLessThan(postReconcileAt);
+  });
 });

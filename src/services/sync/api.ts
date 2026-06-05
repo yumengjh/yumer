@@ -24,6 +24,26 @@ export interface DocumentSyncState {
   updatedAt: string;
 }
 
+export interface SyncManifestIdentity {
+  blockId?: string | null;
+  clientId?: string | null;
+  syncCreateId?: string | null;
+}
+
+export interface SyncManifestReconcileResponse {
+  docId: string;
+  checkedAt: number;
+  draftRevision: number;
+  needsReload: boolean;
+  conflicts: Array<{ code: string; message: string }>;
+  tombstoned: Array<{
+    blockId: string;
+    version: number;
+    clientId: string | null;
+    syncCreateId: string | null;
+  }>;
+}
+
 type SyncSource = "autosync" | "manual-save";
 
 type BatchCreateBody = {
@@ -249,4 +269,25 @@ export async function postSyncBatch(input: {
 
 export async function getDocumentSyncState(docId: string): Promise<DocumentSyncState> {
   return apiGet<DocumentSyncState>(`/documents/${docId}/sync-state`);
+}
+
+export async function postSyncManifestReconcile(input: {
+  docId: string;
+  draftRevision: number;
+  clientBatchId: string;
+  sessionId?: string;
+  sessionEpoch?: number;
+  manifest: SyncManifestIdentity[];
+}): Promise<SyncManifestReconcileResponse> {
+  return apiPost<SyncManifestReconcileResponse>(`/documents/${input.docId}/sync-reconcile`, {
+    draftRevision: input.draftRevision,
+    clientBatchId: input.clientBatchId,
+    ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    ...(typeof input.sessionEpoch === "number" ? { sessionEpoch: input.sessionEpoch } : {}),
+    manifest: input.manifest.map((item) => ({
+      blockId: item.blockId ?? null,
+      clientId: item.clientId ?? null,
+      syncCreateId: item.syncCreateId ?? null,
+    })),
+  });
 }

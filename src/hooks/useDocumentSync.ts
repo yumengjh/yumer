@@ -1,7 +1,7 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { renewSyncSession, type SyncSessionMeta } from "@/services/document";
 import type { TiptapDoc } from "@/services/tiptap-converter";
-import { postSyncBatch } from "@/services/sync/api";
+import { postSyncBatch, postSyncManifestReconcile, type SyncManifestIdentity } from "@/services/sync/api";
 import { selectSyncBatchOperations } from "@/services/sync/batching";
 import { summarizeSyncBatchFailures } from "@/services/sync/batch-failure";
 import { applyServerAck } from "@/services/sync/engine";
@@ -37,6 +37,10 @@ function createBatchId(): string {
   return `batch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function createReconcileId(): string {
+  return `reconcile_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
 function logSyncEvent(event: string, details: Record<string, unknown>) {
   if (process.env.NODE_ENV === "production") return;
   console.debug(`[sync] ${event}`, details);
@@ -66,6 +70,42 @@ function readBlockId(node: TiptapDoc["content"][number]): string | null {
 function readSortKey(node: TiptapDoc["content"][number]): string | null {
   const value = node.attrs?.sortKey ?? node.attrs?.["data-sort-key"];
   return typeof value === "string" && value.trim() !== "" ? value : null;
+}
+
+function toReconcileManifest(doc: TiptapDoc | null): SyncManifestIdentity[] {
+  if (!doc?.content?.length) return [];
+  return doc.content.map((node) => ({
+    blockId: readBlockId(node),
+    clientId: readClientId(node),
+    syncCreateId:
+      typeof node.attrs?.syncCreateId === "string"
+        ? node.attrs.syncCreateId
+        : typeof node.attrs?.["data-sync-create-id"] === "string"
+          ? node.attrs["data-sync-create-id"]
+          : null,
+  }));
+}
+
+function buildReconcileKey(
+  state: SyncReducerState,
+  manifest: SyncManifestIdentity[],
+): string {
+  return JSON.stringify({
+    docId: state.docId,
+    baseVersion: state.baseVersion,
+    draftRevision: state.draftRevision,
+    sessionId: state.sessionId,
+    sessionEpoch: state.sessionEpoch,
+    manifest,
+  });
+}
+
+function isSyncSessionConflict(conflicts: Array<{ code: string }>): boolean {
+  return conflicts.some((conflict) =>
+    ["SYNC_SESSION_REQUIRED", "SYNC_SESSION_MISMATCH", "SYNC_SESSION_EXPIRED"].includes(
+      conflict.code,
+    ),
+  );
 }
 
 function readSyncEntryKeys(node: TiptapDoc["content"][number]): string[] {
@@ -177,6 +217,8 @@ export function useDocumentSync({
   const snapshotRef = useRef<TiptapDoc | null>(null);
   const latestContentRef = useRef<TiptapDoc | null>(content);
   const flushRunningRef = useRef(false);
+  const reconcileRunningRef = useRef(false);
+  const lastReconciledManifestKeyRef = useRef<string | null>(null);
   const autosyncPausedRef = useRef(false);
 
   const replaceSyncState = useCallback((next: SyncReducerState | null) => {
@@ -239,6 +281,7 @@ export function useDocumentSync({
       // eslint-disable-next-line react-hooks/set-state-in-effect -- sync state must reset when the document binding changes
       replaceSyncState(null);
       snapshotRef.current = null;
+      lastReconciledManifestKeyRef.current = null;
       return;
     }
 
@@ -252,6 +295,7 @@ export function useDocumentSync({
       ),
     );
     snapshotRef.current = latestContentRef.current;
+    lastReconciledManifestKeyRef.current = null;
   }, [baseVersion, docId, draftRevision, replaceSyncState, rootBlockId, syncSession]);
 
   useEffect(() => {
@@ -285,6 +329,88 @@ export function useDocumentSync({
     return () => window.clearInterval(timer);
   }, [docId, syncSession, updateSyncState]);
 
+  const reconcileIdleManifest = useCallback(
+    async (current: SyncReducerState) => {
+      if (!current.sessionId || typeof current.sessionEpoch !== "number") return;
+      if (current.dirtyOrder.length > 0 || current.inflightBatchId) return;
+      if (reconcileRunningRef.current) return;
+
+      const manifest = toReconcileManifest(snapshotRef.current);
+      const manifestKey = buildReconcileKey(current, manifest);
+      if (lastReconciledManifestKeyRef.current === manifestKey) return;
+
+      const clientBatchId = createReconcileId();
+      lastReconciledManifestKeyRef.current = manifestKey;
+      reconcileRunningRef.current = true;
+      addSyncTrace("manifest:reconcile", current.docId, current.sessionId, current.sessionEpoch, () => ({
+        clientBatchId,
+        draftRevision: current.draftRevision,
+        manifest: buildManifestSummary(snapshotRef.current),
+      }));
+
+      try {
+        const response = await postSyncManifestReconcile({
+          docId: current.docId,
+          draftRevision: current.draftRevision,
+          clientBatchId,
+          sessionId: current.sessionId,
+          sessionEpoch: current.sessionEpoch,
+          manifest,
+        });
+        addSyncTrace("manifest:reconcile-response", current.docId, current.sessionId, current.sessionEpoch, () => ({
+          clientBatchId,
+          draftRevision: response.draftRevision,
+          needsReload: response.needsReload,
+          conflicts: response.conflicts,
+          tombstoned: response.tombstoned,
+        }));
+
+        if (response.needsReload) {
+          const lostSession = isSyncSessionConflict(response.conflicts);
+          updateSyncState((prev) =>
+            prev
+              ? lostSession
+                ? markSyncSessionLost(prev, "当前编辑会话已失效，请刷新后继续编辑")
+                : {
+                    ...prev,
+                    syncState: "conflicted",
+                    lastError: "检测到版本冲突，请刷新后重试",
+                    draftRevision: response.draftRevision,
+                  }
+              : prev,
+          );
+          return;
+        }
+
+        updateSyncState((prev) =>
+          prev && typeof response.draftRevision === "number"
+            ? {
+                ...prev,
+                draftRevision: response.draftRevision,
+                lastError: null,
+              }
+            : prev,
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "最终态同步校验失败";
+        updateSyncState((prev) =>
+          prev
+            ? message.includes("SYNC_SESSION")
+              ? markSyncSessionLost(prev, "当前编辑会话已失效，请刷新后继续编辑")
+              : {
+                  ...prev,
+                  syncState: "error",
+                  lastError: message,
+                }
+            : prev,
+        );
+      } finally {
+        reconcileRunningRef.current = false;
+      }
+    },
+    [updateSyncState],
+  );
+
   const flush = useCallback(
     async (source: SyncSource = "autosync") => {
       if (source === "autosync" && autosyncPausedRef.current) return;
@@ -299,6 +425,7 @@ export function useDocumentSync({
           dirtyOrderLength: 0,
           entryCount: Object.keys(initial.entries).length,
         }));
+        await reconcileIdleManifest(initial);
         return;
       }
 
@@ -314,6 +441,7 @@ export function useDocumentSync({
               dirtyOrderLength: 0,
               entryCount: Object.keys(current.entries).length,
             }));
+            await reconcileIdleManifest(current);
             return;
           }
 
@@ -576,7 +704,7 @@ export function useDocumentSync({
         flushRunningRef.current = false;
       }
     },
-    [captureContentSnapshot, onContentPatched, replaceSyncState, updateSyncState],
+    [captureContentSnapshot, onContentPatched, reconcileIdleManifest, replaceSyncState, updateSyncState],
   );
 
   const flushAndCommitBarrier = useCallback(

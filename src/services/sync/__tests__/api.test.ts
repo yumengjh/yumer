@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { buildSyncBatchOperations, postSyncBatch } from "../api";
+import { buildSyncBatchOperations, postSyncBatch, postSyncManifestReconcile } from "../api";
 import type { SyncEntry } from "../types";
 
 const { apiPost } = vi.hoisted(() => ({
@@ -214,5 +214,47 @@ describe("sync api payload builder", () => {
         ackedThroughOpSeq: 9,
       }),
     );
+  });
+
+  it("posts only sync identity fields for idle manifest reconciliation", async () => {
+    apiPost.mockResolvedValue({
+      docId: "doc_1",
+      checkedAt: Date.now(),
+      draftRevision: 4,
+      needsReload: false,
+      conflicts: [],
+      tombstoned: [],
+    });
+
+    await postSyncManifestReconcile({
+      docId: "doc_1",
+      draftRevision: 3,
+      clientBatchId: "reconcile_1",
+      sessionId: "session_1",
+      sessionEpoch: 2,
+      manifest: [
+        {
+          blockId: "block_1",
+          clientId: "client_1",
+          syncCreateId: "sync-create:client_1",
+          // @ts-expect-error verifies the request builder strips trace-only fields.
+          textPreview: "not sent",
+        },
+      ],
+    });
+
+    expect(apiPost).toHaveBeenCalledWith("/documents/doc_1/sync-reconcile", {
+      draftRevision: 3,
+      clientBatchId: "reconcile_1",
+      sessionId: "session_1",
+      sessionEpoch: 2,
+      manifest: [
+        {
+          blockId: "block_1",
+          clientId: "client_1",
+          syncCreateId: "sync-create:client_1",
+        },
+      ],
+    });
   });
 });
