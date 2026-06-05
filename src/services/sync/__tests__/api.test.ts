@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { buildSyncBatchOperations, postSyncBatch, postSyncManifestReconcile } from "../api";
+import {
+  buildSyncBatchOperations,
+  postDraftCheckpoint,
+  postSyncBatch,
+  postSyncManifestReconcile,
+} from "../api";
 import type { SyncEntry } from "../types";
 
 const { apiPost } = vi.hoisted(() => ({
@@ -100,6 +105,43 @@ describe("sync api payload builder", () => {
         ],
       }),
     ).rejects.toThrow("同步协议错误");
+  });
+
+  it("posts draft checkpoints to the document checkpoint endpoint", async () => {
+    apiPost.mockResolvedValue({
+      acceptedCheckpointId: "checkpoint_1",
+      appliedAt: 1710000000000,
+      serverHead: 3,
+      draftRevision: 5,
+      needsReload: false,
+      conflicts: [],
+      contentHash: "sha256:test",
+      mappings: [],
+      tombstoned: [],
+    });
+
+    const response = await postDraftCheckpoint("doc_1", {
+      mode: "checkpoint",
+      coverage: "full",
+      clientCheckpointId: "checkpoint_1",
+      clientId: "frontend-client",
+      baseVersion: 3,
+      draftRevision: 4,
+      sessionId: "sync_1",
+      sessionEpoch: 2,
+      contentHash: "sha256:test",
+      generatedAt: 1710000000000,
+      rootBlockId: "root_1",
+      blocks: [],
+    });
+
+    expect(apiPost).toHaveBeenCalledWith(
+      "/documents/doc_1/draft-checkpoint",
+      expect.objectContaining({
+        clientCheckpointId: "checkpoint_1",
+      }),
+    );
+    expect(response.draftRevision).toBe(5);
   });
 
   it("sends delete tombstones by client identity when a deleted create has no server blockId", () => {
