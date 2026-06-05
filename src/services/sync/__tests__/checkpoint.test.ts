@@ -1,0 +1,88 @@
+import { describe, expect, it } from "vitest";
+import type { TiptapDoc } from "@/services/tiptap-converter";
+import { applyCheckpointAck, buildDraftCheckpoint } from "../checkpoint";
+
+describe("checkpoint sync", () => {
+  it("builds a full checkpoint from top-level TipTap blocks", async () => {
+    const doc: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "cid_1", blockId: "block_1", sortKey: "001000" },
+          content: [{ type: "text", text: "hello" }],
+        },
+        {
+          type: "heading",
+          attrs: { clientId: "cid_2", sortKey: "002000" },
+          content: [{ type: "text", text: "world" }],
+        },
+      ],
+    };
+
+    const checkpoint = await buildDraftCheckpoint({
+      docId: "doc_1",
+      rootBlockId: "root_1",
+      content: doc,
+      baseVersion: 3,
+      draftRevision: 4,
+      sessionId: "sync_1",
+      sessionEpoch: 2,
+      clientId: "frontend-client",
+      now: 1710000000000,
+      clientCheckpointId: "checkpoint_1",
+    });
+
+    expect(checkpoint).toMatchObject({
+      mode: "checkpoint",
+      coverage: "full",
+      clientCheckpointId: "checkpoint_1",
+      clientId: "frontend-client",
+      baseVersion: 3,
+      draftRevision: 4,
+      sessionId: "sync_1",
+      sessionEpoch: 2,
+      rootBlockId: "root_1",
+    });
+    expect(checkpoint.contentHash).toMatch(/^sha256:/);
+    expect(
+      checkpoint.blocks.map((block) => [
+        block.clientId,
+        block.blockId,
+        block.type,
+        block.orderKey,
+      ]),
+    ).toEqual([
+      ["cid_1", "block_1", "paragraph", "001000"],
+      ["cid_2", null, "heading", "002000"],
+    ]);
+    expect(checkpoint.blocks[1].syncCreateId).toBe("sync-create:cid_2");
+    expect(
+      (checkpoint.blocks[0].payload.attrs as Record<string, unknown>).clientBatchId,
+    ).toBeUndefined();
+  });
+
+  it("patches checkpoint mappings back into a document by clientId", () => {
+    const doc: TiptapDoc = {
+      type: "doc",
+      content: [{ type: "paragraph", attrs: { clientId: "cid_1", sortKey: "001000" } }],
+    };
+
+    const patched = applyCheckpointAck(doc, [
+      {
+        clientId: "cid_1",
+        blockId: "block_1",
+        orderKey: "001500",
+        sortKey: "001500",
+      },
+    ]);
+
+    expect(patched.content?.[0].attrs).toMatchObject({
+      clientId: "cid_1",
+      blockId: "block_1",
+      "data-block-id": "block_1",
+      sortKey: "001500",
+      "data-sort-key": "001500",
+    });
+  });
+});
