@@ -255,7 +255,7 @@ export function SyncDebugModal({ open, onClose, docId, docTitle }: SyncDebugModa
             type={incidents.length > 0 ? "error" : "info"}
             showIcon
             message={incidents.length > 0 ? "检测到已删除身份再次出现在前端快照中" : "记录开启后会自动捕捉请求、ACK、manifest 和删除身份回流"}
-            description="遇到删除块又回来时，先点“标记现场”，再复制 AI 包。AI 包会过滤当前文档并压缩 manifest；完整包只在需要原始请求体时使用。"
+            description="遇到删除块又回来时，先点“标记现场”写入一条 debug:bookmark，用来定位你肉眼看到异常的时间点；再复制 AI 包。AI 包会过滤当前文档并压缩 manifest。"
           />
           {docId ? (
             <div className="sync-debug-scope">
@@ -335,7 +335,7 @@ export function SyncDebugModal({ open, onClose, docId, docTitle }: SyncDebugModa
           <span>共 {records.length} 个批次，{traceRecords.length} 条 Trace</span>
         </div>
         <Space className="sync-debug-toolbar__actions">
-          <Tooltip title="标记当前现场">
+          <Tooltip title="在 Trace 中写入 debug:bookmark，记录当前文档和时间点。看到删除块回流、请求风暴、内容异常时先点它，再复制 AI 包，分析时就能从这个标记附近倒查前后的请求、ACK 和快照。">
             <Button size="small" icon={<FlagOutlined />} onClick={handleBookmark}>
               标记现场
             </Button>
