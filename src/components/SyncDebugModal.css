@@ -6,6 +6,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   padding: 12px 16px;
   border-bottom: 1px solid var(--border-color, #f0f0f0);
   background: var(--bg-secondary, #fafafa);
@@ -18,8 +19,10 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   color: var(--text-secondary, #666);
   font-size: 13px;
+  flex-wrap: wrap;
 }
 
 .sync-debug-toolbar__actions {
@@ -33,9 +36,55 @@
   padding: 12px 16px;
 }
 
+.sync-debug-overview {
+  display: grid;
+  gap: 12px;
+}
+
+.sync-debug-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(110px, 1fr));
+  gap: 10px;
+}
+
+.sync-debug-stats .ant-statistic {
+  padding: 10px 12px;
+  border: 1px solid var(--border-color, #f0f0f0);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.sync-debug-scope {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color, #f0f0f0);
+  border-radius: 6px;
+  background: #fff;
+  font-size: 13px;
+}
+
+.sync-debug-scope strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sync-debug-empty {
   padding: 48px 0;
   text-align: center;
+}
+
+.sync-debug-list {
+  display: grid;
+  gap: 10px;
+}
+
+.sync-debug-collapse {
+  background: transparent;
 }
 
 /* 单条记录 */
@@ -54,6 +103,51 @@
 
 .sync-debug-record-header__tag {
   flex-shrink: 0;
+}
+
+.sync-debug-muted {
+  color: var(--text-secondary, #999);
+}
+
+.sync-debug-incident {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #ffccc7;
+  border-radius: 6px;
+  background: #fff2f0;
+}
+
+.sync-debug-incident__head,
+.sync-debug-identity-row,
+.sync-debug-node {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sync-debug-incident__message {
+  font-weight: 600;
+  color: #a8071a;
+}
+
+.sync-debug-incident__meta {
+  color: var(--text-secondary, #666);
+  font-size: 12px;
+}
+
+.sync-debug-identity-row code,
+.sync-debug-node span,
+.sync-debug-scope code,
+.sync-debug-incident__meta code {
+  max-width: 100%;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.05);
+  font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
+  font-size: 12px;
+  word-break: break-all;
 }
 
 /* 请求/响应 JSON 展示 */
@@ -80,4 +174,15 @@
   border-radius: 6px;
   font-size: 13px;
   color: var(--text-error, #ff4d4f);
+}
+
+@media (max-width: 760px) {
+  .sync-debug-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .sync-debug-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }

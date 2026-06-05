@@ -1,6 +1,6 @@
 import { apiGet, apiPost } from "@/services/api-client";
 import { createSortKeyBetween } from "./order";
-import { SyncDebugLog } from "./debug-log";
+import { SyncDebugLog, SyncIdentityWatch, type SyncIdentity } from "./debug-log";
 import type { SyncEntry, SyncBatchResult } from "./types";
 
 export interface SyncBatchResponse {
@@ -182,6 +182,32 @@ export function buildSyncBatchOperations(input: {
   return bodyOperations;
 }
 
+function getDeleteIdentitiesFromBodyOperations(operations: BatchOperationBody[]): SyncIdentity[] {
+  return operations.flatMap((operation) => {
+    if (operation.type !== "delete") return [];
+    return [
+      {
+        blockId: operation.blockId ?? null,
+        clientId: operation.clientId ?? null,
+        syncCreateId: operation.syncCreateId ?? null,
+      },
+    ];
+  });
+}
+
+function getDeleteIdentitiesFromBatchResponse(response: SyncBatchResponse): SyncIdentity[] {
+  return response.results.flatMap((result) => {
+    if (result.operation !== "delete" || !result.success) return [];
+    return [
+      {
+        blockId: result.blockId ?? null,
+        clientId: result.clientId ?? null,
+        syncCreateId: null,
+      },
+    ];
+  });
+}
+
 export async function postSyncBatch(input: {
   docId: string;
   rootBlockId: string;
@@ -224,6 +250,21 @@ export async function postSyncBatch(input: {
     createVersion: false,
     operations: bodyOperations,
   };
+  const deleteIdentities = getDeleteIdentitiesFromBodyOperations(bodyOperations);
+  if (deleteIdentities.length > 0) {
+    SyncIdentityWatch.markDeleted({
+      docId: input.docId,
+      reason: "batch-delete-request",
+      identities: deleteIdentities,
+      clientBatchId: input.clientBatchId,
+      evidence: {
+        source: input.source,
+        baseVersion: input.baseVersion,
+        draftRevision: input.draftRevision,
+        operations: bodyOperations.filter((operation) => operation.type === "delete"),
+      },
+    });
+  }
 
   const startTime = Date.now();
   try {
@@ -234,6 +275,20 @@ export async function postSyncBatch(input: {
       (!Array.isArray(response.results) || response.results.length === 0)
     ) {
       throw new Error("同步协议错误：非空批次返回了空结果");
+    }
+    const ackedDeleteIdentities = getDeleteIdentitiesFromBatchResponse(response);
+    if (ackedDeleteIdentities.length > 0) {
+      SyncIdentityWatch.markDeleted({
+        docId: input.docId,
+        reason: "batch-delete-ack",
+        identities: ackedDeleteIdentities,
+        clientBatchId: input.clientBatchId,
+        evidence: {
+          acceptedBatchId: response.acceptedBatchId,
+          draftRevision: response.draftRevision,
+          results: response.results.filter((result) => result.operation === "delete"),
+        },
+      });
     }
     SyncDebugLog.add({
       id: input.clientBatchId,
@@ -279,7 +334,7 @@ export async function postSyncManifestReconcile(input: {
   sessionEpoch?: number;
   manifest: SyncManifestIdentity[];
 }): Promise<SyncManifestReconcileResponse> {
-  return apiPost<SyncManifestReconcileResponse>(`/documents/${input.docId}/sync-reconcile`, {
+  const response = await apiPost<SyncManifestReconcileResponse>(`/documents/${input.docId}/sync-reconcile`, {
     draftRevision: input.draftRevision,
     clientBatchId: input.clientBatchId,
     ...(input.sessionId ? { sessionId: input.sessionId } : {}),
@@ -290,4 +345,21 @@ export async function postSyncManifestReconcile(input: {
       syncCreateId: item.syncCreateId ?? null,
     })),
   });
+  if (response.tombstoned.length > 0) {
+    SyncIdentityWatch.markDeleted({
+      docId: input.docId,
+      reason: "manifest-reconcile-tombstone",
+      identities: response.tombstoned.map((item) => ({
+        blockId: item.blockId,
+        clientId: item.clientId,
+        syncCreateId: item.syncCreateId,
+      })),
+      clientBatchId: input.clientBatchId,
+      evidence: {
+        draftRevision: response.draftRevision,
+        tombstoned: response.tombstoned,
+      },
+    });
+  }
+  return response;
 }

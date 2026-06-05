@@ -1251,6 +1251,8 @@ export function DocumentHeader({
       <SyncDebugModal
         open={syncDebugOpen}
         onClose={() => setSyncDebugOpen(false)}
+        docId={currentDoc?.docId}
+        docTitle={currentDoc?.title}
       />
       <Modal
         open={miniEditorDemoOpen}
