@@ -81,6 +81,7 @@ import type { EditorToolbarPreferences } from "@/services/editor-toolbar-prefere
 import type { EditorSyncPreferences } from "@/services/editor-sync-preferences";
 import type { ManualSaveMode } from "@/services/manual-save-preferences";
 import { hasDiscardableDraft } from "@/services/save-policy";
+import { createPortal } from "react-dom";
 import { MiniMarkdownEditor } from "@/modules/mini-editor-kit";
 import "./DocumentHeader.css";
 
@@ -1212,13 +1213,16 @@ export function DocumentHeader({
           onPublished={handleVersionPublished}
         />
       )}
-      <DocumentSidebar
-        visible={listOpen}
-        onToggle={() => setListOpen(!listOpen)}
-        onSelect={handleDocChange}
-        currentDocId={currentDoc?.docId}
-        currentDocLoading={loadingDoc}
-      />
+      {createPortal(
+        <DocumentSidebar
+          visible={listOpen}
+          onToggle={() => setListOpen(!listOpen)}
+          onSelect={handleDocChange}
+          currentDocId={currentDoc?.docId}
+          currentDocLoading={loadingDoc}
+        />,
+        document.body,
+      )}
       <DocumentSearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
       <CreateDocumentModal open={createOpen} onClose={() => setCreateOpen(false)} />
       <WorkspaceSettingsModal

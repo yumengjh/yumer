@@ -524,6 +524,14 @@
 
 .doc-sidebar__resizer--collapsed {
   cursor: default;
+  background-color: transparent;
+  flex: 0 0 20px;
+  width: 20px;
+}
+
+/* 折叠态隐藏分割线 */
+.doc-sidebar__resizer--collapsed .doc-sidebar__split {
+  display: none;
 }
 
 /* 中间贯穿分割线 */
@@ -537,25 +545,33 @@
   background: var(--sidebar-border);
 }
 
-/* ===== 折叠按钮（胶囊） ===== */
+/* ===== 折叠/展开按钮 ===== */
+/* 展开态：完整胶囊（两侧圆角） */
 .doc-sidebar__toggle-btn {
   position: relative;
   z-index: 1;
-  width: 26px;
-  height: 56px;
-  border-radius: 999px;
-  background: var(--sidebar-bg);
-  border: 1px solid var(--sidebar-border);
+  width: 20px;
+  height: 40px;
+  border-radius: 20px;
+  background: var(--color-bg-container);
+  border: none;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
   cursor: pointer;
-  box-shadow: var(--shadow-xs);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  transition: border-radius 0.24s ease;
 }
 
+/* 折叠态：左侧拍平贴墙，右侧保持圆角 */
+.doc-sidebar__resizer--collapsed .doc-sidebar__toggle-btn {
+  border-radius: 0 20px 20px 0;
+}
+
+/* hover 不改变外观 */
 .doc-sidebar__toggle-btn:hover {
-  background: var(--sidebar-hover-bg);
+  background: var(--color-bg-container);
 }
 
 .doc-sidebar__toggle-btn:focus-visible {
