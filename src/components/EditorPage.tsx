@@ -389,6 +389,7 @@ function EditorContent() {
 
   const [content, setContent] = useState<EditorContent>(BLANK_CONTENT);
   const [contentDirty, setContentDirty] = useState(false);
+  const [loadedContentDocId, setLoadedContentDocId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<OutputTab>("markdown");
   const [loadingDoc, setLoadingDoc] = useState(false);
   const [outputModalOpen, setOutputModalOpen] = useState(false);
@@ -438,6 +439,10 @@ function EditorContent() {
   const tiptapContent = typeof content === "object" && content?.type === "doc"
     ? (content as TiptapDoc)
     : null;
+  const syncContent =
+    currentDoc?.docId && loadedContentDocId === currentDoc.docId
+      ? tiptapContent
+      : null;
   const discardableDraft = hasDiscardableDraft({
     currentContentSource,
     currentDraftExists: currentDraftMeta?.exists === true,
@@ -451,7 +456,7 @@ function EditorContent() {
     baseVersion: syncEngineEnabled ? currentDocVersion : null,
     draftRevision: currentDraftMeta?.draftRevision ?? 0,
     syncSession: syncEngineEnabled ? currentSyncSession : null,
-    content: syncEngineEnabled ? tiptapContent : null,
+    content: syncEngineEnabled ? syncContent : null,
     onContentPatched: (doc) => {
       const latestEditorContent = editorRef.current?.getJSON() as TiptapDoc | undefined;
       if (latestEditorContent?.type === "doc") {
@@ -609,6 +614,7 @@ function EditorContent() {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- document-bound editor state must reset when the active document is cleared
       setContent(BLANK_CONTENT);
       setContentDirty(false);
+      setLoadedContentDocId(null);
       setHasUnsavedChanges(false);
       markSavedAt(null);
       setSaveStatus("idle");
@@ -619,16 +625,18 @@ function EditorContent() {
     if (loadedDocIdRef.current === docId) return;
 
     let cancelled = false;
-    loadedDocIdRef.current = docId;
     setLoadingDoc(true);
     setContentDirty(false);
+    setLoadedContentDocId(null);
     setPendingLocalRecovery(null);
     void (async () => {
       try {
         const loaded = await loadContent(docId);
         if (cancelled) return;
         const loadedContent = loaded.content || BLANK_CONTENT;
+        loadedDocIdRef.current = docId;
         setContent(loaded.content || BLANK_CONTENT);
+        setLoadedContentDocId(docId);
         setContentDirty(false);
         setHasUnsavedChanges(false);
         markSavedAt(null);
@@ -659,6 +667,7 @@ function EditorContent() {
         if (cancelled) return;
         setContent(BLANK_CONTENT);
         setContentDirty(false);
+        setLoadedContentDocId(null);
         loadedDocIdRef.current = null;
       } finally {
         if (!cancelled) {

@@ -72,14 +72,44 @@ describe("document edit content api", () => {
 
     const response = await loadDocumentContentV2("doc_empty");
 
-    expect(response.content).toEqual({
+    expect(response.content).toMatchObject({
       type: "doc",
-      content: [{ type: "paragraph" }],
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: expect.stringMatching(/^cid_/) },
+        },
+      ],
     });
     expect(response.syncSession).toEqual({
       sessionId: "session_blank",
       sessionEpoch: 3,
       leaseExpiresAt: "2026-06-04T23:45:00.000Z",
+    });
+  });
+
+  it("returns an identity-stable blank TipTap document when edit content has no tree", async () => {
+    apiGet.mockResolvedValue({
+      docId: "doc_no_tree",
+      source: "head",
+      head: 1,
+      publishedHead: 1,
+      syncSession: null,
+      draft: { exists: false, draftId: null },
+      lock: { locked: false, lockOwnerUserId: null, lockExpiresAt: null },
+      tree: null,
+    });
+
+    const response = await loadDocumentContentV2("doc_no_tree");
+
+    expect(response.content).toMatchObject({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: expect.stringMatching(/^cid_/) },
+        },
+      ],
     });
   });
 

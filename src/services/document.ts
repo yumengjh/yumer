@@ -7,6 +7,7 @@ import {
   type TiptapDoc,
   type TiptapNode,
 } from "./tiptap-converter";
+import { ensureDocumentIdentity } from "./sync/identity";
 
 // ─── 类型定义 ───
 
@@ -506,10 +507,10 @@ export async function saveDocumentContent(
 export type EditorContent = string | TiptapDoc;
 
 function createBlankTiptapDoc(): TiptapDoc {
-  return {
+  return ensureDocumentIdentity({
     type: "doc",
     content: [{ type: "paragraph" }],
-  };
+  }) as TiptapDoc;
 }
 
 /**

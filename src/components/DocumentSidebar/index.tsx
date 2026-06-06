@@ -315,12 +315,11 @@ export default function DocumentSidebar({
   const handleCreateInCategory = async (category: string, e: ReactMouseEvent) => {
     e.stopPropagation();
     try {
-      const doc = await createDoc({
+      await createDoc({
         title: "无标题文档",
         category: category,
       });
       message.success(`在分类「${category}」下已新建文档`);
-      onSelect(doc.docId);
     } catch {
       message.error("创建文档失败");
     }
@@ -455,9 +454,8 @@ export default function DocumentSidebar({
                   if (onCreateNew) { onCreateNew(); return; }
                   setCreating(true);
                   try {
-                    const doc = await createDoc({ title: "无标题文档" });
+                    await createDoc({ title: "无标题文档" });
                     message.success("已新建文档");
-                    onSelect(doc.docId);
                   } catch {
                     message.error("创建文档失败");
                   } finally {
