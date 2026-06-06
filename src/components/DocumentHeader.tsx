@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, type ReactNode } from "react";
-import { Button, Spin, Switch, message, Tooltip, Dropdown, Modal, Input, Tag } from "antd";
+import { Button, Spin, Switch, message, Tooltip, Dropdown, Modal, Input, Tag, Space } from "antd";
 import type { MenuProps } from "antd";
 import {
   SearchOutlined,
@@ -1036,7 +1036,7 @@ export function DocumentHeader({
         <div className="header-end">
           <div className="header-end__primary header-end--desktop">
             <div className="header-btn-group">
-              <Button.Group className="header-save-split">
+              <Space.Compact className="header-save-split">
                 <Button
                   size="small"
                   className="header-btn-save"
@@ -1061,7 +1061,7 @@ export function DocumentHeader({
                     aria-label="选择保存方式"
                   />
                 </Dropdown>
-              </Button.Group>
+              </Space.Compact>
               {showDiscardDraft ? (
                 <Button
                   size="small"
@@ -1266,7 +1266,7 @@ export function DocumentHeader({
         title="Mini 编辑器演示"
         onCancel={() => setMiniEditorDemoOpen(false)}
         width={760}
-        destroyOnClose
+        destroyOnHidden
         footer={[
           <Button
             key="reset"
@@ -1317,7 +1317,7 @@ export function DocumentHeader({
         onCancel={() => setLocalSnapshotOpen(false)}
         footer={null}
         width={640}
-        destroyOnClose
+        destroyOnHidden
       >
         <div className="header-local-snapshot-modal">
           <div className="header-local-snapshot-modal__row">
@@ -1401,7 +1401,7 @@ export function DocumentHeader({
         }}
         footer={null}
         width={960}
-        destroyOnClose
+        destroyOnHidden
       >
         <div className="header-local-snapshot-compare">
           {(() => {

@@ -440,7 +440,7 @@ export default function DocumentSidebar({
                   value={searchValue}
                   onChange={(e) => setSearchValue(e.target.value)}
                   className="doc-sidebar__search-input"
-                  bordered={false}
+                  variant="borderless"
                   suffix={<span className="doc-sidebar__search-shortcut">Ctrl + J</span>}
                 />
               </div>

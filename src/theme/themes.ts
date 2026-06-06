@@ -81,9 +81,9 @@ export const lightTheme: ThemeConfig = {
     // 菜单 - Dropdown 内部使用
     Menu: {
       colorBgContainer: "#ffffff",
-      colorItemBgSelected: "rgba(0, 0, 0, 0.06)",
-      colorItemTextSelected: "rgba(0, 0, 0, 0.88)",
-      colorItemBgHover: "rgba(0, 0, 0, 0.04)",
+      itemSelectedBg: "rgba(0, 0, 0, 0.06)",
+      itemSelectedColor: "rgba(0, 0, 0, 0.88)",
+      itemHoverBg: "rgba(0, 0, 0, 0.04)",
       colorActiveBarWidth: 0,
       borderRadius: 6,
       itemBorderRadius: 4,
@@ -231,9 +231,9 @@ export const darkTheme: ThemeConfig = {
     // 菜单
     Menu: {
       colorBgContainer: "#1f1f1f",
-      colorItemBgSelected: "rgba(255, 255, 255, 0.12)",
-      colorItemTextSelected: "rgba(255, 255, 255, 0.88)",
-      colorItemBgHover: "rgba(255, 255, 255, 0.08)",
+      itemSelectedBg: "rgba(255, 255, 255, 0.12)",
+      itemSelectedColor: "rgba(255, 255, 255, 0.88)",
+      itemHoverBg: "rgba(255, 255, 255, 0.08)",
       colorActiveBarWidth: 0,
       borderRadius: 6,
       itemBorderRadius: 4,

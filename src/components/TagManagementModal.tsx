@@ -97,7 +97,7 @@ export function TagManagementModal({ open, onClose }: TagManagementModalProps) {
       open={open}
       onCancel={onClose}
       footer={null}
-      destroyOnClose
+      destroyOnHidden
       width={500}
     >
       <div style={{ marginBottom: 16 }}>

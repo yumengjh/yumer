@@ -719,7 +719,7 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
       width={1180}
       title="GC 调试面板"
       className="gc-debug-modal"
-      destroyOnClose={false}
+      destroyOnHidden={false}
     >
       <div className="gc-debug">
         <div className="gc-debug__toolbar">
@@ -1305,9 +1305,9 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
     <Drawer
       open={!!selectedCandidate}
       title={selectedCandidate ? `候选详情 · ${selectedCandidate.resourceKey}` : "候选详情"}
-      width={560}
+      size={560}
       onClose={() => setSelectedCandidate(null)}
-      destroyOnClose
+      destroyOnHidden
     >
       {selectedCandidate && (
         <div className="gc-debug__candidate-detail">
@@ -1439,9 +1439,9 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
     <Drawer
       open={!!selectedPoolItem}
       title={selectedPoolItem ? `Pool 详情 · ${selectedPoolItem.candidateKey}` : "Pool 详情"}
-      width={560}
+      size={560}
       onClose={() => setSelectedPoolItem(null)}
-      destroyOnClose
+      destroyOnHidden
     >
       {selectedPoolItem && (
         <div className="gc-debug__candidate-detail">

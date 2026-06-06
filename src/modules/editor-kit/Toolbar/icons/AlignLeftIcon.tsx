@@ -2,7 +2,7 @@ export default function AlignLeftIcon({ style }: { style?: React.CSSProperties }
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" style={style}>
       <path d="M0 0h24v24H0z" fill="none" />
-      <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5">
+      <g fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5">
         <path d="M2.75 2.75v18.5" />
         <rect width="6" height="10" rx="2" transform="matrix(0 -1 -1 0 16.25 19.75)" />
         <rect width="6" height="15" rx="2" transform="matrix(0 -1 -1 0 21.25 10.25)" />

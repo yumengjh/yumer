@@ -317,7 +317,7 @@ export function SyncDebugModal({ open, onClose, docId, docTitle }: SyncDebugModa
       footer={null}
       width={1120}
       className="sync-debug-modal"
-      destroyOnClose={false}
+      destroyOnHidden={false}
     >
       <div className="sync-debug-toolbar">
         <div className="sync-debug-toolbar__info">
