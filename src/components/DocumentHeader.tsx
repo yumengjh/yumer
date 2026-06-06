@@ -143,6 +143,8 @@ interface DocumentHeaderProps {
   onRevertedToVersion?: () => void | Promise<void>;
   /** 打开/关闭查找替换栏 */
   onToggleFindReplace?: () => void;
+  /** 沉浸式模式：隐藏顶部栏 */
+  zenMode?: boolean;
 }
 
 type LocalSnapshotCompareMode = "explorer" | "raw";
@@ -423,6 +425,7 @@ export function DocumentHeader({
   currentDocumentContent,
   onRevertedToVersion,
   onToggleFindReplace,
+  zenMode = false,
 }: DocumentHeaderProps) {
   const {
     currentDoc,
@@ -897,7 +900,7 @@ export function DocumentHeader({
   };
 
   return (
-    <header className="document-header">
+    <header className={`document-header${zenMode ? " document-header--zen" : ""}`}>
       {/* 左侧：导航 + 工具；同步状态钉在最右，不挤占按钮 */}
       <div className="header-start">
         <div className="header-start__core">

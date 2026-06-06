@@ -131,6 +131,11 @@ body {
   overflow: visible;
 }
 
+/* 沉浸式模式：工具栏吸顶位置同步过渡 */
+.output-card--zen .toolbar {
+  top: 0;
+}
+
 .output-tab-bar {
   display: flex;
   align-items: center;

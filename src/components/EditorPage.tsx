@@ -23,6 +23,7 @@ import { DocumentHeader } from "@/components/DocumentHeader";
 import FindReplaceBar from "@/components/FindReplaceBar";
 import { useAutoSave } from "@/hooks/useAutoSave";
 import { useLocalDocumentSnapshot } from "@/hooks/useLocalDocumentSnapshot";
+import { useZenMode } from "@/hooks/useZenMode";
 import {
   buildLocalDocSnapshot,
   clearLocalSnapshotRecoveryMarker,
@@ -397,6 +398,7 @@ function EditorContent() {
   const [showTOC, setShowTOC] = useState(false);
   const [findReplaceOpen, setFindReplaceOpen] = useState(false);
   const [findReplaceEditor, setFindReplaceEditor] = useState<ReturnType<MarkdownEditorRef["getEditor"]>>(null);
+  const { zenMode } = useZenMode();
   const [manualSaving, setManualSaving] = useState(false);
   const [manualSaveMode, setManualSaveMode] = useState<ManualSaveMode>(() => readManualSaveMode());
   const [discardingDraft, setDiscardingDraft] = useState(false);
@@ -1369,13 +1371,14 @@ function EditorContent() {
             currentDocumentContent={tiptapContent}
             onRevertedToVersion={handleReloadAfterRevert}
             onToggleFindReplace={handleToggleFindReplace}
+            zenMode={zenMode}
           />
           <FindReplaceBar
             editor={findReplaceEditor}
             visible={findReplaceOpen}
             onClose={handleCloseFindReplace}
           />
-          <div className="output-card">
+          <div className={`output-card${zenMode ? " output-card--zen" : ""}`}>
             <MarkdownEditor
               ref={editorRef}
               content={content}

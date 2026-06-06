@@ -14,7 +14,19 @@
   z-index: 100;
   box-sizing: border-box;
   gap: 16px;
-  transition: padding-left 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: padding-left 0.32s cubic-bezier(0.4, 0, 0.2, 1),
+              height 0.32s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.24s ease,
+              border-bottom-width 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+/* 沉浸式模式：收起顶部栏 */
+.document-header--zen {
+  height: 0;
+  opacity: 0;
+  border-bottom-width: 0;
+  pointer-events: none;
 }
 
 /* 左侧区：核心操作 + 同步状态（区内的最右侧） */
