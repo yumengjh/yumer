@@ -373,6 +373,7 @@ function EditorContent() {
     lastEditPosition,
     loadContent,
     applyCommittedVersion,
+    applySyncSession,
     selectDoc,
     updateDoc,
     workspaceId,
@@ -483,6 +484,7 @@ function EditorContent() {
       }
       return doc;
     },
+    onSessionRecovered: applySyncSession,
   });
   const syncFlush = sync.flush;
   const syncUiSaveStatus = sync.uiSaveStatus;
@@ -1251,7 +1253,7 @@ function EditorContent() {
     if (
       !workspaceId ||
       !currentDoc ||
-      !hasUnsavedChanges ||
+      (!hasUnsavedChanges && !sync.hasPendingSync) ||
       !activeSettingsState.effectiveSettings.editor.confirmBeforeLeave
     ) return;
 
@@ -1266,6 +1268,7 @@ function EditorContent() {
     activeSettingsState.effectiveSettings.editor.confirmBeforeLeave,
     currentDoc,
     hasUnsavedChanges,
+    sync.hasPendingSync,
     workspaceId,
   ]);
 

@@ -1,5 +1,9 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { renewSyncSession, type SyncSessionMeta } from "@/services/document";
+import {
+  acquireSyncSession,
+  renewSyncSession,
+  type SyncSessionMeta,
+} from "@/services/document";
 import type { TiptapDoc } from "@/services/tiptap-converter";
 import { postDraftCheckpoint, postSyncBatch, postSyncManifestReconcile, type SyncManifestIdentity } from "@/services/sync/api";
 import { selectSyncBatchOperations } from "@/services/sync/batching";
@@ -32,6 +36,7 @@ type UseDocumentSyncArgs = {
   syncSession?: SyncSessionMeta | null;
   content: TiptapDoc | null;
   onContentPatched?: (doc: TiptapDoc) => TiptapDoc | void;
+  onSessionRecovered?: (syncSession: SyncSessionMeta) => void;
 };
 
 function createBatchId(): string {
@@ -216,6 +221,7 @@ export function useDocumentSync({
   syncSession,
   content,
   onContentPatched,
+  onSessionRecovered,
 }: UseDocumentSyncArgs) {
   const [syncState, setSyncState] = useState<SyncReducerState | null>(null);
   const stateRef = useRef<SyncReducerState | null>(null);
@@ -242,6 +248,26 @@ export function useDocumentSync({
     },
     [replaceSyncState],
   );
+
+  const recoverExpiredSyncSession = useCallback(async (): Promise<boolean> => {
+    if (!docId) return false;
+    const recovered = await acquireSyncSession(docId);
+    onSessionRecovered?.(recovered);
+    updateSyncState((current) =>
+      current
+        ? {
+            ...current,
+            sessionId: recovered.sessionId,
+            sessionEpoch: recovered.sessionEpoch,
+            leaseExpiresAt: recovered.leaseExpiresAt ?? current.leaseExpiresAt,
+            lastAckedOpSeq: recovered.lastAckedOpSeq ?? current.lastAckedOpSeq,
+            syncState: current.dirtyOrder.length > 0 ? "dirty" : "idle",
+            lastError: null,
+          }
+        : current,
+    );
+    return true;
+  }, [docId, onSessionRecovered, updateSyncState]);
 
   const captureContentSnapshot = useCallback(
     (nextContent: TiptapDoc | null): SyncReducerState | null => {
@@ -327,14 +353,25 @@ export function useDocumentSync({
         })
         .catch((error) => {
           const message =
-            error instanceof Error ? error.message : "鍚屾浼氳瘽缁澶辫触";
+            error instanceof Error ? error.message : "同步会话续租失败";
+          if (
+            message.includes("SYNC_SESSION_EXPIRED") ||
+            message.includes("SYNC_SESSION_REQUIRED")
+          ) {
+            void recoverExpiredSyncSession().catch(() => {
+              updateSyncState((current) =>
+                current ? markSyncSessionLost(current, message) : current,
+              );
+            });
+            return;
+          }
           updateSyncState((current) =>
             current ? markSyncSessionLost(current, message) : current,
           );
         });
     }, 2 * 60 * 1000);
     return () => window.clearInterval(timer);
-  }, [docId, syncSession, updateSyncState]);
+  }, [docId, recoverExpiredSyncSession, syncSession, updateSyncState]);
 
   const reconcileIdleManifest = useCallback(
     async (current: SyncReducerState) => {
@@ -800,7 +837,7 @@ export function useDocumentSync({
               return;
             }
           } catch (error) {
-            const message = error instanceof Error ? error.message : "鍚屾澶辫触";
+            const message = error instanceof Error ? error.message : "同步失败";
             updateSyncState((prev) =>
               prev
                 ? resolveBatchFailure(prev, clientBatchId, message, false)
@@ -876,9 +913,23 @@ export function useDocumentSync({
     return "saved" as const;
   }, [syncState]);
 
+  const hasPendingSync = useMemo(() => {
+    if (!syncState) return false;
+    return (
+      syncState.dirtyOrder.length > 0 ||
+      Boolean(syncState.inflightBatchId) ||
+      syncState.syncState === "flushing" ||
+      syncState.syncState === "dirty" ||
+      syncState.syncState === "error" ||
+      syncState.syncState === "conflicted" ||
+      syncState.syncState === "lease-lost"
+    );
+  }, [syncState]);
+
   return {
     syncState,
     uiSaveStatus,
+    hasPendingSync,
     flush,
     flushAndCommitBarrier,
   };

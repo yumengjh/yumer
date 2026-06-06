@@ -62,9 +62,7 @@ function syncCreateIdFor(clientId: string): string {
   return `sync-create:${clientId}`;
 }
 
-function readOrderKey(node: TiptapNode, index: number): string {
-  const value = node.attrs?.sortKey ?? node.attrs?.["data-sort-key"];
-  if (typeof value === "string" && value.trim() !== "") return value;
+function createCanonicalOrderKey(index: number): string {
   return String((index + 1) * 1000).padStart(6, "0");
 }
 
@@ -103,7 +101,7 @@ export async function buildDraftCheckpoint(
     const clientId = identity.clientId;
     if (!clientId) return [];
 
-    const orderKey = readOrderKey(node, index);
+    const orderKey = createCanonicalOrderKey(index);
     const blockId = identity.blockId ?? null;
     const payload = stripTransientAttrs({
       ...node,

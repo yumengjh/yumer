@@ -85,4 +85,36 @@ describe("checkpoint sync", () => {
       "data-sort-key": "001500",
     });
   });
+
+  it("canonicalizes orderKey by visual order instead of preserving corrupted attrs", async () => {
+    const checkpoint = await buildDraftCheckpoint({
+      docId: "doc_1",
+      rootBlockId: "root_1",
+      content: {
+        type: "doc",
+        content: [
+          { type: "paragraph", attrs: { clientId: "cid_a", sortKey: "999999" } },
+          { type: "paragraph", attrs: { clientId: "cid_b", sortKey: "999999" } },
+          { type: "paragraph", attrs: { clientId: "cid_c", sortKey: "000001" } },
+        ],
+      },
+      baseVersion: 1,
+      draftRevision: 1,
+      sessionId: "sync_1",
+      sessionEpoch: 1,
+      clientId: "frontend-client",
+      clientCheckpointId: "checkpoint_rekey",
+    });
+
+    expect(checkpoint.blocks.map((block) => block.orderKey)).toEqual([
+      "001000",
+      "002000",
+      "003000",
+    ]);
+    expect(
+      checkpoint.blocks.map(
+        (block) => (block.payload.attrs as Record<string, unknown>).sortKey,
+      ),
+    ).toEqual(["001000", "002000", "003000"]);
+  });
 });

@@ -66,6 +66,7 @@ interface DocumentContextValue {
     syncSession: SyncSessionMeta | null;
   }>;
   applyCommittedVersion: (version: number, draftRevision?: number | null) => void;
+  applySyncSession: (syncSession: SyncSessionMeta | null) => void;
   markSavedAt: (at: Date | null) => void;
   setSaveStatus: (status: SaveStatus) => void;
   setHasUnsavedChanges: (value: boolean) => void;
@@ -258,6 +259,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
+  const applySyncSession = useCallback((syncSession: SyncSessionMeta | null) => {
+    setCurrentSyncSession(syncSession);
+  }, []);
+
   const createDoc = useCallback(
     async (data: { title: string; icon?: string; cover?: string; visibility?: string; category?: string }): Promise<Document> => {
       if (!workspaceId) throw new Error("未选择工作空间");
@@ -368,6 +373,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         selectDocAndScroll,
         loadContent,
         applyCommittedVersion,
+        applySyncSession,
         markSavedAt: setLastSavedAt,
         setSaveStatus,
         setHasUnsavedChanges,

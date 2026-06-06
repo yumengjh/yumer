@@ -249,6 +249,10 @@ export async function renewSyncSession(
   );
 }
 
+export async function acquireSyncSession(docId: string): Promise<SyncSessionMeta> {
+  return apiPost<SyncSessionMeta>(`/documents/${docId}/sync-session/acquire`);
+}
+
 export async function updateDocument(
   docId: string,
   data: {
