@@ -11,7 +11,7 @@ vi.mock("../api-client", () => ({
   apiDelete: vi.fn(),
 }));
 
-import { commitVersion, renewSyncSession } from "../document";
+import { acquireSyncSession, commitVersion, renewSyncSession } from "../document";
 
 describe("document commit api", () => {
   beforeEach(() => {
@@ -96,6 +96,24 @@ describe("document commit api", () => {
     expect(apiPost).toHaveBeenCalledWith("/documents/doc_1/sync-session/renew", {
       sessionId: "session_1",
       sessionEpoch: 3,
+    });
+  });
+
+  it("acquires a fresh sync session from the acquire endpoint", async () => {
+    apiPost.mockResolvedValue({
+      sessionId: "session_2",
+      sessionEpoch: 4,
+      leaseExpiresAt: "2026-06-07T10:00:00.000Z",
+      lastAckedOpSeq: 8,
+    });
+
+    const acquired = await acquireSyncSession("doc_1");
+
+    expect(apiPost).toHaveBeenCalledWith("/documents/doc_1/sync-session/acquire");
+    expect(acquired).toMatchObject({
+      sessionId: "session_2",
+      sessionEpoch: 4,
+      lastAckedOpSeq: 8,
     });
   });
 });

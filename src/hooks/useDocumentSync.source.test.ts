@@ -91,4 +91,67 @@ describe("useDocumentSync source guards", () => {
     expect(hookSource).toContain("MAX_BATCH_FAILURES_BEFORE_CHECKPOINT");
     expect(hookSource).toContain("await runDraftCheckpoint(latestContentRef.current)");
   });
+
+  it("re-acquires a sync session only for expired or required lease failures", () => {
+    const hookSource = fs.readFileSync(
+      path.resolve(process.cwd(), "src/hooks/useDocumentSync.ts"),
+      "utf8",
+    );
+
+    const renewCatchAt = hookSource.indexOf(".catch((error) => {");
+    const expiredCheckAt = hookSource.indexOf('message.includes("SYNC_SESSION_EXPIRED")', renewCatchAt);
+    const requiredCheckAt = hookSource.indexOf('message.includes("SYNC_SESSION_REQUIRED")', renewCatchAt);
+    const recoverAt = hookSource.indexOf("recoverExpiredSyncSession()", renewCatchAt);
+    const lostAt = hookSource.indexOf("markSyncSessionLost(current, message)", recoverAt);
+
+    expect(renewCatchAt).toBeGreaterThanOrEqual(0);
+    expect(expiredCheckAt).toBeGreaterThan(renewCatchAt);
+    expect(requiredCheckAt).toBeGreaterThan(expiredCheckAt);
+    expect(recoverAt).toBeGreaterThan(requiredCheckAt);
+    expect(lostAt).toBeGreaterThan(recoverAt);
+  });
+
+  it("updates reducer session metadata and clears errors after session recovery", () => {
+    const hookSource = fs.readFileSync(
+      path.resolve(process.cwd(), "src/hooks/useDocumentSync.ts"),
+      "utf8",
+    );
+
+    const recoverFnAt = hookSource.indexOf("const recoverExpiredSyncSession");
+    const acquireAt = hookSource.indexOf("const recovered = await acquireSyncSession(docId);", recoverFnAt);
+    const callbackAt = hookSource.indexOf("onSessionRecovered?.(recovered);", acquireAt);
+    const sessionIdAt = hookSource.indexOf("sessionId: recovered.sessionId", callbackAt);
+    const sessionEpochAt = hookSource.indexOf("sessionEpoch: recovered.sessionEpoch", sessionIdAt);
+    const ackAt = hookSource.indexOf("lastAckedOpSeq: recovered.lastAckedOpSeq ?? current.lastAckedOpSeq", sessionEpochAt);
+    const stateAt = hookSource.indexOf('syncState: current.dirtyOrder.length > 0 ? "dirty" : "idle"', ackAt);
+    const errorClearAt = hookSource.indexOf("lastError: null", stateAt);
+
+    expect(recoverFnAt).toBeGreaterThanOrEqual(0);
+    expect(acquireAt).toBeGreaterThan(recoverFnAt);
+    expect(callbackAt).toBeGreaterThan(acquireAt);
+    expect(sessionIdAt).toBeGreaterThan(callbackAt);
+    expect(sessionEpochAt).toBeGreaterThan(sessionIdAt);
+    expect(ackAt).toBeGreaterThan(sessionEpochAt);
+    expect(stateAt).toBeGreaterThan(ackAt);
+    expect(errorClearAt).toBeGreaterThan(stateAt);
+  });
+
+  it("turns sync session conflicts from reconcile or batch into lease-lost state", () => {
+    const hookSource = fs.readFileSync(
+      path.resolve(process.cwd(), "src/hooks/useDocumentSync.ts"),
+      "utf8",
+    );
+
+    const reconcileNeedsReloadAt = hookSource.indexOf("if (response.needsReload) {");
+    const reconcileLostAt = hookSource.indexOf('markSyncSessionLost(prev, "当前编辑会话已失效，请刷新后继续编辑")', reconcileNeedsReloadAt);
+    const batchNeedsReloadAt = hookSource.indexOf("if (response.needsReload) {", reconcileNeedsReloadAt + 1);
+    const batchConflictListAt = hookSource.indexOf('"SYNC_SESSION_MISMATCH"', batchNeedsReloadAt);
+    const batchLostAt = hookSource.indexOf('markSyncSessionLost(', batchConflictListAt);
+
+    expect(reconcileNeedsReloadAt).toBeGreaterThanOrEqual(0);
+    expect(reconcileLostAt).toBeGreaterThan(reconcileNeedsReloadAt);
+    expect(batchNeedsReloadAt).toBeGreaterThan(reconcileLostAt);
+    expect(batchConflictListAt).toBeGreaterThan(batchNeedsReloadAt);
+    expect(batchLostAt).toBeGreaterThan(batchConflictListAt);
+  });
 });
