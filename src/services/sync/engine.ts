@@ -2,7 +2,12 @@ import type { TiptapDoc, TiptapNode } from "@/services/tiptap-converter";
 import { extractPlainText } from "@/services/tiptap-converter";
 import { ensureDocumentIdentity, readIdentityFromAttrs } from "./identity";
 import { createSortKeyBetween, createSortKeysBetween } from "./order";
-import type { SortKeyCorruptionReport, SyncEntry } from "./types";
+import type {
+  SortKeyCorruptionReport,
+  SyncDiffHint,
+  SyncDiffMetrics,
+  SyncEntry,
+} from "./types";
 
 const TIPTAP_TO_BLOCK_TYPE: Record<string, string> = {
   heading: "heading",
@@ -84,14 +89,37 @@ function payloadFingerprint(node: TiptapNode): string {
   return JSON.stringify(normalizePayload(node));
 }
 
-type IndexedNode = {
+export type IndexedSyncNode = {
   clientId: string;
   matchKey: string;
   blockId: string | null;
   node: TiptapNode;
   index: number;
   sortKey: string;
+  payloadFingerprint: string | null;
 };
+
+export interface SyncSnapshotIndex {
+  doc: TiptapDoc;
+  blocks: IndexedSyncNode[];
+  byClientId: Map<string, IndexedSyncNode>;
+  byBlockId: Map<string, IndexedSyncNode>;
+  byMatchKey: Map<string, IndexedSyncNode>;
+  orderKey: string;
+  sortKeyCorruptionReport: SortKeyCorruptionReport | null;
+}
+
+export interface DeriveSyncEntriesOptions {
+  previousIndex?: SyncSnapshotIndex | null;
+  hint?: SyncDiffHint | null;
+}
+
+export interface DeriveSyncEntriesResult {
+  entries: SyncEntry[];
+  nextIndex: SyncSnapshotIndex;
+  normalizedNext: TiptapDoc;
+  metrics: SyncDiffMetrics;
+}
 
 function getSyncMatchKey(identity: {
   blockId?: string;
@@ -100,8 +128,8 @@ function getSyncMatchKey(identity: {
   return identity.blockId ?? identity.clientId ?? null;
 }
 
-function indexTopLevel(doc: TiptapDoc): Record<string, IndexedNode> {
-  const indexed: Record<string, IndexedNode> = {};
+function indexTopLevel(doc: TiptapDoc): Record<string, IndexedSyncNode> {
+  const indexed: Record<string, IndexedSyncNode> = {};
   const nodes = Array.isArray(doc.content) ? doc.content : [];
   for (let i = 0; i < nodes.length; i += 1) {
     const node = nodes[i];
@@ -116,9 +144,53 @@ function indexTopLevel(doc: TiptapDoc): Record<string, IndexedNode> {
       node,
       index: i,
       sortKey: getSortKey(node, i),
+      payloadFingerprint: null,
     };
   }
   return indexed;
+}
+
+function createSyncSnapshotIndexFromNormalized(
+  doc: TiptapDoc,
+  options: { computePayloadFingerprints?: boolean } = {},
+): SyncSnapshotIndex {
+  const indexed = indexTopLevel(doc);
+  const blocks = Object.values(indexed)
+    .sort((a, b) => a.index - b.index)
+    .map((block) =>
+      options.computePayloadFingerprints
+        ? { ...block, payloadFingerprint: payloadFingerprint(block.node) }
+        : block,
+    );
+  const byClientId = new Map<string, IndexedSyncNode>();
+  const byBlockId = new Map<string, IndexedSyncNode>();
+  const byMatchKey = new Map<string, IndexedSyncNode>();
+
+  for (const block of blocks) {
+    byClientId.set(block.clientId, block);
+    if (block.blockId) {
+      byBlockId.set(block.blockId, block);
+    }
+    byMatchKey.set(block.matchKey, block);
+  }
+
+  const report = analyzeSortKeyIntegrity(doc);
+  return {
+    doc,
+    blocks,
+    byClientId,
+    byBlockId,
+    byMatchKey,
+    orderKey: blocks.map((block) => block.matchKey).join("|"),
+    sortKeyCorruptionReport: hasCorruptedSortKeys(report) ? report : null,
+  };
+}
+
+export function createSyncSnapshotIndex(
+  doc: TiptapDoc,
+  options: { computePayloadFingerprints?: boolean } = {},
+): SyncSnapshotIndex {
+  return createSyncSnapshotIndexFromNormalized(normalizeEditorDoc(doc), options);
 }
 
 export function analyzeSortKeyIntegrity(
@@ -170,7 +242,7 @@ export function hasCorruptedSortKeys(report: SortKeyCorruptionReport): boolean {
   return report.duplicates.length > 0 || report.nonMonotonic.length > 0;
 }
 
-function sortKeyForPosition(nextNodes: IndexedNode[], index: number): string {
+function sortKeyForPosition(nextNodes: IndexedSyncNode[], index: number): string {
   const previousExisting = [...nextNodes.slice(0, index)]
     .reverse()
     .find((item) => item.blockId || item.sortKey);
@@ -245,8 +317,8 @@ function withCreateIdentity(
 }
 
 function allocateCreateSortKeys(
-  orderedNextNodes: IndexedNode[],
-  prevIndexed: Record<string, IndexedNode>,
+  orderedNextNodes: IndexedSyncNode[],
+  prevIndexed: Record<string, IndexedSyncNode>,
 ): Map<string, string> {
   const sortKeys = new Map<string, string>();
   let index = 0;
@@ -259,7 +331,7 @@ function allocateCreateSortKeys(
     }
 
     const runStart = index;
-    const run: IndexedNode[] = [];
+    const run: IndexedSyncNode[] = [];
     while (
       index < orderedNextNodes.length &&
       !prevIndexed[orderedNextNodes[index].matchKey]?.blockId
@@ -295,8 +367,8 @@ function allocateCreateSortKeys(
 }
 
 function planDesiredSortKeys(
-  orderedNextNodes: IndexedNode[],
-  prevIndexed: Record<string, IndexedNode>,
+  orderedNextNodes: IndexedSyncNode[],
+  prevIndexed: Record<string, IndexedSyncNode>,
 ): Map<string, string> {
   const desiredSortKeys = new Map<string, string>();
   const existingNodes = orderedNextNodes.filter((node) =>
@@ -355,30 +427,216 @@ function planDesiredSortKeys(
   return desiredSortKeys;
 }
 
-export function deriveSyncEntries(
+function indexRecordFromSnapshot(
+  index: SyncSnapshotIndex | null,
+): Record<string, IndexedSyncNode> {
+  if (!index) return {};
+  const record: Record<string, IndexedSyncNode> = {};
+  for (const block of index.blocks) {
+    record[block.matchKey] = block;
+  }
+  return record;
+}
+
+function createDiffMetrics(
+  mode: SyncDiffMetrics["mode"],
+  topLevelCount: number,
+  dirtyCandidateCount: number,
+): SyncDiffMetrics {
+  return {
+    mode,
+    topLevelCount,
+    dirtyCandidateCount,
+    fingerprintCount: 0,
+    sortPlanRan: false,
+    derivedEntryCount: 0,
+    durationMs: 0,
+  };
+}
+
+function hasHintCandidates(hint: SyncDiffHint | null | undefined): boolean {
+  return Boolean(
+    hint &&
+      (hint.structureChanged ||
+        hint.identityChanged ||
+        hint.changedClientIds.length > 0 ||
+        hint.changedBlockIds.length > 0),
+  );
+}
+
+function collectDirtyMatchKeys(
+  hint: SyncDiffHint | null | undefined,
+  previousIndex: SyncSnapshotIndex | null,
+  nextIndex: SyncSnapshotIndex,
+): Set<string> {
+  const dirty = new Set<string>();
+  if (!hint) return dirty;
+
+  for (const clientId of hint.changedClientIds) {
+    const previous = previousIndex?.byClientId.get(clientId);
+    const next = nextIndex.byClientId.get(clientId);
+    if (previous) dirty.add(previous.matchKey);
+    if (next) dirty.add(next.matchKey);
+    if (!previous && !next) dirty.add(clientId);
+  }
+
+  for (const blockId of hint.changedBlockIds) {
+    const previous = previousIndex?.byBlockId.get(blockId);
+    const next = nextIndex.byBlockId.get(blockId);
+    if (previous) dirty.add(previous.matchKey);
+    if (next) dirty.add(next.matchKey);
+    if (!previous && !next) dirty.add(blockId);
+  }
+
+  return dirty;
+}
+
+function computePayloadFingerprint(
+  node: TiptapNode,
+  metrics: SyncDiffMetrics,
+): string {
+  metrics.fingerprintCount += 1;
+  return payloadFingerprint(node);
+}
+
+function getPreviousPayloadFingerprint(
+  node: IndexedSyncNode,
+  metrics: SyncDiffMetrics,
+): string {
+  if (node.payloadFingerprint) return node.payloadFingerprint;
+  return computePayloadFingerprint(node.node, metrics);
+}
+
+function buildFinalNextIndex(input: {
+  baseIndex: SyncSnapshotIndex;
+  previousIndex: SyncSnapshotIndex | null;
+  nextFingerprints: Map<string, string>;
+  forceComputeAll: boolean;
+  metrics: SyncDiffMetrics;
+}): SyncSnapshotIndex {
+  const blocks = input.baseIndex.blocks.map((block) => {
+    const computed = input.nextFingerprints.get(block.matchKey);
+    if (computed) {
+      return { ...block, payloadFingerprint: computed };
+    }
+
+    const carried =
+      input.previousIndex?.byMatchKey.get(block.matchKey)?.payloadFingerprint ??
+      null;
+    if (carried) {
+      return { ...block, payloadFingerprint: carried };
+    }
+
+    if (input.forceComputeAll) {
+      return {
+        ...block,
+        payloadFingerprint: computePayloadFingerprint(block.node, input.metrics),
+      };
+    }
+
+    return block;
+  });
+
+  const byClientId = new Map<string, IndexedSyncNode>();
+  const byBlockId = new Map<string, IndexedSyncNode>();
+  const byMatchKey = new Map<string, IndexedSyncNode>();
+  for (const block of blocks) {
+    byClientId.set(block.clientId, block);
+    if (block.blockId) byBlockId.set(block.blockId, block);
+    byMatchKey.set(block.matchKey, block);
+  }
+
+  return {
+    ...input.baseIndex,
+    blocks,
+    byClientId,
+    byBlockId,
+    byMatchKey,
+  };
+}
+
+function chooseDiffMode(input: {
+  hint: SyncDiffHint | null | undefined;
+  previousIndex: SyncSnapshotIndex | null;
+  nextIndex: SyncSnapshotIndex;
+}): SyncDiffMetrics["mode"] {
+  if (!input.previousIndex || !hasHintCandidates(input.hint)) {
+    return "fallback-full";
+  }
+  if (input.hint?.identityChanged) {
+    return "fallback-full";
+  }
+  if (input.hint?.structureChanged) {
+    return "structure-hint";
+  }
+  if (input.previousIndex.orderKey !== input.nextIndex.orderKey) {
+    return "structure-hint";
+  }
+  return "content-hint";
+}
+
+function shouldComparePayload(input: {
+  mode: SyncDiffMetrics["mode"];
+  dirtyMatchKeys: Set<string>;
+  matchKey: string;
+}): boolean {
+  if (input.mode === "fallback-full") return true;
+  return input.dirtyMatchKeys.has(input.matchKey);
+}
+
+export function deriveSyncEntriesWithMetrics(
   prevDoc: TiptapDoc | null,
   nextDoc: TiptapDoc,
-): SyncEntry[] {
+  options: DeriveSyncEntriesOptions = {},
+): DeriveSyncEntriesResult {
+  const start = Date.now();
   const normalizedNext = normalizeEditorDoc(nextDoc);
   const normalizedPrev = prevDoc ? normalizeEditorDoc(prevDoc) : null;
-  const nextIndexed = indexTopLevel(normalizedNext);
-  const prevIndexed = normalizedPrev ? indexTopLevel(normalizedPrev) : {};
-  const entries: SyncEntry[] = [];
-  const orderedNextNodes = Object.values(nextIndexed).sort(
-    (a, b) => a.index - b.index,
+  const previousIndex =
+    options.previousIndex ??
+    (normalizedPrev
+      ? createSyncSnapshotIndexFromNormalized(normalizedPrev)
+      : null);
+  const nextPreviewIndex = createSyncSnapshotIndexFromNormalized(normalizedNext);
+  const mode = chooseDiffMode({
+    hint: options.hint,
+    previousIndex,
+    nextIndex: nextPreviewIndex,
+  });
+  const dirtyMatchKeys = collectDirtyMatchKeys(
+    options.hint,
+    previousIndex,
+    nextPreviewIndex,
   );
-  const createSortKeys = allocateCreateSortKeys(orderedNextNodes, prevIndexed);
+  const metrics = createDiffMetrics(
+    mode,
+    nextPreviewIndex.blocks.length,
+    dirtyMatchKeys.size,
+  );
+  const nextIndexed = indexRecordFromSnapshot(nextPreviewIndex);
+  const prevIndexed = indexRecordFromSnapshot(previousIndex);
+  const entries: SyncEntry[] = [];
+  const orderedNextNodes = nextPreviewIndex.blocks;
+  const shouldRunSortPlan = mode !== "content-hint";
+  const createSortKeys = shouldRunSortPlan
+    ? allocateCreateSortKeys(orderedNextNodes, prevIndexed)
+    : new Map<string, string>();
   const previousSortKeysAreCorrupted = hasCorruptedSortKeys(
     analyzeSortKeyIntegrity(normalizedPrev),
   );
   const shouldSuppressExistingMoves = previousSortKeysAreCorrupted;
-  const desiredSortKeys = shouldSuppressExistingMoves
+  const desiredSortKeys = shouldSuppressExistingMoves || !shouldRunSortPlan
     ? new Map<string, string>()
     : planDesiredSortKeys(orderedNextNodes, prevIndexed);
+  metrics.sortPlanRan = shouldRunSortPlan && !shouldSuppressExistingMoves;
+  const nextFingerprints = new Map<string, string>();
 
   for (const nextNode of orderedNextNodes) {
     const prevNode = prevIndexed[nextNode.matchKey];
     if (!prevNode?.blockId) {
+      if (mode === "content-hint" && !dirtyMatchKeys.has(nextNode.matchKey)) {
+        continue;
+      }
       const syncCreateId = createSyncCreateId(nextNode.clientId);
       entries.push({
         clientId: nextNode.clientId,
@@ -390,15 +648,27 @@ export function deriveSyncEntries(
         sortKey:
           createSortKeys.get(nextNode.clientId) ??
           desiredSortKeys.get(nextNode.clientId) ??
+          prevNode?.sortKey ??
+          nextNode.sortKey ??
           sortKeyForPosition(orderedNextNodes, nextNode.index),
       });
+      nextFingerprints.set(
+        nextNode.matchKey,
+        computePayloadFingerprint(nextNode.node, metrics),
+      );
       continue;
     }
 
     const nextSortKey =
       desiredSortKeys.get(nextNode.clientId) ??
-      sortKeyForPosition(orderedNextNodes, nextNode.index);
-    if (!shouldSuppressExistingMoves && nextSortKey !== prevNode.sortKey) {
+      (shouldRunSortPlan
+        ? sortKeyForPosition(orderedNextNodes, nextNode.index)
+        : prevNode.sortKey);
+    if (
+      shouldRunSortPlan &&
+      !shouldSuppressExistingMoves &&
+      nextSortKey !== prevNode.sortKey
+    ) {
       entries.push({
         clientId: nextNode.clientId,
         blockId: prevNode.blockId,
@@ -407,8 +677,17 @@ export function deriveSyncEntries(
       });
     }
 
+    const shouldCompare = shouldComparePayload({
+      mode,
+      dirtyMatchKeys,
+      matchKey: nextNode.matchKey,
+    });
+    if (!shouldCompare) continue;
+
+    const nextFingerprint = computePayloadFingerprint(nextNode.node, metrics);
+    nextFingerprints.set(nextNode.matchKey, nextFingerprint);
     const changedPayload =
-      payloadFingerprint(prevNode.node) !== payloadFingerprint(nextNode.node);
+      getPreviousPayloadFingerprint(prevNode, metrics) !== nextFingerprint;
     if (changedPayload) {
       entries.push({
         clientId: nextNode.clientId,
@@ -420,17 +699,41 @@ export function deriveSyncEntries(
     }
   }
 
-  for (const prevNode of Object.values(prevIndexed)) {
-    if (!nextIndexed[prevNode.matchKey]) {
-      entries.push({
-        clientId: prevNode.clientId,
-        blockId: prevNode.blockId,
-        opType: "delete",
-      });
+  if (mode !== "content-hint") {
+    for (const prevNode of Object.values(prevIndexed)) {
+      if (!nextIndexed[prevNode.matchKey]) {
+        entries.push({
+          clientId: prevNode.clientId,
+          blockId: prevNode.blockId,
+          opType: "delete",
+        });
+      }
     }
   }
 
-  return entries;
+  metrics.derivedEntryCount = entries.length;
+  const nextIndex = buildFinalNextIndex({
+    baseIndex: nextPreviewIndex,
+    previousIndex,
+    nextFingerprints,
+    forceComputeAll: mode === "fallback-full",
+    metrics,
+  });
+  metrics.durationMs = Date.now() - start;
+
+  return {
+    entries,
+    nextIndex,
+    normalizedNext,
+    metrics,
+  };
+}
+
+export function deriveSyncEntries(
+  prevDoc: TiptapDoc | null,
+  nextDoc: TiptapDoc,
+): SyncEntry[] {
+  return deriveSyncEntriesWithMetrics(prevDoc, nextDoc).entries;
 }
 
 export function applyCreateAck(

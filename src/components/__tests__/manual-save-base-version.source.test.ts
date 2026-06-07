@@ -45,7 +45,7 @@ describe("manual save baseVersion rebase source", () => {
     );
     const resolvedAt = hookSource.indexOf("resolveBatchSuccess(");
     const latestCaptureAt = hookSource.indexOf(
-      "captureContentSnapshot(latestContentRef.current);",
+      'captureContentSnapshot(latestContentRef.current, "batch-ack-rescan");',
       resolvedAt,
     );
     const orphanCheckAt = hookSource.indexOf(
@@ -57,7 +57,7 @@ describe("manual save baseVersion rebase source", () => {
       orphanCheckAt,
     );
     const editorCaptureAt = hookSource.indexOf(
-      "captureContentSnapshot(applied);",
+      'captureContentSnapshot(applied, "ack-content-patch");',
       ackBaselineAt,
     );
 

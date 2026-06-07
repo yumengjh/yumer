@@ -28,6 +28,35 @@ export type SyncState =
 
 export type SyncOpType = "create" | "update" | "delete" | "move";
 
+export type SyncDiffHintSource =
+  | "editor-transaction"
+  | "programmatic"
+  | "unknown";
+
+export interface SyncDiffHint {
+  source: SyncDiffHintSource;
+  changedClientIds: string[];
+  changedBlockIds: string[];
+  structureChanged: boolean;
+  identityChanged: boolean;
+  reason?: string;
+}
+
+export type SyncDiffMode =
+  | "content-hint"
+  | "structure-hint"
+  | "fallback-full";
+
+export interface SyncDiffMetrics {
+  mode: SyncDiffMode;
+  topLevelCount: number;
+  dirtyCandidateCount: number;
+  fingerprintCount: number;
+  sortPlanRan: boolean;
+  derivedEntryCount: number;
+  durationMs: number;
+}
+
 export interface SyncEntry {
   clientId: string;
   blockId: string | null;

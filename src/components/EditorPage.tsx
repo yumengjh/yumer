@@ -47,6 +47,7 @@ import { uploadImage } from "@/services/images";
 import { useDocumentSync } from "@/hooks/useDocumentSync";
 import { SyncTraceLog, buildManifestSummary } from "@/services/sync/debug-log";
 import { readIdentityFromAttrs } from "@/services/sync/identity";
+import type { SyncDiffHint } from "@/services/sync/types";
 import {
   hasDiscardableDraft,
   isNoopCommitError,
@@ -429,6 +430,10 @@ function EditorContent() {
   const hydratingSlugRef = useRef<string | null>(null);
   const lastPathnameRef = useRef<string | null>(null);
   const contentRef = useRef<EditorContent>(content);
+  const syncDiffHintRef = useRef<{
+    content: EditorContent;
+    hint: SyncDiffHint;
+  } | null>(null);
   const editorRef = useRef<MarkdownEditorRef>(null);
   const restoredLastEditDocIdRef = useRef<string | null>(null);
   const [pendingLastEditRestoreBlockId, setPendingLastEditRestoreBlockId] = useState<string | null>(null);
@@ -452,6 +457,12 @@ function EditorContent() {
     hasUnsavedChanges,
     contentDirty,
   });
+  const consumeSyncDiffHint = useCallback((nextContent: TiptapDoc) => {
+    const pending = syncDiffHintRef.current;
+    if (!pending || pending.content !== nextContent) return null;
+    syncDiffHintRef.current = null;
+    return pending.hint;
+  }, []);
 
   const sync = useDocumentSync({
     docId: syncEngineEnabled ? currentDoc?.docId ?? null : null,
@@ -487,6 +498,7 @@ function EditorContent() {
       return doc;
     },
     onSessionRecovered: applySyncSession,
+    consumeDiffHint: consumeSyncDiffHint,
   });
   const syncFlush = sync.flush;
   const syncUiSaveStatus = sync.uiSaveStatus;
@@ -868,7 +880,18 @@ function EditorContent() {
     return true;
   }, []);
 
-  const handleEditorChange = useCallback((nextContent: EditorContent) => {
+  const handleEditorChange = useCallback((nextContent: EditorContent, syncDiffHint?: SyncDiffHint) => {
+    if (
+      syncDiffHint &&
+      nextContent &&
+      typeof nextContent === "object" &&
+      (nextContent as TiptapDoc).type === "doc"
+    ) {
+      syncDiffHintRef.current = {
+        content: nextContent,
+        hint: syncDiffHint,
+      };
+    }
     contentRef.current = nextContent;
     startTransition(() => {
       setContent(nextContent);

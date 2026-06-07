@@ -154,4 +154,25 @@ describe("useDocumentSync source guards", () => {
     expect(batchConflictListAt).toBeGreaterThan(batchNeedsReloadAt);
     expect(batchLostAt).toBeGreaterThan(batchConflictListAt);
   });
+
+  it("keeps indexed diff metadata outside React state and consumes hints during snapshot capture", () => {
+    const hookSource = fs.readFileSync(
+      path.resolve(process.cwd(), "src/hooks/useDocumentSync.ts"),
+      "utf8",
+    );
+
+    const indexRefAt = hookSource.indexOf("const snapshotIndexRef = useRef");
+    const hintArgAt = hookSource.indexOf("consumeDiffHint?:");
+    const consumeAt = hookSource.indexOf("const diffHint = consumeDiffHint?.(nextContent)", indexRefAt);
+    const indexedAdvanceAt = hookSource.indexOf("advanceSyncSnapshotIndexed(", consumeAt);
+    const indexPassAt = hookSource.indexOf("snapshotIndexRef.current,", indexedAdvanceAt);
+    const indexUpdateAt = hookSource.indexOf("snapshotIndexRef.current = advanced.index", indexedAdvanceAt);
+
+    expect(indexRefAt).toBeGreaterThanOrEqual(0);
+    expect(hintArgAt).toBeGreaterThanOrEqual(0);
+    expect(consumeAt).toBeGreaterThan(indexRefAt);
+    expect(indexedAdvanceAt).toBeGreaterThan(consumeAt);
+    expect(indexPassAt).toBeGreaterThan(indexedAdvanceAt);
+    expect(indexUpdateAt).toBeGreaterThan(indexPassAt);
+  });
 });

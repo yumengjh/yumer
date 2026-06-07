@@ -1,13 +1,19 @@
 import type { TiptapDoc } from "@/services/tiptap-converter";
 import {
   analyzeSortKeyIntegrity,
-  deriveSyncEntries,
+  createSyncSnapshotIndex,
+  deriveSyncEntriesWithMetrics,
   hasCorruptedSortKeys,
   normalizeEditorDoc,
+  type SyncSnapshotIndex,
 } from "@/services/sync/engine";
 import { readIdentityFromAttrs } from "@/services/sync/identity";
 import { enqueueChange } from "@/services/sync/reducer";
-import type { SyncReducerState } from "@/services/sync/types";
+import type {
+  SyncDiffHint,
+  SyncDiffMetrics,
+  SyncReducerState,
+} from "@/services/sync/types";
 
 function applyLocalSortKeys(
   snapshot: TiptapDoc,
@@ -83,25 +89,55 @@ function reconcilePendingEntriesWithSnapshot(
   return nextState;
 }
 
-export function advanceSyncSnapshot(
+function createIdleMetrics(input: {
+  topLevelCount: number;
+  fingerprintCount: number;
+  durationMs: number;
+}): SyncDiffMetrics {
+  return {
+    mode: "fallback-full",
+    topLevelCount: input.topLevelCount,
+    dirtyCandidateCount: 0,
+    fingerprintCount: input.fingerprintCount,
+    sortPlanRan: false,
+    derivedEntryCount: 0,
+    durationMs: input.durationMs,
+  };
+}
+
+export function advanceSyncSnapshotIndexed(
   state: SyncReducerState,
   previousSnapshot: TiptapDoc | null,
+  previousIndex: SyncSnapshotIndex | null,
   content: TiptapDoc,
-): { state: SyncReducerState; snapshot: TiptapDoc } {
+  hint?: SyncDiffHint | null,
+): {
+  state: SyncReducerState;
+  snapshot: TiptapDoc;
+  index: SyncSnapshotIndex;
+  metrics: SyncDiffMetrics;
+} {
+  const start = Date.now();
   const normalizedSnapshot = normalizeEditorDoc(content);
   if (!previousSnapshot) {
     let nextState = state;
+    let metrics: SyncDiffMetrics | null = null;
     if (shouldCreateInitialUnsyncedContent(normalizedSnapshot)) {
-      const entries = deriveSyncEntries(
+      const derived = deriveSyncEntriesWithMetrics(
         { type: "doc", content: [] },
         normalizedSnapshot,
+        { hint },
       );
-      for (const entry of entries) {
+      metrics = derived.metrics;
+      for (const entry of derived.entries) {
         nextState = enqueueChange(nextState, entry);
       }
     }
     const report = analyzeSortKeyIntegrity(normalizedSnapshot);
     const snapshot = applyLocalSortKeys(normalizedSnapshot, nextState);
+    const index = createSyncSnapshotIndex(snapshot, {
+      computePayloadFingerprints: true,
+    });
     return {
       state: {
         ...nextState,
@@ -109,12 +145,24 @@ export function advanceSyncSnapshot(
         sortKeyCorruptionReport: hasCorruptedSortKeys(report) ? report : null,
       },
       snapshot,
+      index,
+      metrics:
+        metrics ??
+        createIdleMetrics({
+          topLevelCount: index.blocks.length,
+          fingerprintCount: index.blocks.length,
+          durationMs: Date.now() - start,
+        }),
     };
   }
 
-  const entries = deriveSyncEntries(previousSnapshot, normalizedSnapshot);
+  const derived = deriveSyncEntriesWithMetrics(
+    previousSnapshot,
+    normalizedSnapshot,
+    { previousIndex, hint },
+  );
   let nextState = state;
-  for (const entry of entries) {
+  for (const entry of derived.entries) {
     nextState = enqueueChange(nextState, entry);
   }
   nextState = reconcilePendingEntriesWithSnapshot(
@@ -132,5 +180,29 @@ export function advanceSyncSnapshot(
       sortKeyCorruptionReport: corrupted ? report : null,
     },
     snapshot,
+    index:
+      snapshot === normalizedSnapshot
+        ? derived.nextIndex
+        : createSyncSnapshotIndex(snapshot, {
+            computePayloadFingerprints: true,
+          }),
+    metrics: derived.metrics,
+  };
+}
+
+export function advanceSyncSnapshot(
+  state: SyncReducerState,
+  previousSnapshot: TiptapDoc | null,
+  content: TiptapDoc,
+): { state: SyncReducerState; snapshot: TiptapDoc } {
+  const advanced = advanceSyncSnapshotIndexed(
+    state,
+    previousSnapshot,
+    null,
+    content,
+  );
+  return {
+    state: advanced.state,
+    snapshot: advanced.snapshot,
   };
 }

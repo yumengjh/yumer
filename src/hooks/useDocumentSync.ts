@@ -9,7 +9,11 @@ import { postDraftCheckpoint, postSyncBatch, postSyncManifestReconcile, type Syn
 import { selectSyncBatchOperations } from "@/services/sync/batching";
 import { summarizeSyncBatchFailures } from "@/services/sync/batch-failure";
 import { applyCheckpointAck, buildDraftCheckpoint } from "@/services/sync/checkpoint";
-import { applyServerAck } from "@/services/sync/engine";
+import {
+  applyServerAck,
+  createSyncSnapshotIndex,
+  type SyncSnapshotIndex,
+} from "@/services/sync/engine";
 import { collectOrphanedCreateDeletes } from "@/services/sync/orphaned-create";
 import {
   clearPendingCommit,
@@ -21,12 +25,17 @@ import {
   resolveBatchFailure,
   resolveBatchSuccess,
 } from "@/services/sync/reducer";
-import { advanceSyncSnapshot } from "@/services/sync/snapshot";
+import { advanceSyncSnapshotIndexed } from "@/services/sync/snapshot";
 import { createSortKeysBetween } from "@/services/sync/order";
 import { SyncTraceLog, buildManifestSummary, type SyncTraceEvent } from "@/services/sync/debug-log";
-import type { SyncEntry, SyncReducerState } from "@/services/sync/types";
+import type { SyncDiffHint, SyncEntry, SyncReducerState } from "@/services/sync/types";
 
 type SyncSource = "autosync" | "manual-save";
+type SyncSnapshotCaptureSource =
+  | "editor-effect"
+  | "batch-ack-rescan"
+  | "ack-content-patch"
+  | "manual-save-capture";
 
 type UseDocumentSyncArgs = {
   docId: string | null;
@@ -37,6 +46,7 @@ type UseDocumentSyncArgs = {
   content: TiptapDoc | null;
   onContentPatched?: (doc: TiptapDoc) => TiptapDoc | void;
   onSessionRecovered?: (syncSession: SyncSessionMeta) => void;
+  consumeDiffHint?: (content: TiptapDoc) => SyncDiffHint | null;
 };
 
 function createBatchId(): string {
@@ -54,6 +64,57 @@ function createReconcileId(): string {
 function logSyncEvent(event: string, details: Record<string, unknown>) {
   if (process.env.NODE_ENV === "production") return;
   console.debug(`[sync] ${event}`, details);
+}
+
+function logDiffEvent(details: {
+  docId: string;
+  source: SyncSnapshotCaptureSource;
+  mode: string;
+  topLevelCount: number;
+  dirtyCandidateCount: number;
+  fingerprintCount: number;
+  sortPlanRan: boolean;
+  derivedEntryCount: number;
+  dirtyOrderLength: number;
+  durationMs: number;
+  hintReason?: string | null;
+  hintStructureChanged?: boolean | null;
+  hintIdentityChanged?: boolean | null;
+}) {
+  if (process.env.NODE_ENV === "production") return;
+  const isNoopFullDiff =
+    details.mode === "fallback-full" &&
+    details.derivedEntryCount === 0 &&
+    details.dirtyOrderLength === 0;
+  const marker = isNoopFullDiff
+    ? "NOOP"
+    : details.mode === "content-hint"
+      ? "FAST"
+      : details.mode === "structure-hint"
+        ? "STRUCTURE"
+        : "FULL";
+  const payload = {
+    docId: details.docId,
+    source: details.source,
+    mode: details.mode,
+    blocks: details.topLevelCount,
+    dirtyCandidates: details.dirtyCandidateCount,
+    fingerprints: details.fingerprintCount,
+    sortPlan: details.sortPlanRan,
+    entries: details.derivedEntryCount,
+    dirtyQueue: details.dirtyOrderLength,
+    durationMs: details.durationMs,
+    hint: {
+      reason: details.hintReason ?? null,
+      structureChanged: details.hintStructureChanged ?? null,
+      identityChanged: details.hintIdentityChanged ?? null,
+    },
+  };
+  if (isNoopFullDiff) {
+    console.debug(`[sync:diff:${marker}]`, payload);
+  } else {
+    console.log(`[sync:diff:${marker}]`, payload);
+  }
 }
 
 function addSyncTrace(
@@ -222,10 +283,12 @@ export function useDocumentSync({
   content,
   onContentPatched,
   onSessionRecovered,
+  consumeDiffHint,
 }: UseDocumentSyncArgs) {
   const [syncState, setSyncState] = useState<SyncReducerState | null>(null);
   const stateRef = useRef<SyncReducerState | null>(null);
   const snapshotRef = useRef<TiptapDoc | null>(null);
+  const snapshotIndexRef = useRef<SyncSnapshotIndex | null>(null);
   const latestContentRef = useRef<TiptapDoc | null>(content);
   const flushRunningRef = useRef(false);
   const reconcileRunningRef = useRef(false);
@@ -270,17 +333,24 @@ export function useDocumentSync({
   }, [docId, onSessionRecovered, updateSyncState]);
 
   const captureContentSnapshot = useCallback(
-    (nextContent: TiptapDoc | null): SyncReducerState | null => {
+    (
+      nextContent: TiptapDoc | null,
+      source: SyncSnapshotCaptureSource = "editor-effect",
+    ): SyncReducerState | null => {
       const current = stateRef.current;
       if (!current || !nextContent) return current;
 
       const prevSnapshot = snapshotRef.current;
-      const advanced = advanceSyncSnapshot(
+      const diffHint = consumeDiffHint?.(nextContent) ?? null;
+      const advanced = advanceSyncSnapshotIndexed(
         current,
         prevSnapshot,
+        snapshotIndexRef.current,
         nextContent,
+        diffHint,
       );
       snapshotRef.current = advanced.snapshot;
+      snapshotIndexRef.current = advanced.index;
       if (advanced.state.hasCorruptedSortKeys) {
         logSyncEvent("snapshot:sort-key-corruption", {
           docId: current.docId,
@@ -290,6 +360,21 @@ export function useDocumentSync({
       if (advanced.state !== current) {
         replaceSyncState(advanced.state);
       }
+      logDiffEvent({
+        docId: current.docId,
+        source,
+        mode: advanced.metrics.mode,
+        topLevelCount: advanced.metrics.topLevelCount,
+        dirtyCandidateCount: advanced.metrics.dirtyCandidateCount,
+        fingerprintCount: advanced.metrics.fingerprintCount,
+        sortPlanRan: advanced.metrics.sortPlanRan,
+        derivedEntryCount: advanced.metrics.derivedEntryCount,
+        dirtyOrderLength: advanced.state.dirtyOrder.length,
+        durationMs: advanced.metrics.durationMs,
+        hintReason: diffHint?.reason ?? null,
+        hintStructureChanged: diffHint?.structureChanged ?? null,
+        hintIdentityChanged: diffHint?.identityChanged ?? null,
+      });
 
       // Trace: snapshot advance
       addSyncTrace("snapshot:advance", current.docId, current.sessionId, current.sessionEpoch, () => ({
@@ -298,11 +383,12 @@ export function useDocumentSync({
         nextManifest: buildManifestSummary(nextContent),
         derivedEntryCount: Object.keys(advanced.state.entries).length,
         dirtyOrderLength: advanced.state.dirtyOrder.length,
+        diff: advanced.metrics,
       }));
 
       return advanced.state;
     },
-    [replaceSyncState],
+    [consumeDiffHint, replaceSyncState],
   );
 
   useEffect(() => {
@@ -314,6 +400,7 @@ export function useDocumentSync({
       // eslint-disable-next-line react-hooks/set-state-in-effect -- sync state must reset when the document binding changes
       replaceSyncState(null);
       snapshotRef.current = null;
+      snapshotIndexRef.current = null;
       lastReconciledManifestKeyRef.current = null;
       return;
     }
@@ -328,11 +415,16 @@ export function useDocumentSync({
       ),
     );
     snapshotRef.current = latestContentRef.current;
+    snapshotIndexRef.current = latestContentRef.current
+      ? createSyncSnapshotIndex(latestContentRef.current, {
+          computePayloadFingerprints: true,
+        })
+      : null;
     lastReconciledManifestKeyRef.current = null;
   }, [baseVersion, docId, draftRevision, replaceSyncState, rootBlockId, syncSession]);
 
   useEffect(() => {
-    captureContentSnapshot(content);
+    captureContentSnapshot(content, "editor-effect");
   }, [captureContentSnapshot, content]);
 
   useEffect(() => {
@@ -521,10 +613,16 @@ export function useDocumentSync({
           response.mappings,
         );
         snapshotRef.current = patched;
+        snapshotIndexRef.current = createSyncSnapshotIndex(patched, {
+          computePayloadFingerprints: true,
+        });
         if (onContentPatched && patched !== contentForCheckpoint) {
           const applied = onContentPatched(patched);
           if (applied && applied.type === "doc") {
             snapshotRef.current = applied;
+            snapshotIndexRef.current = createSyncSnapshotIndex(applied, {
+              computePayloadFingerprints: true,
+            });
             latestContentRef.current = applied;
           }
         }
@@ -737,7 +835,7 @@ export function useDocumentSync({
                 : prev,
             );
 
-            captureContentSnapshot(latestContentRef.current);
+            captureContentSnapshot(latestContentRef.current, "batch-ack-rescan");
 
             const createMappings = response.results
               .filter(
@@ -802,11 +900,14 @@ export function useDocumentSync({
                 afterManifest: buildManifestSummary(patched),
               }));
               snapshotRef.current = patched;
+              snapshotIndexRef.current = createSyncSnapshotIndex(patched, {
+                computePayloadFingerprints: true,
+              });
               if (onContentPatched && patched !== currentSnapshot) {
                 try {
                   const applied = onContentPatched(patched);
                   if (applied && applied.type === "doc") {
-                    captureContentSnapshot(applied);
+                    captureContentSnapshot(applied, "ack-content-patch");
                   }
                 } catch (error) {
                   logSyncEvent("ack:content-patch-failed", {
@@ -866,7 +967,7 @@ export function useDocumentSync({
       commitAction?: () => Promise<void>,
     ): Promise<boolean> => {
       if (latestContent) {
-        captureContentSnapshot(latestContent);
+        captureContentSnapshot(latestContent, "manual-save-capture");
       }
 
       autosyncPausedRef.current = true;

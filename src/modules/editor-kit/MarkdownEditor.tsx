@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, forwardRef, useImperativeHandle } from "react";
 import { useEditor, EditorContent, ReactNodeViewRenderer } from "@tiptap/react";
 import type { Editor } from "@tiptap/react";
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import StarterKit from "@tiptap/starter-kit";
 import CodeBlock from "@tiptap/extension-code-block";
 import Code from "@tiptap/extension-code";
@@ -65,6 +66,7 @@ import {
 import { stripUnsupportedSyncAttrs } from "./editorContentNormalization";
 import { resolveEditorScrollContainer, resolveEditorViewportTop } from "./scrollContainer";
 import type { EditorContent as EditorContentType, EditorImageUploadHandler, TiptapDoc } from "./types";
+import type { SyncDiffHint } from "@/services/sync/types";
 import "./styles/editor.css";
 
 export interface MarkdownEditorRef {
@@ -97,7 +99,7 @@ export interface MarkdownEditorProps {
   /** 内容（HTML 字符串或 Tiptap JSON） */
   content?: EditorContentType;
   /** 内容变化回调（输出 Tiptap JSON） */
-  onChange?: (content: EditorContentType) => void;
+  onChange?: (content: EditorContentType, syncDiffHint?: SyncDiffHint) => void;
   /** 是否可编辑，默认 true */
   editable?: boolean;
   /** 占位文字 */
@@ -297,6 +299,157 @@ function transactionMayNeedIdentityPatch(
   });
 }
 
+function addNodeIdentityToSets(
+  node: { attrs?: Record<string, unknown> },
+  clientIds: Set<string>,
+  blockIds: Set<string>,
+): void {
+  const identity = readIdentityFromAttrs(node.attrs);
+  if (identity.clientId) clientIds.add(identity.clientId);
+  if (identity.blockId) blockIds.add(identity.blockId);
+}
+
+function collectTopLevelSyncIdentitiesInRange(
+  doc: ProseMirrorNode,
+  from: number,
+  to: number,
+): {
+  clientIds: Set<string>;
+  blockIds: Set<string>;
+  touchedCount: number;
+} {
+  const clientIds = new Set<string>();
+  const blockIds = new Set<string>();
+  let touchedCount = 0;
+  const rangeFrom = Math.max(0, Math.min(from, to));
+  const rangeTo = Math.max(rangeFrom, Math.max(from, to));
+
+  doc.forEach((node, offset) => {
+    if (!IDENTITY_NODE_TYPES.has(node.type.name)) return;
+
+    const nodeStart = offset;
+    const nodeEnd = offset + node.nodeSize;
+    const overlaps =
+      rangeFrom === rangeTo
+        ? nodeStart <= rangeFrom && nodeEnd >= rangeFrom
+        : nodeStart < rangeTo && nodeEnd > rangeFrom;
+    if (!overlaps) return;
+
+    touchedCount += 1;
+    addNodeIdentityToSets(node, clientIds, blockIds);
+  });
+
+  return { clientIds, blockIds, touchedCount };
+}
+
+function collectSelectionSyncIdentity(editor: Editor): {
+  clientIds: string[];
+  blockIds: string[];
+} {
+  const { $from } = editor.state.selection;
+  for (let depth = $from.depth; depth >= 1; depth -= 1) {
+    const node = $from.node(depth);
+    if (!IDENTITY_NODE_TYPES.has(node.type.name)) continue;
+    const identity = readIdentityFromAttrs(node.attrs);
+    return {
+      clientIds: identity.clientId ? [identity.clientId] : [],
+      blockIds: identity.blockId ? [identity.blockId] : [],
+    };
+  }
+  return { clientIds: [], blockIds: [] };
+}
+
+function uniqueValues(values: string[]): string[] {
+  return [...new Set(values)];
+}
+
+function mergeSyncDiffHints(
+  left: SyncDiffHint | null,
+  right: SyncDiffHint | null,
+): SyncDiffHint | null {
+  if (!left) return right;
+  if (!right) return left;
+  return {
+    source: "editor-transaction",
+    changedClientIds: uniqueValues([
+      ...left.changedClientIds,
+      ...right.changedClientIds,
+    ]),
+    changedBlockIds: uniqueValues([
+      ...left.changedBlockIds,
+      ...right.changedBlockIds,
+    ]),
+    structureChanged: left.structureChanged || right.structureChanged,
+    identityChanged: left.identityChanged || right.identityChanged,
+    reason: uniqueValues(
+      [left.reason, right.reason].filter((value): value is string =>
+        Boolean(value),
+      ),
+    ).join("+"),
+  };
+}
+
+function deriveTransactionSyncDiffHint(
+  editor: Editor,
+  transaction: import("@tiptap/pm/state").Transaction,
+  identityChanged: boolean,
+): SyncDiffHint | null {
+  if (!transaction.docChanged) return null;
+
+  const changedClientIds = new Set<string>();
+  const changedBlockIds = new Set<string>();
+  let touchedBefore = 0;
+  let touchedAfter = 0;
+
+  transaction.mapping.maps.forEach((map) => {
+    map.forEach((oldStart, oldEnd, newStart, newEnd) => {
+      const before = collectTopLevelSyncIdentitiesInRange(
+        transaction.before,
+        oldStart,
+        oldEnd,
+      );
+      const after = collectTopLevelSyncIdentitiesInRange(
+        editor.state.doc,
+        newStart,
+        newEnd,
+      );
+
+      touchedBefore += before.touchedCount;
+      touchedAfter += after.touchedCount;
+      before.clientIds.forEach((id) => changedClientIds.add(id));
+      after.clientIds.forEach((id) => changedClientIds.add(id));
+      before.blockIds.forEach((id) => changedBlockIds.add(id));
+      after.blockIds.forEach((id) => changedBlockIds.add(id));
+    });
+  });
+
+  if (changedClientIds.size === 0 && changedBlockIds.size === 0) {
+    const selection = collectSelectionSyncIdentity(editor);
+    selection.clientIds.forEach((id) => changedClientIds.add(id));
+    selection.blockIds.forEach((id) => changedBlockIds.add(id));
+  }
+
+  const hasIdentity = changedClientIds.size > 0 || changedBlockIds.size > 0;
+  const structureChanged =
+    identityChanged ||
+    transaction.before.childCount !== editor.state.doc.childCount ||
+    touchedBefore > 1 ||
+    touchedAfter > 1;
+
+  return {
+    source: "editor-transaction",
+    changedClientIds: uniqueValues([...changedClientIds]),
+    changedBlockIds: uniqueValues([...changedBlockIds]),
+    structureChanged: hasIdentity ? structureChanged : true,
+    identityChanged: identityChanged || !hasIdentity,
+    reason: hasIdentity
+      ? structureChanged
+        ? "structure-change"
+        : "content-change"
+      : "unknown-range",
+  };
+}
+
 const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(function MarkdownEditor({
   content = "",
   onChange,
@@ -335,6 +488,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
   const pendingChangeEditorRef = useRef<Editor | null>(null);
   const changeEmitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingIdentityPatchRef = useRef(false);
+  const pendingSyncDiffHintRef = useRef<SyncDiffHint | null>(null);
   const floatingToolbarItemSet = useMemo(
     () => new Set(floatingToolbarItemIds),
     [floatingToolbarItemIds],
@@ -366,6 +520,8 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
 
     const ed = pendingChangeEditorRef.current;
     pendingChangeEditorRef.current = null;
+    const syncDiffHint = pendingSyncDiffHintRef.current;
+    pendingSyncDiffHintRef.current = null;
     if (!ed) return;
 
     if (pendingIdentityPatchRef.current) {
@@ -381,7 +537,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
     if (nextContent && typeof nextContent === "object") {
       emittedContentRefs.current.add(nextContent);
     }
-    emitChange(nextContent);
+    emitChange(nextContent, syncDiffHint ?? undefined);
   }, []);
 
   const schedulePendingChange = useCallback((ed: Editor) => {
@@ -396,6 +552,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
         clearTimeout(changeEmitTimerRef.current);
         changeEmitTimerRef.current = null;
       }
+      pendingSyncDiffHintRef.current = null;
     };
   }, []);
 
@@ -470,9 +627,17 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
     }) => {
       if (!onChangeRef.current || transaction.getMeta(BLOCK_IDENTITY_PATCH_META)) return;
 
-      if (transactionMayNeedIdentityPatch(ed as Editor, transaction)) {
+      const needsIdentityPatch = transactionMayNeedIdentityPatch(
+        ed as Editor,
+        transaction,
+      );
+      if (needsIdentityPatch) {
         pendingIdentityPatchRef.current = true;
       }
+      pendingSyncDiffHintRef.current = mergeSyncDiffHints(
+        pendingSyncDiffHintRef.current,
+        deriveTransactionSyncDiffHint(ed as Editor, transaction, needsIdentityPatch),
+      );
       schedulePendingChange(ed as Editor);
     },
     [schedulePendingChange],
