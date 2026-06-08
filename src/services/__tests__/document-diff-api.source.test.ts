@@ -18,5 +18,9 @@ describe("document diff api source", () => {
     expect(source).toContain('...(draftStrategy ? { draftStrategy } : {})');
     expect(source).toContain('export async function publishDocumentVersion(');
     expect(source).toContain('export async function unpublishDocument(');
+    expect(source).toContain('export async function restoreDocument(');
+    expect(source).toContain('export async function permanentlyDeleteDocument(');
+    expect(source).toContain('`/documents/${docId}/permanent`');
+    expect(source).toContain('trashDaysRemaining?: number | null');
   });
 });

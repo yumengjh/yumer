@@ -370,17 +370,17 @@ export default function DocumentSidebar({
 
   const handleDeleteDoc = (docId: string, docTitle: string) => {
     Modal.confirm({
-      title: "确认删除文档",
-      content: `您确定要删除文档「${docTitle || "未命名文档"}」吗？此操作无法撤销。`,
-      okText: "确认",
+      title: "移至回收站",
+      content: `您确定要把文档「${docTitle || "未命名文档"}」移至回收站吗？之后可以在文档管理里恢复。`,
+      okText: "移至回收站",
       cancelText: "取消",
       okType: "danger",
       onOk: async () => {
         try {
           await deleteDoc(docId);
-          message.success("删除文档成功");
+          message.success("文档已移至回收站");
         } catch {
-          message.error("删除文档失败");
+          message.error("移至回收站失败");
         }
       },
     });
@@ -412,7 +412,7 @@ export default function DocumentSidebar({
     { type: "divider" },
     {
       key: "delete",
-      label: "删除",
+      label: "移至回收站",
       danger: true,
       onClick: () => handleDeleteDoc(doc.docId, doc.title),
     },

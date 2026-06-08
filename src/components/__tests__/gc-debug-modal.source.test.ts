@@ -172,4 +172,20 @@ describe("GcDebugModal policy visibility", () => {
     expect(source).toContain("freeRatio");
     expect(source).toContain("unchangedReasons");
   });
+
+  it("renders render cache GC controls and scoped status output", () => {
+    const source = fs.readFileSync(
+      path.resolve(process.cwd(), "src/components/GcDebugModal.tsx"),
+      "utf8",
+    );
+
+    expect(source).toContain("getRenderCacheGcStatus");
+    expect(source).toContain("sweepRenderCachePublishedReachability");
+    expect(source).toContain("renderCacheStatus");
+    expect(source).toContain("renderCacheRun");
+    expect(source).toContain("handleRenderCacheRefresh");
+    expect(source).toContain("handleRenderCacheSweep");
+    expect(source).toContain("Render Cache GC");
+    expect(source).toContain("Delete Reasons");
+  });
 });

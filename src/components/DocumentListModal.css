@@ -8,6 +8,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
   padding: 12px 16px;
   border-bottom: 1px solid var(--color-border);
 }
@@ -19,6 +20,16 @@
 .doc-list__items {
   max-height: 460px;
   overflow-y: auto;
+}
+
+.doc-list__items--trash-grid {
+  padding: 12px;
+}
+
+.doc-list__items--trash-grid .ant-spin-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
 }
 
 .doc-list__item {
@@ -42,6 +53,17 @@
 
 .doc-list__item--active:hover {
   background: var(--color-primary-bg);
+}
+
+.doc-list__item--trash {
+  cursor: default;
+  opacity: 0.94;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-left: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg-container);
 }
 
 .doc-list__item-icon {
@@ -72,12 +94,18 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
   font-size: 11px;
   color: var(--color-text-tertiary);
 }
 
 .doc-list__item-time {
   font-size: 11px;
+}
+
+.doc-list__item-deadline {
+  color: var(--color-error-text);
+  font-weight: 600;
 }
 
 .doc-list__rename-input {

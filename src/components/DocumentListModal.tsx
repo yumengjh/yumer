@@ -1,18 +1,32 @@
 "use client";
 
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
-import { Modal, Input, Button, Tag, Popconfirm, message, Empty, Tooltip } from "antd";
+import {
+  Modal,
+  Input,
+  Button,
+  Tag,
+  Popconfirm,
+  message,
+  Empty,
+  Tooltip,
+  Segmented,
+  Spin,
+} from "antd";
 import {
   SearchOutlined,
   PlusOutlined,
   EditOutlined,
   DeleteOutlined,
+  UndoOutlined,
   LockOutlined,
   TeamOutlined,
   GlobalOutlined,
   FileTextOutlined,
+  InboxOutlined,
 } from "@ant-design/icons";
 import { useDocument } from "../contexts/DocumentContext";
+import { listDocuments, type Document } from "../services/document";
 import "./DocumentListModal.css";
 
 interface DocumentListModalProps {
@@ -23,6 +37,8 @@ interface DocumentListModalProps {
   currentDocId?: string;
 }
 
+type DocumentViewMode = "active" | "trash";
+
 export function DocumentListModal({
   open,
   onClose,
@@ -30,19 +46,50 @@ export function DocumentListModal({
   onCreateNew,
   currentDocId,
 }: DocumentListModalProps) {
-  const { documents, updateDoc, deleteDoc, refreshDocs } = useDocument();
+  const { workspaceId, documents, updateDoc, deleteDoc, restoreDoc, permanentlyDeleteDoc, refreshDocs } = useDocument();
   const [searchText, setSearchText] = useState("");
+  const [viewMode, setViewMode] = useState<DocumentViewMode>("active");
   const [renamingDocId, setRenamingDocId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [trashDocuments, setTrashDocuments] = useState<Document[]>([]);
+  const [trashLoading, setTrashLoading] = useState(false);
+  const [permanentlyDeletingDocId, setPermanentlyDeletingDocId] = useState<string | null>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (open) {
-      setSearchText("");
-      setRenamingDocId(null);
-      refreshDocs().catch(() => {});
+  const loadTrashDocuments = useCallback(async () => {
+    if (!workspaceId) {
+      setTrashDocuments([]);
+      return;
     }
+
+    setTrashLoading(true);
+    try {
+      const result = await listDocuments({
+        workspaceId,
+        status: "deleted",
+        sortBy: "deletedAt",
+        sortOrder: "DESC",
+      });
+      setTrashDocuments(result.items);
+    } catch {
+      message.error("加载回收站失败");
+    } finally {
+      setTrashLoading(false);
+    }
+  }, [workspaceId]);
+
+  useEffect(() => {
+    if (!open) return;
+    setSearchText("");
+    setRenamingDocId(null);
+    setViewMode("active");
+    refreshDocs().catch(() => {});
   }, [open, refreshDocs]);
+
+  useEffect(() => {
+    if (!open || viewMode !== "trash") return;
+    void loadTrashDocuments();
+  }, [loadTrashDocuments, open, viewMode]);
 
   useEffect(() => {
     if (renamingDocId && renameInputRef.current) {
@@ -51,11 +98,13 @@ export function DocumentListModal({
     }
   }, [renamingDocId]);
 
+  const visibleDocs = viewMode === "trash" ? trashDocuments : documents;
+
   const filtered = useMemo(() => {
-    if (!searchText.trim()) return documents;
+    if (!searchText.trim()) return visibleDocs;
     const q = searchText.toLowerCase();
-    return documents.filter((d) => d.title.toLowerCase().includes(q));
-  }, [documents, searchText]);
+    return visibleDocs.filter((doc) => doc.title.toLowerCase().includes(q));
+  }, [searchText, visibleDocs]);
 
   const handleStartRename = useCallback(
     (e: React.MouseEvent, docId: string, title: string) => {
@@ -71,7 +120,7 @@ export function DocumentListModal({
       const trimmed = renameValue.trim();
       setRenamingDocId(null);
       if (!trimmed) return;
-      const doc = documents.find((d) => d.docId === docId);
+      const doc = documents.find((item) => item.docId === docId);
       if (!doc || trimmed === doc.title) return;
       try {
         await updateDoc(docId, { title: trimmed });
@@ -80,19 +129,51 @@ export function DocumentListModal({
         message.error("重命名失败");
       }
     },
-    [renameValue, documents, updateDoc],
+    [documents, renameValue, updateDoc],
   );
 
-  const handleDelete = useCallback(
+  const handleTrash = useCallback(
     async (docId: string) => {
       try {
         await deleteDoc(docId);
-        message.success("文档已删除");
+        message.success("文档已移至回收站");
+        if (viewMode === "trash") {
+          await loadTrashDocuments();
+        }
       } catch {
-        message.error("删除失败");
+        message.error("移至回收站失败");
       }
     },
-    [deleteDoc],
+    [deleteDoc, loadTrashDocuments, viewMode],
+  );
+
+  const handleRestore = useCallback(
+    async (docId: string) => {
+      try {
+        await restoreDoc(docId);
+        message.success("文档已恢复");
+        await loadTrashDocuments();
+      } catch {
+        message.error("恢复失败");
+      }
+    },
+    [loadTrashDocuments, restoreDoc],
+  );
+
+  const handlePermanentDelete = useCallback(
+    async (docId: string) => {
+      setPermanentlyDeletingDocId(docId);
+      try {
+        await permanentlyDeleteDoc(docId);
+        message.success("文档已永久删除");
+        await loadTrashDocuments();
+      } catch {
+        message.error("永久删除失败");
+      } finally {
+        setPermanentlyDeletingDocId((current) => (current === docId ? null : current));
+      }
+    },
+    [loadTrashDocuments, permanentlyDeleteDoc],
   );
 
   const handleKeyDown = useCallback(
@@ -106,8 +187,8 @@ export function DocumentListModal({
     [handleSaveRename],
   );
 
-  const visibilityIcon = (v?: string) => {
-    switch (v) {
+  const visibilityIcon = (visibility?: string) => {
+    switch (visibility) {
       case "workspace":
         return <TeamOutlined style={{ fontSize: 11, color: "var(--app-text-muted)" }} />;
       case "public":
@@ -117,18 +198,33 @@ export function DocumentListModal({
     }
   };
 
-  const statusLabel = (s?: string) => {
-    switch (s) {
+  const statusLabel = (status?: string) => {
+    switch (status) {
       case "draft":
-        return <Tag color="default" style={{ fontSize: 10, lineHeight: "16px", padding: "0 4px" }}>草稿</Tag>;
+        return (
+          <Tag color="default" style={{ fontSize: 10, lineHeight: "16px", padding: "0 4px" }}>
+            草稿
+          </Tag>
+        );
       case "archived":
-        return <Tag color="orange" style={{ fontSize: 10, lineHeight: "16px", padding: "0 4px" }}>归档</Tag>;
+        return (
+          <Tag color="orange" style={{ fontSize: 10, lineHeight: "16px", padding: "0 4px" }}>
+            归档
+          </Tag>
+        );
+      case "deleted":
+        return (
+          <Tag color="red" style={{ fontSize: 10, lineHeight: "16px", padding: "0 4px" }}>
+            回收站
+          </Tag>
+        );
       default:
         return null;
     }
   };
 
-  const formatTime = (iso: string) => {
+  const formatTime = (iso?: string | null) => {
+    if (!iso) return "";
     try {
       const d = new Date(iso);
       return d.toLocaleString("zh-CN", {
@@ -140,6 +236,15 @@ export function DocumentListModal({
     } catch {
       return "";
     }
+  };
+
+  const formatTrashDeadline = (doc: Document) => {
+    if (typeof doc.trashDaysRemaining === "number") {
+      if (doc.trashDaysRemaining <= 0) return "今天自动删除";
+      return `${doc.trashDaysRemaining} 天后自动删除`;
+    }
+    if (doc.trashExpiresAt) return `自动删除：${formatTime(doc.trashExpiresAt)}`;
+    return "自动删除时间未知";
   };
 
   return (
@@ -163,6 +268,15 @@ export function DocumentListModal({
           size="small"
           className="doc-list__search"
         />
+        <Segmented
+          size="small"
+          value={viewMode}
+          onChange={(value) => setViewMode(value as DocumentViewMode)}
+          options={[
+            { label: "文档", value: "active" },
+            { label: "回收站", value: "trash", icon: <InboxOutlined /> },
+          ]}
+        />
         <Button
           type="primary"
           icon={<PlusOutlined />}
@@ -176,87 +290,128 @@ export function DocumentListModal({
         </Button>
       </div>
 
-      <div className="doc-list__items">
-        {filtered.length === 0 ? (
-          <Empty
-            description={searchText ? "没有匹配的文档" : "暂无文档"}
-            style={{ padding: "40px 0" }}
-          />
-        ) : (
-          filtered.map((doc) => (
-            <div
-              key={doc.docId}
-              className={`doc-list__item ${
-                currentDocId === doc.docId ? "doc-list__item--active" : ""
-              }`}
-              onClick={() => {
-                if (renamingDocId === doc.docId) return;
-                onSelect(doc.docId);
-              }}
-            >
-              <span className="doc-list__item-icon">
-                {doc.icon || <FileTextOutlined style={{ opacity: 0.4 }} />}
-              </span>
-
-              <div className="doc-list__item-body">
-                {renamingDocId === doc.docId ? (
-                  <Input
-                    ref={renameInputRef as any}
-                    size="small"
-                    value={renameValue}
-                    onChange={(e) => setRenameValue(e.target.value)}
-                    onBlur={() => handleSaveRename(doc.docId)}
-                    onKeyDown={(e) => handleKeyDown(e, doc.docId)}
-                    onClick={(e) => e.stopPropagation()}
-                    className="doc-list__rename-input"
-                  />
-                ) : (
-                  <span className="doc-list__item-title">{doc.title}</span>
-                )}
-                <span className="doc-list__item-meta">
-                  {statusLabel(doc.status)}
-                  {visibilityIcon(doc.visibility)}
-                  <span className="doc-list__item-time">
-                    {formatTime(doc.updatedAt)}
-                  </span>
+      <div className={`doc-list__items ${viewMode === "trash" ? "doc-list__items--trash-grid" : ""}`}>
+        <Spin spinning={viewMode === "trash" && trashLoading}>
+          {filtered.length === 0 ? (
+            <Empty
+              description={searchText ? "没有匹配的文档" : viewMode === "trash" ? "回收站为空" : "暂无文档"}
+              style={{ padding: "40px 0" }}
+            />
+          ) : (
+            filtered.map((doc) => (
+              <div
+                key={doc.docId}
+                className={`doc-list__item ${
+                  viewMode === "active" && currentDocId === doc.docId ? "doc-list__item--active" : ""
+                } ${viewMode === "trash" ? "doc-list__item--trash" : ""}`}
+                onClick={() => {
+                  if (viewMode === "trash") return;
+                  if (renamingDocId === doc.docId) return;
+                  onSelect(doc.docId);
+                }}
+              >
+                <span className="doc-list__item-icon">
+                  {doc.icon || <FileTextOutlined style={{ opacity: 0.4 }} />}
                 </span>
-              </div>
 
-              <div className="doc-list__item-actions">
-                <Tooltip title="重命名">
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<EditOutlined />}
-                    onClick={(e) => handleStartRename(e, doc.docId, doc.title)}
-                  />
-                </Tooltip>
-                <Popconfirm
-                  title="确定删除此文档？"
-                  description="子文档将一并删除，此操作不可撤销。"
-                  onConfirm={(e) => {
-                    e?.stopPropagation();
-                    handleDelete(doc.docId);
-                  }}
-                  onCancel={(e) => e?.stopPropagation()}
-                  okText="删除"
-                  cancelText="取消"
-                  okButtonProps={{ danger: true }}
-                >
-                  <Tooltip title="删除">
-                    <Button
-                      type="text"
+                <div className="doc-list__item-body">
+                  {viewMode === "active" && renamingDocId === doc.docId ? (
+                    <Input
+                      ref={renameInputRef as any}
                       size="small"
-                      danger
-                      icon={<DeleteOutlined />}
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onBlur={() => handleSaveRename(doc.docId)}
+                      onKeyDown={(e) => handleKeyDown(e, doc.docId)}
                       onClick={(e) => e.stopPropagation()}
+                      className="doc-list__rename-input"
                     />
-                  </Tooltip>
-                </Popconfirm>
+                  ) : (
+                    <span className="doc-list__item-title">{doc.title}</span>
+                  )}
+                  <span className="doc-list__item-meta">
+                    {statusLabel(doc.status)}
+                    {viewMode === "trash" && doc.deletedFromStatus ? statusLabel(doc.deletedFromStatus) : null}
+                    {visibilityIcon(doc.visibility)}
+                    <span className="doc-list__item-time">
+                      {formatTime(viewMode === "trash" ? doc.deletedAt ?? doc.updatedAt : doc.updatedAt)}
+                    </span>
+                    {viewMode === "trash" ? (
+                      <span className="doc-list__item-deadline">{formatTrashDeadline(doc)}</span>
+                    ) : null}
+                  </span>
+                </div>
+
+                <div className="doc-list__item-actions" onClick={(e) => e.stopPropagation()}>
+                  {viewMode === "active" ? (
+                    <>
+                      <Tooltip title="重命名">
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<EditOutlined />}
+                          onClick={(e) => handleStartRename(e, doc.docId, doc.title)}
+                        />
+                      </Tooltip>
+                      <Popconfirm
+                        title="移至回收站？"
+                        description="文档会先保留在回收站，之后可以恢复。"
+                        onConfirm={() => {
+                          void handleTrash(doc.docId);
+                        }}
+                        onCancel={(e) => e?.stopPropagation()}
+                        okText="移至回收站"
+                        cancelText="取消"
+                        okButtonProps={{ danger: true }}
+                      >
+                        <Tooltip title="移至回收站">
+                          <Button
+                            type="text"
+                            size="small"
+                            danger
+                            icon={<DeleteOutlined />}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </Tooltip>
+                      </Popconfirm>
+                    </>
+                  ) : (
+                    <>
+                      <Tooltip title="恢复">
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<UndoOutlined />}
+                          onClick={() => void handleRestore(doc.docId)}
+                        />
+                      </Tooltip>
+                      <Popconfirm
+                        title="永久删除文档？"
+                        description="真删除后无法从回收站恢复。"
+                        onConfirm={() => void handlePermanentDelete(doc.docId)}
+                        onCancel={(e) => e?.stopPropagation()}
+                        okText="真删除"
+                        cancelText="取消"
+                        okButtonProps={{ danger: true, loading: permanentlyDeletingDocId === doc.docId }}
+                      >
+                        <Tooltip title="真删除">
+                          <Button
+                            type="text"
+                            size="small"
+                            danger
+                            icon={<DeleteOutlined />}
+                            loading={permanentlyDeletingDocId === doc.docId}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </Tooltip>
+                      </Popconfirm>
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
-          ))
-        )}
+            ))
+          )}
+        </Spin>
       </div>
     </Modal>
   );

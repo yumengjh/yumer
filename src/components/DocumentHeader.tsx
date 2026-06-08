@@ -26,6 +26,7 @@ import {
   DatabaseOutlined,
   FileSearchOutlined,
   DownOutlined,
+  InboxOutlined,
 } from "@ant-design/icons";
 import { useDocument, type SaveStatus } from "../contexts/DocumentContext";
 import { VersionDiffModal } from "./VersionDiffModal";
@@ -60,6 +61,7 @@ import {
 } from "@/services/sync/debug-log";
 import { GcDebugModal } from "./GcDebugModal";
 import { SyncDebugModal } from "./SyncDebugModal";
+import { DocumentTrashDrawer } from "./DocumentTrashDrawer";
 import {
   loadFilterKeys,
   saveFilterKeys,
@@ -429,6 +431,7 @@ export function DocumentHeader({
 }: DocumentHeaderProps) {
   const {
     currentDoc,
+    workspaceId,
     saveStatus,
     lastSavedAt,
     currentContentSource,
@@ -457,6 +460,7 @@ export function DocumentHeader({
   const [exportingFormat, setExportingFormat] = useState<DocumentExportFormat | null>(null);
   const [gcDebugOpen, setGcDebugOpen] = useState(false);
   const [syncDebugOpen, setSyncDebugOpen] = useState(false);
+  const [trashDrawerOpen, setTrashDrawerOpen] = useState(false);
   const [localSnapshotOpen, setLocalSnapshotOpen] = useState(false);
   const [localSnapshotCompareOpen, setLocalSnapshotCompareOpen] = useState(false);
   const [manualSnapshotSaving, setManualSnapshotSaving] = useState(false);
@@ -842,6 +846,12 @@ export function DocumentHeader({
           onClick: () => setMiniEditorDemoOpen(true),
         },
         {
+          key: "trash",
+          icon: <InboxOutlined />,
+          label: "回收站",
+          onClick: () => setTrashDrawerOpen(true),
+        },
+        {
           key: "revalidate",
           icon: <ReloadOutlined />,
           label: "刷新公开页缓存",
@@ -930,6 +940,17 @@ export function DocumentHeader({
             >
               <SearchOutlined />
               <span className="header-search-btn__text">搜索</span>
+            </button>
+          </Tooltip>
+
+          <Tooltip title="回收站">
+            <button
+              type="button"
+              className="header-icon-btn"
+              onClick={() => setTrashDrawerOpen(true)}
+              aria-label="回收站"
+            >
+              <InboxOutlined />
             </button>
           </Tooltip>
 
@@ -1248,10 +1269,11 @@ export function DocumentHeader({
         }}
       />
       <TagManagementModal open={tagManageOpen} onClose={() => setTagManageOpen(false)} />
+      <DocumentTrashDrawer open={trashDrawerOpen} onClose={() => setTrashDrawerOpen(false)} />
       <GcDebugModal
         open={gcDebugOpen}
         onClose={() => setGcDebugOpen(false)}
-        workspaceId={currentDoc?.workspaceId}
+        workspaceId={workspaceId ?? currentDoc?.workspaceId}
         docId={currentDoc?.docId}
         docTitle={currentDoc?.title}
       />

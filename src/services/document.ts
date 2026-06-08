@@ -33,6 +33,14 @@ export interface Document {
   category?: string;
   createdBy?: string;
   updatedBy?: string;
+  deletedFromStatus?: string | null;
+  deletedAt?: string | null;
+  deletedBy?: string | null;
+  restoredAt?: string | null;
+  restoredBy?: string | null;
+  trashRetentionDays?: number;
+  trashExpiresAt?: string | null;
+  trashDaysRemaining?: number | null;
   creator?: DocumentUserSummary | null;
   updater?: DocumentUserSummary | null;
   viewCount?: number;
@@ -227,6 +235,25 @@ export async function getEditContent(docId: string): Promise<EditContentResponse
 
 export async function deleteDocument(docId: string): Promise<void> {
   return apiDelete(`/documents/${docId}`);
+}
+
+export async function restoreDocument(docId: string): Promise<Document> {
+  return apiPost<Document>(`/documents/${docId}/restore`);
+}
+
+export interface PermanentlyDeleteDocumentResult {
+  docId: string;
+  status: "purged";
+  permanentlyDeletedAt: string;
+  affectedCount: number;
+  deletedDocIds: string[];
+  deletedCounts: Record<string, number>;
+}
+
+export async function permanentlyDeleteDocument(
+  docId: string,
+): Promise<PermanentlyDeleteDocumentResult> {
+  return apiDelete<PermanentlyDeleteDocumentResult>(`/documents/${docId}/permanent`);
 }
 
 export async function discardDraft(

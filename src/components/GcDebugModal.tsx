@@ -11,10 +11,12 @@ import {
   getBlockVersionGcRun,
   getGcCandidatePool,
   getGcPolicy,
+  getRenderCacheGcStatus,
   listBlockVersionGcRuns,
   sweepBlockVersions,
   sweepDraftTombstones,
   sweepRevisionTombstones,
+  sweepRenderCachePublishedReachability,
   type BlockVersionGcCandidate,
   type BlockVersionGcHealth,
   type BlockVersionGcPolicySnapshot,
@@ -27,6 +29,9 @@ import {
   type GcStorageCompactResult,
   type GcSweepResult,
   type PlannedAction,
+  type RenderCacheDeleteReason,
+  type RenderCacheGcRun,
+  type RenderCacheGcStatus,
 } from "@/services/gc";
 import "./GcDebugModal.css";
 
@@ -199,6 +204,16 @@ const ROOT_REF_TYPE_LABELS: Record<string, string> = {
   draft: "Draft",
 };
 
+const RENDER_CACHE_DELETE_REASON_LABELS: Record<RenderCacheDeleteReason, string> = {
+  doc_unpublished: "未发布文档",
+  document_missing: "文档缺失",
+  document_deleted: "文档已删除",
+  published_snapshot_missing: "发布快照缺失",
+  not_in_current_published_snapshot: "不在当前发布快照",
+  stale_render_version: "渲染版本过旧",
+  block_version_missing: "块版本缺失",
+};
+
 function formatAge(ms?: number) {
   if (typeof ms !== "number" || !Number.isFinite(ms)) return "--";
   return formatDuration(ms);
@@ -238,6 +253,10 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
   const [runModeFilter, setRunModeFilter] = useState<GcRunMode | undefined>(undefined);
   const [compactLoading, setCompactLoading] = useState(false);
   const [compactResult, setCompactResult] = useState<GcStorageCompactResult | null>(null);
+  const [renderCacheLoading, setRenderCacheLoading] = useState(false);
+  const [renderCacheStatus, setRenderCacheStatus] = useState<RenderCacheGcStatus | null>(null);
+  const [renderCacheRunning, setRenderCacheRunning] = useState(false);
+  const [renderCacheRun, setRenderCacheRun] = useState<RenderCacheGcRun | null>(null);
 
   const persistCredentials = useCallback((nextToken: string, nextOperatorId: string) => {
     if (typeof window === "undefined") return;
@@ -351,6 +370,17 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
           setPoolItems(poolResult.items);
           setPoolTotal(poolResult.total);
         }).catch(() => { /* ignore pool load errors on init */ });
+
+        void getRenderCacheGcStatus({
+          token: activeToken,
+          operatorId: activeOperatorId || undefined,
+          workspaceId,
+          docId,
+        }).then((renderCacheResult) => {
+          setRenderCacheStatus(renderCacheResult);
+        }).catch(() => {
+          setRenderCacheStatus(null);
+        });
 
         const latestRun = runsResult.items[0] ?? null;
         if (latestRun) {
@@ -561,6 +591,75 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
       }
     },
     [operatorId, persistCredentials, token],
+  );
+
+  const handleRenderCacheRefresh = useCallback(async () => {
+    if (!token.trim()) {
+      setError("请先输入系统管理员令牌");
+      return;
+    }
+
+    setRenderCacheLoading(true);
+    setError(null);
+    persistCredentials(token, operatorId);
+
+    try {
+      const result = await getRenderCacheGcStatus({
+        token,
+        operatorId: operatorId || undefined,
+        workspaceId,
+        docId,
+      });
+      setRenderCacheStatus(result);
+      message.success("Render cache 状态已刷新");
+    } catch (nextError) {
+      const msg = nextError instanceof Error ? nextError.message : "Render cache 状态刷新失败";
+      setError(msg);
+      message.error(msg);
+    } finally {
+      setRenderCacheLoading(false);
+    }
+  }, [docId, operatorId, persistCredentials, token, workspaceId]);
+
+  const handleRenderCacheSweep = useCallback(
+    async (dryRun: boolean) => {
+      if (!token.trim()) {
+        setError("请先输入系统管理员令牌");
+        return;
+      }
+
+      setRenderCacheRunning(true);
+      setError(null);
+      persistCredentials(token, operatorId);
+
+      try {
+        const result = await sweepRenderCachePublishedReachability({
+          token,
+          operatorId: operatorId || undefined,
+          workspaceId,
+          docId,
+          dryRun,
+          confirm: dryRun ? undefined : "SWEEP_RENDER_CACHE",
+        });
+        setRenderCacheRun(result);
+
+        const summary = result.summary;
+        const modeLabel = dryRun ? "Dry-run" : "Sweep";
+        const cacheCount = dryRun ? summary.wouldDeleteCaches : summary.deletedCaches;
+        message.success(
+          `${modeLabel} Render Cache GC 完成：run ${result.runId}，${dryRun ? "将删除" : "已删除"} ${cacheCount} 个缓存`,
+        );
+
+        await handleRenderCacheRefresh();
+      } catch (nextError) {
+        const msg = nextError instanceof Error ? nextError.message : "Render cache sweep 执行失败";
+        setError(msg);
+        message.error(msg);
+      } finally {
+        setRenderCacheRunning(false);
+      }
+    },
+    [docId, handleRenderCacheRefresh, operatorId, persistCredentials, token, workspaceId],
   );
 
   const scopeLabel = useMemo(
@@ -1164,6 +1263,112 @@ export function GcDebugModal({ open, onClose, workspaceId, docId, docTitle }: Gc
                 </Typography.Text>
               </div>
             </div>
+          </section>
+
+          <section className="gc-debug__card gc-debug__card--sweep">
+            <div className="gc-debug__card-head">
+              <h3>Render Cache GC</h3>
+              <Tag color={renderCacheStatus ? "blue" : "default"}>
+                {renderCacheStatus ? `v${renderCacheStatus.renderVersion}` : "unknown"}
+              </Tag>
+            </div>
+            <div className="gc-debug__sweep-form">
+              <Typography.Text type="secondary" className="gc-debug__sweep-hint">
+                按 published reachability 检查 block render cache。Dry-run 只预览，Sweep 才会真实删除。
+              </Typography.Text>
+              <div className="gc-debug__sweep-row">
+                <Popconfirm
+                  title="预演 Render Cache GC"
+                  description="仅分析可回收缓存，不真实执行。"
+                  onConfirm={() => void handleRenderCacheSweep(true)}
+                  okText="执行 Dry-run"
+                  cancelText="取消"
+                >
+                  <Button loading={renderCacheRunning}>
+                    Dry-run Render Cache GC
+                  </Button>
+                </Popconfirm>
+                <Popconfirm
+                  title="确认执行 Render Cache GC？"
+                  description="这会删除当前文档或工作区中不可达的渲染缓存。"
+                  onConfirm={() => void handleRenderCacheSweep(false)}
+                  okText="确认执行"
+                  cancelText="取消"
+                  okButtonProps={{ danger: true }}
+                >
+                  <Button danger loading={renderCacheRunning}>
+                    执行 Render Cache GC
+                  </Button>
+                </Popconfirm>
+                <Button onClick={() => void handleRenderCacheRefresh()} loading={renderCacheLoading}>
+                  刷新状态
+                </Button>
+              </div>
+            </div>
+            {renderCacheStatus ? (
+              <div className="gc-debug__compact-result">
+                <div className="gc-debug__metrics gc-debug__metrics--summary">
+                  <div className="gc-debug__metric">
+                    <span className="gc-debug__metric-label">总缓存</span>
+                    <strong>{formatCount(renderCacheStatus.summary.totalCaches)}</strong>
+                  </div>
+                  <div className="gc-debug__metric">
+                    <span className="gc-debug__metric-label">可达缓存</span>
+                    <strong>{formatCount(renderCacheStatus.summary.publishedReachableCaches)}</strong>
+                  </div>
+                  <div className="gc-debug__metric">
+                    <span className="gc-debug__metric-label">可删除缓存</span>
+                    <strong>{formatCount(renderCacheStatus.summary.deletableCaches)}</strong>
+                  </div>
+                  <div className="gc-debug__metric">
+                    <span className="gc-debug__metric-label">有缓存已发布文档</span>
+                    <strong>{formatCount(renderCacheStatus.summary.publishedDocsWithCaches)}</strong>
+                  </div>
+                  <div className="gc-debug__metric">
+                    <span className="gc-debug__metric-label">未发布文档</span>
+                    <strong>{formatCount(renderCacheStatus.summary.unpublishedDocsWithCaches)}</strong>
+                  </div>
+                  <div className="gc-debug__metric">
+                    <span className="gc-debug__metric-label">缺失发布快照</span>
+                    <strong>{formatCount(renderCacheStatus.summary.missingPublishedSnapshots)}</strong>
+                  </div>
+                </div>
+
+                <div className="gc-debug__meta">
+                  <span>
+                    Workspace：<code>{renderCacheStatus.scope.workspaceId || "--"}</code>
+                  </span>
+                  <span>
+                    Doc：<code>{renderCacheStatus.scope.docId || "--"}</code>
+                  </span>
+                </div>
+
+                <div className="gc-debug__subsection">
+                  <div className="gc-debug__subsection-head">
+                    <h4>Delete Reasons</h4>
+                    <Typography.Text type="secondary">按原因统计可删缓存</Typography.Text>
+                  </div>
+                  <div className="gc-debug__policy-list">
+                    {Object.entries(renderCacheStatus.deleteReasons)
+                      .filter(([, count]) => count > 0)
+                      .map(([reason, count]) => (
+                        <div key={reason} className="gc-debug__policy-item">
+                          <span className="gc-debug__policy-label">
+                            {RENDER_CACHE_DELETE_REASON_LABELS[reason as RenderCacheDeleteReason] ?? reason}
+                          </span>
+                          <strong className="gc-debug__policy-value">{count}</strong>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+
+                {renderCacheRun && (
+                  <pre className="gc-debug__json">{JSON.stringify(renderCacheRun, null, 2)}</pre>
+                )}
+              </div>
+            ) : (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无 render cache 状态" />
+            )}
           </section>
 
           {/* Storage Maintenance */}

@@ -15,6 +15,8 @@ import {
   getDocument,
   updateDocument as apiUpdateDoc,
   deleteDocument as apiDeleteDoc,
+  restoreDocument as apiRestoreDoc,
+  permanentlyDeleteDocument as apiPermanentlyDeleteDoc,
   publishDocument as apiPublishDoc,
   publishDocumentVersion as apiPublishDocVersion,
   unpublishDocument as apiUnpublishDoc,
@@ -74,6 +76,8 @@ interface DocumentContextValue {
   createDoc: (data: { title: string; icon?: string; cover?: string; visibility?: string; category?: string }) => Promise<Document>;
   updateDoc: (docId: string, data: { title?: string; icon?: string; cover?: string; visibility?: string; tags?: string[]; category?: string; status?: string }) => Promise<void>;
   deleteDoc: (docId: string) => Promise<void>;
+  restoreDoc: (docId: string) => Promise<Document>;
+  permanentlyDeleteDoc: (docId: string) => Promise<void>;
   publishDoc: (docId: string) => Promise<PublishDocumentResult>;
   publishDocVersion: (docId: string, version: number) => Promise<PublishDocumentResult>;
   unpublishDoc: (docId: string) => Promise<PublishDocumentResult>;
@@ -318,6 +322,43 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [resetSaveState],
   );
 
+  const restoreDoc = useCallback(
+    async (docId: string) => {
+      const restored = await apiRestoreDoc(docId);
+      if (currentDocRef.current?.docId === docId) {
+        currentDocRef.current = restored;
+        setCurrentDoc(restored);
+      }
+      setDocuments((prev) => {
+        const exists = prev.some((doc) => doc.docId === restored.docId);
+        const next = prev.map((doc) => (doc.docId === restored.docId ? restored : doc));
+        return exists ? next : [restored, ...next];
+      });
+      return restored;
+    },
+    [],
+  );
+
+  const permanentlyDeleteDoc = useCallback(
+    async (docId: string) => {
+      await apiPermanentlyDeleteDoc(docId);
+      if (currentDocRef.current?.docId === docId) {
+        setCurrentDoc(null);
+        setCurrentDocVersion(null);
+        setCurrentContentSource(null);
+        setCurrentDraftMeta(null);
+        setCurrentSyncSession(null);
+        setCurrentBlockIds([]);
+        setLastEditPosition(null);
+        currentDocRef.current = null;
+        resetSaveState();
+        resetWindowPath();
+      }
+      setDocuments((prev) => prev.filter((doc) => doc.docId !== docId));
+    },
+    [resetSaveState],
+  );
+
   const publishDoc = useCallback(
     async (docId: string): Promise<PublishDocumentResult> => {
       const result = await apiPublishDoc(docId);
@@ -381,6 +422,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         createDoc,
         updateDoc,
         deleteDoc,
+        restoreDoc,
+        permanentlyDeleteDoc,
         publishDoc,
         publishDocVersion,
         unpublishDoc,

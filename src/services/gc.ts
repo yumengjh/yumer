@@ -175,6 +175,65 @@ export interface GcPolicyDefaults {
   rootSources: string[];
 }
 
+export type RenderCacheDeleteReason =
+  | "doc_unpublished"
+  | "document_missing"
+  | "document_deleted"
+  | "published_snapshot_missing"
+  | "not_in_current_published_snapshot"
+  | "stale_render_version"
+  | "block_version_missing";
+
+export interface RenderCacheGcStatus {
+  renderVersion: number;
+  scope: {
+    workspaceId: string | null;
+    docId: string | null;
+  };
+  summary: {
+    totalCaches: number;
+    publishedReachableCaches: number;
+    deletableCaches: number;
+    publishedDocsWithCaches: number;
+    unpublishedDocsWithCaches: number;
+    missingPublishedSnapshots: number;
+  };
+  deleteReasons: Record<RenderCacheDeleteReason, number>;
+}
+
+export interface RenderCacheGcRun {
+  runId: string;
+  resourceType: "block_render_cache";
+  mode: "sweep";
+  status: GcRunStatus;
+  scope: {
+    mode: "published_reachability";
+    workspaceId: string | null;
+    docId: string | null;
+    dryRun: boolean;
+  };
+  policySnapshot: {
+    renderVersion: number;
+    ttl: string;
+  };
+  health: Record<string, never>;
+  summary: {
+    scannedDocs: number;
+    selectedCaches: number;
+    wouldDeleteCaches: number;
+    deletedCaches: number;
+    wouldKeepCaches: number;
+    deleteReasons: Record<RenderCacheDeleteReason, number>;
+  };
+  candidateDetailsStored: boolean;
+  candidateDetailsTruncated: boolean;
+  triggeredBy?: string | null;
+  startedAt?: string;
+  finishedAt?: string | null;
+  errorMessage?: string | null;
+  createdAt?: string;
+}
+
 type AdminRequestOptions = {
   token: string;
   operatorId?: string;
@@ -456,6 +515,46 @@ export async function getGcPolicy(
     token: input.token,
     operatorId: input.operatorId,
     method: "GET",
+  });
+}
+
+export async function getRenderCacheGcStatus(
+  input: AdminRequestOptions & ScopeOptions,
+): Promise<RenderCacheGcStatus> {
+  const query = buildQuery({
+    workspaceId: input.workspaceId,
+    docId: input.docId,
+  });
+
+  return requestGc<RenderCacheGcStatus>(`/admin/gc/render-cache/status${query}`, {
+    token: input.token,
+    operatorId: input.operatorId,
+    method: "GET",
+  });
+}
+
+export async function sweepRenderCachePublishedReachability(
+  input: AdminRequestOptions &
+    ScopeOptions & {
+      limit?: number;
+      dryRun?: boolean;
+      confirm?: string;
+    },
+): Promise<RenderCacheGcRun> {
+  return requestGc<RenderCacheGcRun>("/admin/gc/render-cache/sweep", {
+    token: input.token,
+    operatorId: input.operatorId,
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      workspaceId: input.workspaceId,
+      docId: input.docId,
+      limit: input.limit ?? 1000,
+      dryRun: input.dryRun ?? true,
+      confirm: input.confirm,
+    }),
   });
 }
 
