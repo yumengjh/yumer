@@ -108,7 +108,6 @@ export interface SyncBatchResult {
   clientId?: string;
   blockId?: string;
   sortKey?: string;
-  version?: number;
   error?: string;
   diagnosticCode?: string;
   matchBy?: string;

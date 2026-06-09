@@ -263,10 +263,12 @@ export async function discardDraft(
   await apiDelete(`/documents/${docId}/draft`, syncSession);
 }
 
+export type RenewSyncSessionResponse = Pick<SyncSessionMeta, "leaseExpiresAt" | "lastAckedOpSeq">;
+
 export async function renewSyncSession(
   docId: string,
   syncSession: Pick<SyncSessionMeta, "sessionId" | "sessionEpoch">,
-): Promise<SyncSessionMeta> {
+): Promise<RenewSyncSessionResponse> {
   return apiPost<SyncSessionMeta>(
     `/documents/${docId}/sync-session/renew`,
     {

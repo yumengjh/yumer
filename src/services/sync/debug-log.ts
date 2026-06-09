@@ -423,7 +423,6 @@ function summarizeBatchRequest(requestBody: unknown): Record<string, unknown> {
 function summarizeBatchResponse(responseBody: SyncBatchResponse | undefined): Record<string, unknown> | null {
   if (!responseBody) return null;
   return {
-    acceptedBatchId: responseBody.acceptedBatchId,
     serverHead: responseBody.serverHead,
     draftRevision: responseBody.draftRevision ?? null,
     ackedThroughOpSeq: responseBody.ackedThroughOpSeq ?? null,
@@ -436,7 +435,6 @@ function summarizeBatchResponse(responseBody: SyncBatchResponse | undefined): Re
       clientId: result.clientId ?? null,
       blockId: result.blockId ?? null,
       sortKey: result.sortKey ?? null,
-      version: result.version ?? null,
       error: result.error ?? null,
       diagnosticCode: result.diagnosticCode ?? null,
       matchBy: result.matchBy ?? null,

@@ -5,14 +5,37 @@ import type { SyncEntry, SyncBatchResult } from "./types";
 import type { DraftCheckpointMapping, DraftCheckpointRequest } from "./checkpoint";
 
 export interface SyncBatchResponse {
-  acceptedBatchId: string | null;
-  appliedAt: number;
   serverHead: number;
   draftRevision?: number;
   ackedThroughOpSeq?: number;
   needsReload: boolean;
   conflicts: Array<{ code: string; message: string }>;
   results: SyncBatchResult[];
+}
+
+type RawSyncBatchResult = Omit<SyncBatchResult, "success"> & {
+  success?: boolean;
+};
+
+type RawSyncBatchResponse = Omit<
+  SyncBatchResponse,
+  "needsReload" | "conflicts" | "results"
+> & {
+  needsReload?: boolean;
+  conflicts?: SyncBatchResponse["conflicts"];
+  results?: RawSyncBatchResult[];
+};
+
+function normalizeSyncBatchResponse(response: RawSyncBatchResponse): SyncBatchResponse {
+  return {
+    ...response,
+    needsReload: response.needsReload ?? false,
+    conflicts: response.conflicts ?? [],
+    results: (response.results ?? []).map((result) => ({
+      ...result,
+      success: result.success ?? true,
+    })),
+  };
 }
 
 export interface DocumentSyncState {
@@ -32,8 +55,6 @@ export interface SyncManifestIdentity {
 }
 
 export interface SyncManifestReconcileResponse {
-  docId: string;
-  checkedAt: number;
   draftRevision: number;
   needsReload: boolean;
   conflicts: Array<{ code: string; message: string }>;
@@ -243,8 +264,6 @@ export async function postSyncBatch(input: {
 
   if (bodyOperations.length === 0) {
     return {
-      acceptedBatchId: input.clientBatchId,
-      appliedAt: Date.now(),
       serverHead: input.baseVersion,
       draftRevision: input.draftRevision,
       needsReload: false,
@@ -285,7 +304,9 @@ export async function postSyncBatch(input: {
 
   const startTime = Date.now();
   try {
-    const response = await apiPost<SyncBatchResponse>("/blocks/batch", requestBody);
+    const response = normalizeSyncBatchResponse(
+      await apiPost<RawSyncBatchResponse>("/blocks/batch", requestBody),
+    );
     if (
       bodyOperations.length > 0 &&
       !response.needsReload &&
@@ -301,7 +322,7 @@ export async function postSyncBatch(input: {
         identities: ackedDeleteIdentities,
         clientBatchId: input.clientBatchId,
         evidence: {
-          acceptedBatchId: response.acceptedBatchId,
+          clientBatchId: input.clientBatchId,
           draftRevision: response.draftRevision,
           results: response.results.filter((result) => result.operation === "delete"),
         },

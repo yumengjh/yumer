@@ -762,7 +762,7 @@ export function useDocumentSync({
             });
             logSyncEvent("flush:response", {
               docId: rebased.docId,
-              acceptedBatchId: response.acceptedBatchId,
+              clientBatchId,
               serverHead: response.serverHead,
               draftRevision: response.draftRevision,
               needsReload: response.needsReload,
@@ -771,7 +771,6 @@ export function useDocumentSync({
 
             addSyncTrace("flush:response", rebased.docId, rebased.sessionId, rebased.sessionEpoch, () => ({
               clientBatchId,
-              acceptedBatchId: response.acceptedBatchId,
               serverHead: response.serverHead,
               draftRevision: response.draftRevision,
               ackedThroughOpSeq: response.ackedThroughOpSeq,
@@ -783,7 +782,6 @@ export function useDocumentSync({
                 clientId: r.clientId ?? null,
                 blockId: r.blockId ?? null,
                 sortKey: r.sortKey ?? null,
-                version: r.version ?? null,
                 error: r.error ?? null,
                 matchBy: r.matchBy ?? null,
                 diagnosticCode: r.diagnosticCode ?? null,

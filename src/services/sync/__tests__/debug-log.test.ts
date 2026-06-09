@@ -170,8 +170,6 @@ describe("sync debug log", () => {
         ],
       },
       responseBody: {
-        acceptedBatchId: "batch_large",
-        appliedAt: Date.now(),
         serverHead: 7,
         draftRevision: 3,
         needsReload: false,
