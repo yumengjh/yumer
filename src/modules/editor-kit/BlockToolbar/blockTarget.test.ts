@@ -43,7 +43,7 @@ describe("resolveBlockToolbarTarget", () => {
     expect(target?.element).toBe(editorDom.querySelector("#heading"));
   });
 
-  it("uses the nearest nested list item as the block target", () => {
+  it("normalizes nested list content to the parent top-level list item", () => {
     const editorDom = createEditorDom(`
       <ul>
         <li id="outer">
@@ -61,7 +61,8 @@ describe("resolveBlockToolbarTarget", () => {
     );
 
     expect(target?.kind).toBe("block");
-    expect(target?.element).toBe(editorDom.querySelector("#inner"));
+    expect(target?.element).toBe(editorDom.querySelector("#outer"));
+    expect(target?.anchorElement).toBe(editorDom.querySelector("#outer"));
   });
 
   it("treats a table cell hit as a table target and keeps table metadata", () => {
@@ -140,7 +141,7 @@ describe("resolveBlockToolbarTarget", () => {
     expect(target?.anchorElement).toBe(editorDom.querySelector("#item"));
   });
 
-  it("chooses the deepest list item under the pointer when nested list boxes overlap", () => {
+  it("chooses the parent top-level list item under the pointer when nested list boxes overlap", () => {
     const editorDom = createEditorDom(`
       <ul id="root-list">
         <li id="outer">
@@ -183,7 +184,7 @@ describe("resolveBlockToolbarTarget", () => {
       50,
     );
 
-    expect(target?.element).toBe(inner);
-    expect(target?.anchorElement).toBe(inner);
+    expect(target?.element).toBe(outer);
+    expect(target?.anchorElement).toBe(outer);
   });
 });

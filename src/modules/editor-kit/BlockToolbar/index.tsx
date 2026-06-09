@@ -2,7 +2,10 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useMarkdownEditor } from '../EditorContext';
 import { BlockHandle } from './BlockHandle';
 import { BlockMenu } from './BlockMenu';
-import { resolveBlockToolbarTarget, type BlockToolbarTarget } from './blockTarget';
+import { collectBlockToolbarHighlightRects, type BlockToolbarHighlightRect } from './blockHighlight';
+import { resolveBlockToolbarTarget, type BlockToolbarTarget, type BlockToolbarTargetKind } from './blockTarget';
+import { computeBlockHandlePosition } from './blockPosition';
+import { shouldRetainHoveredTarget } from './targetTransition';
 import { planExplicitMoveSortKey, withExplicitMoveSortKeyAttrs } from './sortKeyReorder';
 import './style.css';
 
@@ -16,35 +19,14 @@ const AUTO_SCROLL_MAX_SPEED = 12;
 const GHOST_OFFSET_X = 12;
 const GHOST_OFFSET_Y = 6;
 
-const BLOCK_EXTRA_OFFSET: Record<string, number> = {
-  // 列表项：bullet/数字占位，额外退�?
-  LI: 28,
-  // 引用块：左边�?+ padding
-  BLOCKQUOTE: 8,
-  // 代码块容器（TipTap 通常渲染�?pre�?
-  PRE: 8,
-  // 默认：段落、标题等无装饰块
-  DEFAULT: 0,
-};
-
-// 根据 data-type 属性的额外偏移（TipTap 自定义节点）
-const BLOCK_TYPE_EXTRA_OFFSET: Record<string, number> = {
-  taskItem: 32,      // 任务列表：checkbox 占位
-  callout: 12,      // 高亮/callout 块：有背�?+ padding
-  codeBlock: 8,     // 代码�?
-  blockquote: 8,
-};
-
-// 句柄宽度（block-handle__btn 的宽度）
-const HANDLE_WIDTH = 20;
-// 句柄与块可视边缘之间的最小间�?
-const MIN_GAP = 4;
-
 export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
   const editor = useMarkdownEditor();
   const [hoveredBlock, setHoveredBlock] = useState<HTMLElement | null>(null);
   const [hoveredAnchor, setHoveredAnchor] = useState<HTMLElement | null>(null);
   const [hoveredTableCell, setHoveredTableCell] = useState<HTMLTableCellElement | null>(null);
+  const [hoveredTargetKind, setHoveredTargetKind] = useState<BlockToolbarTargetKind | null>(null);
+  const [highlightRects, setHighlightRects] = useState<BlockToolbarHighlightRect[]>([]);
+  const [toolbarHovered, setToolbarHovered] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const [menuState, setMenuState] = useState<'closed' | 'open' | 'closing'>('closed');
   const [ready, setReady] = useState(false);
@@ -56,6 +38,9 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
   const prevAnchorRef = useRef<HTMLElement | null>(null);
   const hoveredBlockRef = useRef<HTMLElement | null>(null);
   const hoveredAnchorRef = useRef<HTMLElement | null>(null);
+  const hoveredTableCellRef = useRef<HTMLTableCellElement | null>(null);
+  const hoveredTargetKindRef = useRef<BlockToolbarTargetKind | null>(null);
+  const positionRef = useRef(position);
   const pendingDeleteFallbackRef = useRef<{
     element: HTMLElement | null;
     clientX: number;
@@ -76,7 +61,10 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
   const justDraggedRef = useRef(false);
 
   const openMenu = useCallback(() => setMenuState('open'), []);
-  const closeMenu = useCallback(() => setMenuState('closing'), []);
+  const closeMenu = useCallback(() => {
+    setMenuState('closing');
+    setToolbarHovered(false);
+  }, []);
   const menuVisible = menuState !== 'closed';
 
   const getEditorDom = useCallback((): HTMLElement | null => {
@@ -112,7 +100,32 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
   useEffect(() => {
     hoveredBlockRef.current = hoveredBlock;
     hoveredAnchorRef.current = hoveredAnchor;
-  }, [hoveredBlock, hoveredAnchor]);
+    hoveredTableCellRef.current = hoveredTableCell;
+    hoveredTargetKindRef.current = hoveredTargetKind;
+  }, [hoveredBlock, hoveredAnchor, hoveredTableCell, hoveredTargetKind]);
+
+  useEffect(() => {
+    positionRef.current = position;
+  }, [position]);
+
+  useEffect(() => {
+    const wrapper = wrapperRef.current;
+    if (!toolbarHovered || !wrapper || !hoveredBlock || !hoveredAnchor || !hoveredTargetKind) {
+      setHighlightRects([]);
+      return;
+    }
+    setHighlightRects(
+      collectBlockToolbarHighlightRects(
+        {
+          kind: hoveredTargetKind,
+          element: hoveredBlock,
+          anchorElement: hoveredAnchor,
+          tableCellElement: hoveredTableCell ?? undefined,
+        },
+        wrapper,
+      ),
+    );
+  }, [toolbarHovered, hoveredBlock, hoveredAnchor, hoveredTableCell, hoveredTargetKind, updateCount, wrapperRef]);
 
   const findBlockTarget = useCallback((element: HTMLElement | null, clientY?: number): BlockToolbarTarget | null => {
     if (!element) return null;
@@ -121,43 +134,11 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
     return resolveBlockToolbarTarget(element, editorElement, clientY);
   }, [getEditorDom]);
 
-const updatePosition = useCallback((block: HTMLElement) => {
-  const wrapper = wrapperRef.current;
-  if (!wrapper) return;
-  const wrapperRect = wrapper.getBoundingClientRect();
-  const blockRect = block.getBoundingClientRect();
-
-  // 1. 块的可视左边缘（�?border�?
-  const blockVisualLeft = blockRect.left;
-
-  // 2. 读取块自身的 paddingLeft（部分块�?padding 来给 bullet/装饰留位�?
-  const computed = window.getComputedStyle(block);
-
-  // 3. 从误差表查额外偏�?
-  const tagExtra = BLOCK_EXTRA_OFFSET[block.tagName] ?? BLOCK_EXTRA_OFFSET.DEFAULT;
-  const typeExtra = block.dataset.type
-    ? (BLOCK_TYPE_EXTRA_OFFSET[block.dataset.type] ?? 0)
-    : 0;
-  const taskItemExtra = block.classList.contains('task-list-item')
-    ? BLOCK_TYPE_EXTRA_OFFSET.taskItem
-    : 0;
-  const extra = Math.max(tagExtra, typeExtra, taskItemExtra);
-
-  // 4. 工具�?left = 块可视左边缘 - 句柄宽度 - 最小间�?- 额外偏移
-  //    转换为相对于 wrapper 的坐�?
-  const left = Math.max(
-    0,
-    blockVisualLeft - wrapperRect.left + wrapper.scrollLeft
-      - HANDLE_WIDTH - MIN_GAP - extra
-  );
-
-  // 5. top 对齐块的顶部（考虑 paddingTop 让句柄视觉上居中于首行）
-  const computedPaddingTop = parseFloat(computed.paddingTop) || 0;
-  const top =
-    blockRect.top - wrapperRect.top + wrapper.scrollTop + computedPaddingTop;
-
-  setPosition({ top, left });
-}, [wrapperRef]);
+  const updatePosition = useCallback((block: HTMLElement) => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+    setPosition(computeBlockHandlePosition(block, wrapper));
+  }, [wrapperRef]);
 
   useEffect(() => {
     if (!ready) return;
@@ -174,9 +155,11 @@ const updatePosition = useCallback((block: HTMLElement) => {
       const currentAnchor = hoveredAnchorRef.current;
       if (currentAnchor) {
         const anchorRect = currentAnchor.getBoundingClientRect();
+        const wrapperRect = wrapper.getBoundingClientRect();
+        const handleViewportLeft = wrapperRect.left - wrapper.scrollLeft + positionRef.current.left;
         const isMovingTowardCurrentHandle =
           e.clientX < anchorRect.left &&
-          e.clientX >= position.left - 8 &&
+          e.clientX >= handleViewportLeft - 8 &&
           e.clientY >= anchorRect.top - 6 &&
           e.clientY <= anchorRect.bottom + 6;
         if (isMovingTowardCurrentHandle) return;
@@ -185,7 +168,26 @@ const updatePosition = useCallback((block: HTMLElement) => {
       const block = target?.element ?? null;
       const anchor = target?.anchorElement ?? block;
       const tableCell = target?.tableCellElement ?? null;
-      if (block && anchor && (block !== hoveredBlock || anchor !== hoveredAnchor || tableCell !== hoveredTableCell)) {
+      if (shouldRetainHoveredTarget(
+        hoveredBlockRef.current && hoveredAnchorRef.current && hoveredTargetKindRef.current
+          ? {
+              kind: hoveredTargetKindRef.current,
+              element: hoveredBlockRef.current,
+              anchorElement: hoveredAnchorRef.current,
+              tableCellElement: hoveredTableCellRef.current ?? undefined,
+            }
+          : null,
+        target,
+      )) {
+        return;
+      }
+      if (
+        block &&
+        anchor &&
+        (block !== hoveredBlockRef.current ||
+          anchor !== hoveredAnchorRef.current ||
+          tableCell !== hoveredTableCellRef.current)
+      ) {
         if (hideTimeoutRef.current) {
           clearTimeout(hideTimeoutRef.current);
           hideTimeoutRef.current = null;
@@ -193,6 +195,7 @@ const updatePosition = useCallback((block: HTMLElement) => {
         setHoveredBlock(block);
         setHoveredAnchor(anchor);
         setHoveredTableCell(tableCell);
+        setHoveredTargetKind(target.kind);
         updatePosition(anchor);
       }
     };
@@ -206,6 +209,7 @@ const updatePosition = useCallback((block: HTMLElement) => {
           setHoveredBlock(null);
           setHoveredAnchor(null);
           setHoveredTableCell(null);
+          setHoveredTargetKind(null);
         }, 200);
       }
     };
@@ -218,7 +222,7 @@ const updatePosition = useCallback((block: HTMLElement) => {
       wrapper.removeEventListener('mouseleave', handleWrapperMouseLeave);
       if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
     };
-  }, [ready, getEditorDom, findBlockTarget, updatePosition, hoveredBlock, hoveredAnchor, hoveredTableCell, wrapperRef, menuVisible, position.left]);
+  }, [ready, getEditorDom, findBlockTarget, updatePosition, wrapperRef, menuVisible]);
 
   const handleKeepVisible = useCallback(() => {
     if (hideTimeoutRef.current) {
@@ -226,6 +230,17 @@ const updatePosition = useCallback((block: HTMLElement) => {
       hideTimeoutRef.current = null;
     }
   }, []);
+
+  const handleToolbarMouseEnter = useCallback(() => {
+    handleKeepVisible();
+    setToolbarHovered(true);
+  }, [handleKeepVisible]);
+
+  const handleToolbarMouseLeave = useCallback(() => {
+    if (!menuVisible) {
+      setToolbarHovered(false);
+    }
+  }, [menuVisible]);
 
   // 编辑器内容变化时重新计算位置（块位置可能已改变）
   useEffect(() => {
@@ -254,6 +269,7 @@ const updatePosition = useCallback((block: HTMLElement) => {
           setHoveredBlock(nextTarget.element);
           setHoveredAnchor(nextTarget.anchorElement);
           setHoveredTableCell(nextTarget.tableCellElement ?? null);
+          setHoveredTargetKind(nextTarget.kind);
           updatePosition(nextTarget.anchorElement);
           setUpdateCount(c => c + 1);
           return;
@@ -262,6 +278,8 @@ const updatePosition = useCallback((block: HTMLElement) => {
         setHoveredBlock(null);
         setHoveredAnchor(null);
         setHoveredTableCell(null);
+        setHoveredTargetKind(null);
+        setToolbarHovered(false);
         setMenuState('closed');
         return;
       }
@@ -289,11 +307,17 @@ const updatePosition = useCallback((block: HTMLElement) => {
   // hoveredBlock 变化或编辑器更新时刷新位�?
   useEffect(() => {
     if (!hoveredAnchor) return;
+    const wrapper = wrapperRef.current;
     updatePosition(hoveredAnchor);
     const onResize = () => updatePosition(hoveredAnchor);
+    const onScroll = () => updatePosition(hoveredAnchor);
     window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, [hoveredAnchor, updateCount, updatePosition]);
+    wrapper?.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      window.removeEventListener('resize', onResize);
+      wrapper?.removeEventListener('scroll', onScroll);
+    };
+  }, [hoveredAnchor, updateCount, updatePosition, wrapperRef]);
 
   // 点击外部关闭菜单
   useEffect(() => {
@@ -462,7 +486,7 @@ const updatePosition = useCallback((block: HTMLElement) => {
     } else {
       dropTargetIndexRef.current = -1;
     }
-  }, [wrapperRef, editor]);
+  }, [wrapperRef]);
 
   const cleanupDrag = useCallback(() => {
     // 移除幽灵
@@ -583,28 +607,43 @@ const updatePosition = useCallback((block: HTMLElement) => {
   if (!editor || !ready || !hoveredBlock) return null;
 
   return (
-    <div
-      className={`block-handle-wrapper${shouldAnimate ? ' block-handle-wrapper--animate' : ''}`}
-      style={{ top: position.top, left: position.left }}
-      onMouseEnter={handleKeepVisible}
-    >
-      <BlockHandle onClick={handleHandleClick} onMouseDown={handleHandleMouseDown} />
-      {menuVisible && (
+    <>
+      {highlightRects.map((rect, index) => (
         <div
-          ref={menuAnchorRef}
-          className={`block-menu-anchor${menuState === 'closing' ? ' block-menu-anchor--closing' : ''}`}
-          onAnimationEnd={() => {
-            if (menuState === 'closing') setMenuState('closed');
+          key={`${rect.top}-${rect.left}-${rect.width}-${rect.height}-${index}`}
+          className="block-toolbar-hover-layer"
+          style={{
+            top: rect.top,
+            left: rect.left,
+            width: rect.width,
+            height: rect.height,
           }}
-        >
-          <BlockMenu
-            onClose={closeMenu}
-            hoveredBlock={hoveredBlock}
-            hoveredTableCell={hoveredTableCell}
-            onWillDeleteBlock={handleWillDeleteBlock}
-          />
-        </div>
-      )}
-    </div>
+        />
+      ))}
+      <div
+        className={`block-handle-wrapper${shouldAnimate ? ' block-handle-wrapper--animate' : ''}`}
+        style={{ top: position.top, left: position.left }}
+        onMouseEnter={handleToolbarMouseEnter}
+        onMouseLeave={handleToolbarMouseLeave}
+      >
+        <BlockHandle onClick={handleHandleClick} onMouseDown={handleHandleMouseDown} />
+        {menuVisible && (
+          <div
+            ref={menuAnchorRef}
+            className={`block-menu-anchor${menuState === 'closing' ? ' block-menu-anchor--closing' : ''}`}
+            onAnimationEnd={() => {
+              if (menuState === 'closing') setMenuState('closed');
+            }}
+          >
+            <BlockMenu
+              onClose={closeMenu}
+              hoveredBlock={hoveredBlock}
+              hoveredTableCell={hoveredTableCell}
+              onWillDeleteBlock={handleWillDeleteBlock}
+            />
+          </div>
+        )}
+      </div>
+    </>
   );
 }

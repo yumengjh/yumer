@@ -72,6 +72,18 @@ function getListItemDepth(item: HTMLElement): number {
   return depth;
 }
 
+function getParentListItem(item: HTMLElement, editorDom: HTMLElement): HTMLElement {
+  let current: HTMLElement = item;
+  let parent = current.parentElement?.closest("li");
+
+  while (parent instanceof HTMLElement && editorDom.contains(parent)) {
+    current = parent;
+    parent = current.parentElement?.closest("li") ?? null;
+  }
+
+  return current;
+}
+
 function findListItemByY(editorDom: HTMLElement, clientY: number): HTMLElement | null {
   const candidates = Array.from(editorDom.querySelectorAll<HTMLElement>("li"))
     .map((item) => {
@@ -86,7 +98,8 @@ function findListItemByY(editorDom: HTMLElement, clientY: number): HTMLElement |
     .filter(({ rect, height }) => height > 0 && clientY >= rect.top && clientY <= rect.bottom)
     .sort((a, b) => b.depth - a.depth || a.height - b.height);
 
-  return candidates[0]?.item ?? null;
+  const item = candidates[0]?.item ?? null;
+  return item ? getParentListItem(item, editorDom) : null;
 }
 
 export function getTableElementFromToolbarTarget(
@@ -140,7 +153,8 @@ export function resolveBlockToolbarTarget(
     });
 
     if (childItem instanceof HTMLElement) {
-      return { kind: "block", element: childItem, anchorElement: childItem };
+      const parentListItem = getParentListItem(childItem, editorDom);
+      return { kind: "block", element: parentListItem, anchorElement: parentListItem };
     }
   }
 
@@ -150,7 +164,8 @@ export function resolveBlockToolbarTarget(
     editorDom,
   );
   if (listItem) {
-    return { kind: "block", element: listItem, anchorElement: listItem };
+    const parentListItem = getParentListItem(listItem, editorDom);
+    return { kind: "block", element: parentListItem, anchorElement: parentListItem };
   }
 
   const containerBlock = closestWithin<HTMLElement>(
