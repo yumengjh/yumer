@@ -5,7 +5,7 @@ import {
   type SyncSessionMeta,
 } from "@/services/document";
 import type { TiptapDoc } from "@/services/tiptap-converter";
-import { postDraftCheckpoint, postSyncBatch, postSyncManifestReconcile, type SyncManifestIdentity } from "@/services/sync/api";
+import { postDraftCheckpoint, postSyncBatchWithRetry, postSyncManifestReconcile, type SyncManifestIdentity } from "@/services/sync/api";
 import { getRealtimeOriginIdentity } from "@/services/realtime/identity";
 import { subscribeDocumentEvents } from "@/services/realtime/document-events";
 import type { DocumentRemoteOpsEvent, RealtimeSseEvent } from "@/services/realtime/types";
@@ -14,6 +14,7 @@ import { summarizeSyncBatchFailures } from "@/services/sync/batch-failure";
 import { applyCheckpointAck, buildDraftCheckpoint } from "@/services/sync/checkpoint";
 import {
   applyServerAck,
+  applyServerDeleteAck,
   createSyncSnapshotIndex,
   type SyncSnapshotIndex,
 } from "@/services/sync/engine";
@@ -31,7 +32,8 @@ import {
   resolveBatchFailure,
   resolveBatchSuccess,
 } from "@/services/sync/reducer";
-import { advanceSyncSnapshotIndexed } from "@/services/sync/snapshot";
+import { computeRootManifestDigest } from "@/services/sync/manifest-digest";
+import { advanceSyncSnapshotIndexed, repairSnapshotSortKeyOrder } from "@/services/sync/snapshot";
 import { createSortKeysBetween } from "@/services/sync/order";
 import { SyncTraceLog, buildManifestSummary, type SyncTraceEvent } from "@/services/sync/debug-log";
 import type { SyncDiffHint, SyncEntry, SyncReducerState } from "@/services/sync/types";
@@ -194,6 +196,38 @@ function readSyncEntryKeys(node: TiptapDoc["content"][number]): string[] {
   return [...new Set(keys)];
 }
 
+function collectFailedClientIds(
+  results: Array<{
+    success: boolean;
+    operation: string;
+    clientId?: string;
+    blockId?: string;
+    error?: string;
+  }>,
+  operations: SyncEntry[],
+): Set<string> {
+  const failed = new Set<string>();
+  results.forEach((result, index) => {
+    if (result.success) return;
+    const message = (result.error ?? "").toLowerCase();
+    if (
+      result.operation === "delete" &&
+      (message.includes("not found") || message.includes("不存在"))
+    ) {
+      // delete not-found 视为成功（幂等语义），不计入失败
+      return;
+    }
+    const clientId =
+      result.clientId ??
+      (result.blockId
+        ? operations.find((op) => op.blockId === result.blockId)?.clientId
+        : undefined) ??
+      operations[index]?.clientId;
+    if (clientId) failed.add(clientId);
+  });
+  return failed;
+}
+
 function withEntrySortKey(entry: SyncEntry, sortKey: string): SyncEntry {
   return {
     ...entry,
@@ -303,8 +337,10 @@ export function useDocumentSync({
   const flushRunningRef = useRef(false);
   const reconcileRunningRef = useRef(false);
   const lastReconciledManifestKeyRef = useRef<string | null>(null);
+  const lastServerManifestDigestRef = useRef<string | null>(null);
   const autosyncPausedRef = useRef(false);
   const batchFailureCountRef = useRef(0);
+  const errorRetryAttemptRef = useRef(0);
   const remoteReloadRunningRef = useRef(false);
   const onRemoteContentAppliedRef = useRef(onRemoteContentApplied);
   const onRemoteReloadRequiredRef = useRef(onRemoteReloadRequired);
@@ -539,6 +575,7 @@ export function useDocumentSync({
       snapshotRef.current = null;
       snapshotIndexRef.current = null;
       lastReconciledManifestKeyRef.current = null;
+      lastServerManifestDigestRef.current = null;
       return;
     }
 
@@ -558,6 +595,7 @@ export function useDocumentSync({
         })
       : null;
     lastReconciledManifestKeyRef.current = null;
+    lastServerManifestDigestRef.current = null;
   }, [baseVersion, docId, draftRevision, replaceSyncState, rootBlockId, syncSession]);
 
   useEffect(() => {
@@ -627,9 +665,23 @@ export function useDocumentSync({
       if (current.dirtyOrder.length > 0 || current.inflightBatchId) return;
       if (reconcileRunningRef.current) return;
 
-      const manifest = toReconcileManifest(snapshotRef.current);
+      const snapshot = snapshotRef.current;
+      const manifest = toReconcileManifest(snapshot);
       const manifestKey = buildReconcileKey(current, manifest);
       if (lastReconciledManifestKeyRef.current === manifestKey) return;
+
+      const localDigest = await computeRootManifestDigest(snapshot);
+      const serverDigest = lastServerManifestDigestRef.current;
+      if (serverDigest && localDigest === serverDigest) {
+        lastReconciledManifestKeyRef.current = manifestKey;
+        addSyncTrace("idle:manifest", current.docId, current.sessionId, current.sessionEpoch, () => ({
+          manifest: buildManifestSummary(snapshot),
+          digestMatch: true,
+          localDigest,
+          serverDigest,
+        }));
+        return;
+      }
 
       const clientBatchId = createReconcileId();
       lastReconciledManifestKeyRef.current = manifestKey;
@@ -820,6 +872,9 @@ export function useDocumentSync({
       }
 
       flushRunningRef.current = true;
+      // 本次 flush 中确认失败的 entry：跳过重选，避免同一失败 op 死循环，
+      // 但不阻断其余批次继续发送（下次 flush 会重试失败 entry）
+      const failedEntryIds = new Set<string>();
       try {
         while (true) {
           const current = stateRef.current;
@@ -857,12 +912,28 @@ export function useDocumentSync({
             })),
           }));
 
+          const selectableDirtyOrder =
+            failedEntryIds.size > 0
+              ? rebased.dirtyOrder.filter((id) => !failedEntryIds.has(id))
+              : rebased.dirtyOrder;
           const operations = selectSyncBatchOperations(
-            rebased.dirtyOrder,
+            selectableDirtyOrder,
             rebased.entries,
           );
 
           if (operations.length === 0) {
+            if (failedEntryIds.size > 0) {
+              // 剩余的都是本次失败的 entry：保留 error 态等待退避重试
+              updateSyncState((prev) =>
+                prev && prev.syncState !== "error"
+                  ? {
+                      ...prev,
+                      syncState: "error",
+                      lastError: prev.lastError ?? "部分块同步失败，稍后自动重试",
+                    }
+                  : prev,
+              );
+            }
             return;
           }
 
@@ -905,17 +976,34 @@ export function useDocumentSync({
           );
 
           try {
-            const response = await postSyncBatch({
-              docId: rebased.docId,
-              rootBlockId: rebased.rootBlockId,
-              baseVersion: rebased.baseVersion,
-              draftRevision: rebased.draftRevision,
-              clientBatchId,
-              source,
-              sessionId: rebased.sessionId ?? undefined,
-              sessionEpoch: rebased.sessionEpoch ?? undefined,
-              operations,
-            });
+            const response = await postSyncBatchWithRetry(
+              {
+                docId: rebased.docId,
+                rootBlockId: rebased.rootBlockId,
+                baseVersion: rebased.baseVersion,
+                draftRevision: rebased.draftRevision,
+                clientBatchId,
+                source,
+                sessionId: rebased.sessionId ?? undefined,
+                sessionEpoch: rebased.sessionEpoch ?? undefined,
+                operations,
+              },
+              {
+                onRetry: (attempt, error) => {
+                  logSyncEvent("flush:retry", {
+                    docId: rebased.docId,
+                    clientBatchId,
+                    attempt,
+                    error: error instanceof Error ? error.message : String(error),
+                  });
+                  addSyncTrace("flush:retry", rebased.docId, rebased.sessionId, rebased.sessionEpoch, () => ({
+                    clientBatchId,
+                    attempt,
+                    error: error instanceof Error ? error.message : String(error),
+                  }));
+                },
+              },
+            );
             logSyncEvent("flush:response", {
               docId: rebased.docId,
               clientBatchId,
@@ -944,6 +1032,10 @@ export function useDocumentSync({
                 tombstoned: r.tombstoned ?? false,
               })),
             }));
+            if (response.manifestDigest) {
+              lastServerManifestDigestRef.current = response.manifestDigest;
+            }
+
             const batchFailure = summarizeSyncBatchFailures(response.results);
             if (!response.needsReload && !batchFailure) {
               batchFailureCountRef.current = 0;
@@ -989,8 +1081,6 @@ export function useDocumentSync({
                 : prev,
             );
 
-            captureContentSnapshot(latestContentRef.current, "batch-ack-rescan");
-
             const createMappings = response.results
               .filter(
                 (result) =>
@@ -1017,6 +1107,44 @@ export function useDocumentSync({
                 blockId: result.blockId!,
                 sortKey: result.sortKey,
               }));
+            const deleteAckMappings = response.results
+              .filter(
+                (result) =>
+                  result.operation === "delete" &&
+                  result.success &&
+                  (result.blockId || result.clientId),
+              )
+              .map((result) => ({
+                blockId: result.blockId,
+                clientId: result.clientId,
+              }));
+
+            const applyBatchAckToDoc = (doc: TiptapDoc | null): TiptapDoc | null => {
+              if (!doc) return doc;
+              let nextDoc = doc;
+              if (serverAckMappings.length > 0) {
+                nextDoc = applyServerAck(nextDoc, serverAckMappings);
+              }
+              if (deleteAckMappings.length > 0) {
+                nextDoc = applyServerDeleteAck(nextDoc, deleteAckMappings);
+              }
+              return nextDoc;
+            };
+
+            if (snapshotRef.current) {
+              const patchedSnapshot = applyBatchAckToDoc(snapshotRef.current);
+              if (patchedSnapshot && patchedSnapshot !== snapshotRef.current) {
+                snapshotRef.current = patchedSnapshot;
+                snapshotIndexRef.current = createSyncSnapshotIndex(patchedSnapshot, {
+                  computePayloadFingerprints: true,
+                });
+              }
+            }
+
+            captureContentSnapshot(
+              applyBatchAckToDoc(latestContentRef.current),
+              "batch-ack-rescan",
+            );
 
             const currentSnapshot = snapshotRef.current;
             const orphanedCreateDeletes = collectOrphanedCreateDeletes(
@@ -1045,14 +1173,40 @@ export function useDocumentSync({
                 );
               });
             }
-            if (currentSnapshot && serverAckMappings.length > 0) {
-              const patched = applyServerAck(currentSnapshot, serverAckMappings);
+            if (
+              currentSnapshot &&
+              (serverAckMappings.length > 0 || deleteAckMappings.length > 0)
+            ) {
+              let patched = currentSnapshot;
+              if (serverAckMappings.length > 0) {
+                patched = applyServerAck(patched, serverAckMappings);
+              }
+              if (deleteAckMappings.length > 0) {
+                patched = applyServerDeleteAck(patched, deleteAckMappings);
+              }
               addSyncTrace("ack:patch", rebased.docId, rebased.sessionId, rebased.sessionEpoch, () => ({
                 clientBatchId,
                 mappings: serverAckMappings,
                 beforeManifest: buildManifestSummary(currentSnapshot),
                 afterManifest: buildManifestSummary(patched),
               }));
+
+              // ACK 写回的 server sortKey 可能与当前视觉顺序不一致
+              // （flush 期间用户移动过块）：立即检测并入队校正 move
+              const ackState = stateRef.current;
+              if (ackState) {
+                const repaired = repairSnapshotSortKeyOrder(ackState, patched);
+                if (repaired.repairedCount > 0) {
+                  replaceSyncState(repaired.state);
+                  patched = repaired.snapshot;
+                  addSyncTrace("ack:order-repair", rebased.docId, rebased.sessionId, rebased.sessionEpoch, () => ({
+                    clientBatchId,
+                    repairedCount: repaired.repairedCount,
+                    afterManifest: buildManifestSummary(repaired.snapshot),
+                  }));
+                }
+              }
+
               snapshotRef.current = patched;
               snapshotIndexRef.current = createSyncSnapshotIndex(patched, {
                 computePayloadFingerprints: true,
@@ -1073,6 +1227,11 @@ export function useDocumentSync({
               }
             }
             if (batchFailure) {
+              const failedIds = collectFailedClientIds(
+                response.results,
+                operations,
+              );
+              for (const id of failedIds) failedEntryIds.add(id);
               updateSyncState((prev) =>
                 prev
                   ? {
@@ -1087,9 +1246,16 @@ export function useDocumentSync({
                 const recovered = await runDraftCheckpoint(latestContentRef.current);
                 if (recovered) {
                   batchFailureCountRef.current = 0;
+                  failedEntryIds.clear();
                 }
+                return;
               }
-              return;
+              if (failedIds.size === 0) {
+                // 无法定位失败 entry，中止本次 flush 防止同一批次死循环
+                return;
+              }
+              // 部分失败不中断：跳过失败 entry，继续发送剩余批次
+              continue;
             }
           } catch (error) {
             const message = error instanceof Error ? error.message : "同步失败";
@@ -1114,6 +1280,24 @@ export function useDocumentSync({
     },
     [captureContentSnapshot, onContentPatched, reconcileIdleManifest, replaceSyncState, runDraftCheckpoint, updateSyncState],
   );
+
+  // error 态自动重试：指数退避（2s 起，封顶 30s），网络恢复后队列自动排空，
+  // 不再依赖用户继续编辑触发 dirty 才恢复同步
+  useEffect(() => {
+    if (!syncState) return;
+    if (syncState.syncState !== "error") {
+      errorRetryAttemptRef.current = 0;
+      return;
+    }
+    if (syncState.dirtyOrder.length === 0) return;
+    const attempt = Math.min(errorRetryAttemptRef.current, 4);
+    const delayMs = Math.min(30_000, 2_000 * 2 ** attempt);
+    const timer = window.setTimeout(() => {
+      errorRetryAttemptRef.current += 1;
+      void flush("autosync");
+    }, delayMs);
+    return () => window.clearTimeout(timer);
+  }, [flush, syncState]);
 
   const flushAndCommitBarrier = useCallback(
     async (

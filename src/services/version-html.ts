@@ -4,6 +4,7 @@
  */
 import { renderBlockToHtml } from "./generate-block-html";
 import type { Block, DiffChange } from "./document";
+import { compareSortKeys } from "./sync/fractional-key";
 
 function flattenContentBlocks(tree: Block): Block[] {
   const flat: Block[] = [];
@@ -19,7 +20,7 @@ function flattenContentBlocks(tree: Block): Block[] {
 
   return flat
     .filter((block) => block.type !== "root")
-    .sort((a, b) => (a.sortKey || "").localeCompare(b.sortKey || ""));
+    .sort((a, b) => compareSortKeys(a.sortKey || "", b.sortKey || ""));
 }
 
 function escapeHtmlAttribute(value: string): string {

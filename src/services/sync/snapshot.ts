@@ -1,10 +1,12 @@
 import type { TiptapDoc } from "@/services/tiptap-converter";
 import {
   analyzeSortKeyIntegrity,
+  applySortKeyRepairs,
   createSyncSnapshotIndex,
   deriveSyncEntriesWithMetrics,
   hasCorruptedSortKeys,
   normalizeEditorDoc,
+  planSortKeyRepairs,
   type SyncSnapshotIndex,
 } from "@/services/sync/engine";
 import { readIdentityFromAttrs } from "@/services/sync/identity";
@@ -89,6 +91,49 @@ function reconcilePendingEntriesWithSnapshot(
   return nextState;
 }
 
+/**
+ * sortKey 主动修复：检测到重复/乱序/非法 key 时，按视觉顺序重新分配并入队
+ * move（pending create 则合并进 create entry），同时把修复结果写回快照，
+ * 保证后续 diff 基于干净的 key 序列。
+ */
+export function repairSnapshotSortKeyOrder(
+  state: SyncReducerState,
+  snapshot: TiptapDoc,
+): {
+  state: SyncReducerState;
+  snapshot: TiptapDoc;
+  repairedCount: number;
+} {
+  const report = analyzeSortKeyIntegrity(snapshot);
+  if (!hasCorruptedSortKeys(report)) {
+    return { state, snapshot, repairedCount: 0 };
+  }
+
+  // 仅修复可寻址的块：有 blockId（可发 move）或已有 pending entry（可合并 sortKey）
+  const repairs = planSortKeyRepairs(snapshot).filter(
+    (repair) => repair.blockId || state.entries[repair.clientId],
+  );
+  if (repairs.length === 0) {
+    return { state, snapshot, repairedCount: 0 };
+  }
+
+  let nextState = state;
+  for (const repair of repairs) {
+    nextState = enqueueChange(nextState, {
+      clientId: repair.clientId,
+      blockId: repair.blockId,
+      opType: "move",
+      sortKey: repair.sortKey,
+    });
+  }
+
+  return {
+    state: nextState,
+    snapshot: applySortKeyRepairs(snapshot, repairs),
+    repairedCount: repairs.length,
+  };
+}
+
 function createIdleMetrics(input: {
   topLevelCount: number;
   fingerprintCount: number;
@@ -133,16 +178,22 @@ export function advanceSyncSnapshotIndexed(
         nextState = enqueueChange(nextState, entry);
       }
     }
-    const report = analyzeSortKeyIntegrity(normalizedSnapshot);
-    const snapshot = applyLocalSortKeys(normalizedSnapshot, nextState);
+    const localSnapshot = applyLocalSortKeys(normalizedSnapshot, nextState);
+    const initialReport = analyzeSortKeyIntegrity(localSnapshot);
+    const repaired = repairSnapshotSortKeyOrder(nextState, localSnapshot);
+    nextState = repaired.state;
+    const snapshot = repaired.snapshot;
+    const finalReport =
+      repaired.repairedCount > 0 ? analyzeSortKeyIntegrity(snapshot) : initialReport;
+    const corrupted = hasCorruptedSortKeys(finalReport);
     const index = createSyncSnapshotIndex(snapshot, {
       computePayloadFingerprints: true,
     });
     return {
       state: {
         ...nextState,
-        hasCorruptedSortKeys: hasCorruptedSortKeys(report),
-        sortKeyCorruptionReport: hasCorruptedSortKeys(report) ? report : null,
+        hasCorruptedSortKeys: corrupted,
+        sortKeyCorruptionReport: corrupted ? finalReport : null,
       },
       snapshot,
       index,
@@ -170,7 +221,10 @@ export function advanceSyncSnapshotIndexed(
     normalizedSnapshot,
   );
 
-  const snapshot = applyLocalSortKeys(normalizedSnapshot, nextState);
+  const localSnapshot = applyLocalSortKeys(normalizedSnapshot, nextState);
+  const repaired = repairSnapshotSortKeyOrder(nextState, localSnapshot);
+  nextState = repaired.state;
+  const snapshot = repaired.snapshot;
   const report = analyzeSortKeyIntegrity(snapshot);
   const corrupted = hasCorruptedSortKeys(report);
   return {

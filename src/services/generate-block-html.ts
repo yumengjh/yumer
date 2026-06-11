@@ -10,6 +10,7 @@ import {
 } from "@/modules/editor-kit/shared";
 import { serializationExtensions } from "./tiptap-extensions";
 import { type TiptapDoc, type TiptapNode } from "./tiptap-converter";
+import { compareSortKeys } from "./sync/fractional-key";
 import { resolveApiUrl } from "./api-client";
 
 interface Block {
@@ -93,7 +94,7 @@ export function renderBlockTreeToHtml(tree: Block): string {
 
   const contentBlocks = flat
     .filter((b) => b.type !== "root")
-    .sort((a, b) => (a.sortKey || "").localeCompare(b.sortKey || ""));
+    .sort((a, b) => compareSortKeys(a.sortKey || "", b.sortKey || ""));
 
   if (contentBlocks.length === 0) return "";
 

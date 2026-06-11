@@ -8,6 +8,7 @@ import {
   type TiptapNode,
 } from "./tiptap-converter";
 import { ensureDocumentIdentity } from "./sync/identity";
+import { compareSortKeys, integerToSortKey } from "./sync/fractional-key";
 
 // ─── 类型定义 ───
 
@@ -426,7 +427,7 @@ export function flattenBlockTree(root: Block): Block[] {
     }
   }
   walk(root);
-  result.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+  result.sort((a, b) => compareSortKeys(a.sortKey, b.sortKey));
   return result;
 }
 
@@ -435,10 +436,9 @@ export function flattenBlockTreeInDocumentOrder(root: Block): Block[] {
 
   function sortChildren(children: Block[]): Block[] {
     return [...children].sort((a, b) => {
-      const left = Number.parseInt(a.sortKey || "0", 10) || 0;
-      const right = Number.parseInt(b.sortKey || "0", 10) || 0;
-      if (left !== right) return left - right;
-      return a.blockId.localeCompare(b.blockId);
+      const bySortKey = compareSortKeys(a.sortKey || "", b.sortKey || "");
+      if (bySortKey !== 0) return bySortKey;
+      return a.blockId < b.blockId ? -1 : a.blockId > b.blockId ? 1 : 0;
     });
   }
 
@@ -698,7 +698,7 @@ async function saveJsonContent(
 
   for (const newBlock of newBlockPayloads) {
     sortKeyCounter++;
-    const sortKey = String(sortKeyCounter * 1000).padStart(6, "0");
+    const sortKey = integerToSortKey(sortKeyCounter);
 
     // 尝试通过现有 blockIds 匹配
     const existingBlock = newBlock.blockId

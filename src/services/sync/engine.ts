@@ -1,7 +1,12 @@
 import type { TiptapDoc, TiptapNode } from "@/services/tiptap-converter";
-import { extractPlainText } from "@/services/tiptap-converter";
 import { ensureDocumentIdentity, readIdentityFromAttrs } from "./identity";
-import { createSortKeyBetween, createSortKeysBetween } from "./order";
+import {
+  compareSortKeys,
+  createCanonicalSortKey,
+  createSortKeyBetween,
+  createSortKeysBetween,
+  isValidSortKey,
+} from "./order";
 import type {
   SortKeyCorruptionReport,
   SyncDiffHint,
@@ -37,13 +42,7 @@ export function normalizeEditorDoc(doc: TiptapDoc): TiptapDoc {
 }
 
 function fallbackSortKey(index: number): string {
-  return String((index + 1) * 1000).padStart(6, "0");
-}
-
-function parseSortKey(value: string | null | undefined): number | null {
-  if (typeof value !== "string" || value.trim() === "") return null;
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) ? parsed : null;
+  return createCanonicalSortKey(index);
 }
 
 function getSortKey(node: TiptapNode, fallbackIndex: number): string {
@@ -199,8 +198,7 @@ export function analyzeSortKeyIntegrity(
   const duplicates = new Map<string, string[]>();
   const nonMonotonic: SortKeyCorruptionReport["nonMonotonic"] = [];
   const nodes = Array.isArray(doc?.content) ? doc.content : [];
-  let previous: { identityKey: string; sortKey: string; parsed: number } | null =
-    null;
+  let previous: { identityKey: string; sortKey: string } | null = null;
 
   for (const node of nodes) {
     const identity = readIdentityFromAttrs(node.attrs);
@@ -217,9 +215,7 @@ export function analyzeSortKeyIntegrity(
     clients.push(identityKey);
     duplicates.set(sortKey, clients);
 
-    const parsed = parseSortKey(sortKey);
-    if (parsed == null) continue;
-    if (previous && previous.parsed >= parsed) {
+    if (previous && compareSortKeys(previous.sortKey, sortKey) >= 0) {
       nonMonotonic.push({
         previousClientId: previous.identityKey,
         previousSortKey: previous.sortKey,
@@ -227,7 +223,7 @@ export function analyzeSortKeyIntegrity(
         sortKey,
       });
     }
-    previous = { identityKey, sortKey, parsed };
+    previous = { identityKey, sortKey };
   }
 
   return {
@@ -240,6 +236,112 @@ export function analyzeSortKeyIntegrity(
 
 export function hasCorruptedSortKeys(report: SortKeyCorruptionReport): boolean {
   return report.duplicates.length > 0 || report.nonMonotonic.length > 0;
+}
+
+export type SortKeyRepair = {
+  clientId: string;
+  blockId: string | null;
+  sortKey: string;
+};
+
+/**
+ * 主动修复计划：按视觉顺序扫描顶层块，保留首个严格递增的合法 key 序列，
+ * 为其余（缺失/非法/重复/乱序）的块在相邻锚点之间重新分配 fractional key。
+ */
+export function planSortKeyRepairs(doc: TiptapDoc | null): SortKeyRepair[] {
+  const nodes = Array.isArray(doc?.content) ? doc.content : [];
+  type RepairItem = {
+    clientId: string;
+    blockId: string | null;
+    key: string | null;
+  };
+  const items: RepairItem[] = [];
+  for (const node of nodes) {
+    const identity = readIdentityFromAttrs(node.attrs);
+    if (!identity.clientId) continue;
+    const raw = node.attrs?.sortKey;
+    items.push({
+      clientId: identity.clientId,
+      blockId: identity.blockId ?? null,
+      key: isValidSortKey(raw) ? raw : null,
+    });
+  }
+
+  const needsRepair: boolean[] = new Array(items.length).fill(false);
+  const seenKeys = new Set<string>();
+  let previousKey: string | null = null;
+  for (let index = 0; index < items.length; index += 1) {
+    const key = items[index].key;
+    const broken =
+      key == null ||
+      seenKeys.has(key) ||
+      (previousKey != null && compareSortKeys(key, previousKey) <= 0);
+    needsRepair[index] = broken;
+    if (!broken && key != null) {
+      seenKeys.add(key);
+      previousKey = key;
+    }
+  }
+
+  if (!needsRepair.some(Boolean)) return [];
+
+  const repairs: SortKeyRepair[] = [];
+  let anchorKey: string | null = null;
+  let index = 0;
+  while (index < items.length) {
+    if (!needsRepair[index]) {
+      anchorKey = items[index].key;
+      index += 1;
+      continue;
+    }
+    const runStart = index;
+    while (index < items.length && needsRepair[index]) index += 1;
+    const nextAnchorKey = index < items.length ? items[index].key : null;
+    const allocated = createSortKeysBetween(
+      anchorKey,
+      nextAnchorKey,
+      index - runStart,
+    );
+    for (let offset = 0; offset < allocated.length; offset += 1) {
+      const item = items[runStart + offset];
+      repairs.push({
+        clientId: item.clientId,
+        blockId: item.blockId,
+        sortKey: allocated[offset],
+      });
+    }
+  }
+
+  return repairs;
+}
+
+/** 把修复后的 sortKey 写回文档顶层节点 attrs。 */
+export function applySortKeyRepairs(
+  doc: TiptapDoc,
+  repairs: SortKeyRepair[],
+): TiptapDoc {
+  if (!Array.isArray(doc.content) || repairs.length === 0) return doc;
+  const byClientId = new Map(
+    repairs.map((repair) => [repair.clientId, repair.sortKey]),
+  );
+  let changed = false;
+  const content = doc.content.map((node) => {
+    const identity = readIdentityFromAttrs(node.attrs);
+    const sortKey = identity.clientId
+      ? byClientId.get(identity.clientId)
+      : undefined;
+    if (!sortKey || node.attrs?.sortKey === sortKey) return node;
+    changed = true;
+    return {
+      ...node,
+      attrs: {
+        ...(node.attrs ?? {}),
+        sortKey,
+        "data-sort-key": sortKey,
+      },
+    };
+  });
+  return changed ? { ...doc, content } : doc;
 }
 
 function sortKeyForPosition(nextNodes: IndexedSyncNode[], index: number): string {
@@ -374,9 +476,15 @@ function planDesiredSortKeys(
   const existingNodes = orderedNextNodes.filter((node) =>
     Boolean(prevIndexed[node.matchKey]?.blockId),
   );
-  const existingValues = existingNodes.map(
-    (node) => parseSortKey(prevIndexed[node.matchKey].sortKey) ?? 0,
+  const existingKeys = existingNodes.map(
+    (node) => prevIndexed[node.matchKey].sortKey,
   );
+  // LIS 需要数值输入：把字符串 key 映射为排序后的 rank（重复 key 同 rank）。
+  const rankByKey = new Map<string, number>();
+  for (const key of [...existingKeys].sort(compareSortKeys)) {
+    if (!rankByKey.has(key)) rankByKey.set(key, rankByKey.size);
+  }
+  const existingValues = existingKeys.map((key) => rankByKey.get(key) ?? 0);
   const stableAnchorIds = new Set(
     longestIncreasingSubsequence(existingValues).map(
       (index) => existingNodes[index].matchKey,
@@ -694,7 +802,6 @@ export function deriveSyncEntriesWithMetrics(
         blockId: prevNode.blockId,
         opType: "update",
         payload: nextNode.node as unknown as Record<string, unknown>,
-        plainText: extractPlainText(nextNode.node),
       });
     }
   }
@@ -825,4 +932,31 @@ export function applyServerAck(
   const changed = content.some((node, index) => node !== doc.content[index]);
 
   return changed ? { ...doc, content } : doc;
+}
+
+export function applyServerDeleteAck(
+  doc: TiptapDoc,
+  deletions: Array<{ blockId?: string | null; clientId?: string | null }>,
+): TiptapDoc {
+  if (!Array.isArray(doc.content) || deletions.length === 0) return doc;
+
+  const blockIds = new Set<string>();
+  const clientIds = new Set<string>();
+  for (const item of deletions) {
+    if (item.blockId) blockIds.add(item.blockId);
+    if (item.clientId) clientIds.add(item.clientId);
+  }
+  if (blockIds.size === 0 && clientIds.size === 0) return doc;
+
+  const shouldRemoveNode = (
+    node: TiptapDoc["content"][number],
+  ): boolean => {
+    const identity = readIdentityFromAttrs(node.attrs);
+    if (identity.blockId && blockIds.has(identity.blockId)) return true;
+    if (identity.clientId && clientIds.has(identity.clientId)) return true;
+    return false;
+  };
+
+  const content = doc.content.filter((node) => !shouldRemoveNode(node));
+  return content.length === doc.content.length ? doc : { ...doc, content };
 }

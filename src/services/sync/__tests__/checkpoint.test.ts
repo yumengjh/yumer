@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { TiptapDoc } from "@/services/tiptap-converter";
 import { applyCheckpointAck, buildDraftCheckpoint } from "../checkpoint";
+import {
+  createSortKeyBetween,
+  SK0,
+  SK1,
+  SK2,
+} from "./test-sort-key";
 
 describe("checkpoint sync", () => {
   it("builds a full checkpoint from top-level TipTap blocks", async () => {
@@ -9,12 +15,12 @@ describe("checkpoint sync", () => {
       content: [
         {
           type: "paragraph",
-          attrs: { clientId: "cid_1", blockId: "block_1", sortKey: "001000" },
+          attrs: { clientId: "cid_1", blockId: "block_1", sortKey: SK0 },
           content: [{ type: "text", text: "hello" }],
         },
         {
           type: "heading",
-          attrs: { clientId: "cid_2", sortKey: "002000" },
+          attrs: { clientId: "cid_2", sortKey: SK1 },
           content: [{ type: "text", text: "world" }],
         },
       ],
@@ -53,8 +59,8 @@ describe("checkpoint sync", () => {
         block.orderKey,
       ]),
     ).toEqual([
-      ["cid_1", "block_1", "paragraph", "001000"],
-      ["cid_2", null, "heading", "002000"],
+      ["cid_1", "block_1", "paragraph", SK0],
+      ["cid_2", null, "heading", SK1],
     ]);
     expect(checkpoint.blocks[1].syncCreateId).toBe("sync-create:cid_2");
     expect(
@@ -65,15 +71,16 @@ describe("checkpoint sync", () => {
   it("patches checkpoint mappings back into a document by clientId", () => {
     const doc: TiptapDoc = {
       type: "doc",
-      content: [{ type: "paragraph", attrs: { clientId: "cid_1", sortKey: "001000" } }],
+      content: [{ type: "paragraph", attrs: { clientId: "cid_1", sortKey: SK0 } }],
     };
+    const remapped = createSortKeyBetween(SK0, SK1);
 
     const patched = applyCheckpointAck(doc, [
       {
         clientId: "cid_1",
         blockId: "block_1",
-        orderKey: "001500",
-        sortKey: "001500",
+        orderKey: remapped,
+        sortKey: remapped,
       },
     ]);
 
@@ -81,8 +88,8 @@ describe("checkpoint sync", () => {
       clientId: "cid_1",
       blockId: "block_1",
       "data-block-id": "block_1",
-      sortKey: "001500",
-      "data-sort-key": "001500",
+      sortKey: remapped,
+      "data-sort-key": remapped,
     });
   });
 
@@ -107,14 +114,14 @@ describe("checkpoint sync", () => {
     });
 
     expect(checkpoint.blocks.map((block) => block.orderKey)).toEqual([
-      "001000",
-      "002000",
-      "003000",
+      SK0,
+      SK1,
+      SK2,
     ]);
     expect(
       checkpoint.blocks.map(
         (block) => (block.payload.attrs as Record<string, unknown>).sortKey,
       ),
-    ).toEqual(["001000", "002000", "003000"]);
+    ).toEqual([SK0, SK1, SK2]);
   });
 });

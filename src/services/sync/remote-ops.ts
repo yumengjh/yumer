@@ -1,5 +1,6 @@
 import type { TiptapDoc, TiptapNode } from "@/services/tiptap-converter";
 import type { RemoteDocumentOperation } from "@/services/realtime/types";
+import { compareSortKeys } from "./fractional-key";
 
 function readBlockId(node: TiptapNode): string | null {
   const value = node.attrs?.blockId ?? node.attrs?.["data-block-id"];
@@ -40,7 +41,9 @@ function mergeAttrs(
 }
 
 function sortTopLevel(content: TiptapNode[]): TiptapNode[] {
-  return [...content].sort((left, right) => readSortKey(left).localeCompare(readSortKey(right)));
+  return [...content].sort((left, right) =>
+    compareSortKeys(readSortKey(left), readSortKey(right)),
+  );
 }
 
 export function applyRemoteOperationsToDoc(input: {

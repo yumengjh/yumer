@@ -24,6 +24,8 @@ export type SyncTraceEvent =
   | "queue:before-select"
   | "flush:dispatch"
   | "flush:response"
+  | "flush:retry"
+  | "ack:order-repair"
   | "orphaned-create:delete-enqueued"
   | "ack:patch"
   | "idle:manifest"

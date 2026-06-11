@@ -3,6 +3,7 @@ import { createInitialSyncState, enqueueChange, markBatchInflight, resolveBatchS
 import { advanceSyncSnapshot } from "../snapshot";
 import { selectSyncBatchOperations } from "../batching";
 import type { TiptapDoc } from "@/services/tiptap-converter";
+import { compareSortKeys, SK0, SK1, SK2, SK3, SK4, SK_EMPTY } from "./test-sort-key";
 
 describe("sync snapshot advancement", () => {
   it("initializes the snapshot without enqueueing a change", () => {
@@ -44,7 +45,7 @@ describe("sync snapshot advancement", () => {
       clientId: "client_unsynced",
       blockId: null,
       opType: "create",
-      sortKey: "001000",
+      sortKey: SK_EMPTY,
     });
   });
 
@@ -110,7 +111,7 @@ describe("sync snapshot advancement", () => {
       clientId: "client_unsynced",
       blockId: null,
       opType: "create",
-      sortKey: "001000",
+      sortKey: SK_EMPTY,
     });
   });
 
@@ -263,7 +264,7 @@ describe("sync snapshot advancement", () => {
         success: true,
         clientId: "paste_1",
         blockId: "server_paste_1",
-        sortKey: "001000",
+        sortKey: SK0,
       },
     ]);
 
@@ -285,12 +286,12 @@ describe("sync snapshot advancement", () => {
       content: [
         {
           type: "paragraph",
-          attrs: { blockId: "block_paragraph", sortKey: "027000" },
+          attrs: { blockId: "block_paragraph", sortKey: SK0 },
           content: [{ type: "text", text: "paragraph" }],
         },
         {
           type: "codeBlock",
-          attrs: { blockId: "block_code", sortKey: "027500" },
+          attrs: { blockId: "block_code", sortKey: SK1 },
           content: [{ type: "text", text: "code" }],
         },
       ],
@@ -300,12 +301,12 @@ describe("sync snapshot advancement", () => {
       content: [
         {
           type: "codeBlock",
-          attrs: { blockId: "block_code", sortKey: "027500" },
+          attrs: { blockId: "block_code", sortKey: SK1 },
           content: [{ type: "text", text: "code" }],
         },
         {
           type: "paragraph",
-          attrs: { blockId: "block_paragraph", sortKey: "027000" },
+          attrs: { blockId: "block_paragraph", sortKey: SK0 },
           content: [{ type: "text", text: "paragraph" }],
         },
       ],
@@ -316,14 +317,14 @@ describe("sync snapshot advancement", () => {
 
     expect(generatedClientId).toEqual(expect.any(String));
     expect(generatedClientId).not.toBe("block_code");
-    expect(next.state.dirtyOrder).toEqual([generatedClientId]);
-    expect(next.state.entries[generatedClientId as string]).toMatchObject({
+    const moveEntry = next.state.entries[generatedClientId as string];
+    expect(moveEntry).toMatchObject({
       clientId: generatedClientId,
       blockId: "block_code",
       opType: "move",
-      sortKey: "013500",
     });
-    expect(next.snapshot.content?.[0].attrs?.sortKey).toBe("013500");
+    expect(compareSortKeys(moveEntry.sortKey!, SK0)).toBeLessThan(0);
+    expect(next.snapshot.content?.[0].attrs?.sortKey).toBe(moveEntry.sortKey);
   });
 
   it("persists generated sortKeys into the local snapshot for sequential blank-line creation", () => {
@@ -334,7 +335,7 @@ describe("sync snapshot advancement", () => {
       content: [
         {
           type: "paragraph",
-          attrs: { blockId: "block_1", clientId: "client_1", sortKey: "001000" },
+          attrs: { blockId: "block_1", clientId: "client_1", sortKey: SK0 },
           content: [{ type: "text", text: "1" }],
         },
       ],
@@ -345,7 +346,7 @@ describe("sync snapshot advancement", () => {
       content: [
         {
           type: "paragraph",
-          attrs: { blockId: "block_1", clientId: "client_1", sortKey: "001000" },
+          attrs: { blockId: "block_1", clientId: "client_1", sortKey: SK0 },
           content: [{ type: "text", text: "1" }],
         },
         {
@@ -358,14 +359,15 @@ describe("sync snapshot advancement", () => {
     const step1 = advanceSyncSnapshot(state, previous, currentStep1);
     state = step1.state;
 
-    expect(step1.snapshot.content?.[1].attrs?.sortKey).toBe("002000");
+    const blankSortKey = step1.snapshot.content?.[1].attrs?.sortKey as string;
+    expect(compareSortKeys(SK0, blankSortKey)).toBeLessThan(0);
 
     const currentStep2: TiptapDoc = {
       type: "doc",
       content: [
         {
           type: "paragraph",
-          attrs: { blockId: "block_1", clientId: "client_1", sortKey: "001000" },
+          attrs: { blockId: "block_1", clientId: "client_1", sortKey: SK0 },
           content: [{ type: "text", text: "1" }],
         },
         {
@@ -382,10 +384,11 @@ describe("sync snapshot advancement", () => {
 
     const step2 = advanceSyncSnapshot(state, step1.snapshot, currentStep2);
 
-    expect(step2.snapshot.content?.[1].attrs?.sortKey).toBe("002000");
-    expect(step2.snapshot.content?.[2].attrs?.sortKey).toBe("003000");
-    expect(step2.state.entries.blank_1.sortKey).toBe("002000");
-    expect(step2.state.entries.block_2.sortKey).toBe("003000");
+    expect(step2.snapshot.content?.[1].attrs?.sortKey).toBe(blankSortKey);
+    const block2SortKey = step2.snapshot.content?.[2].attrs?.sortKey as string;
+    expect(compareSortKeys(blankSortKey, block2SortKey)).toBeLessThan(0);
+    expect(step2.state.entries.blank_1.sortKey).toBe(blankSortKey);
+    expect(step2.state.entries.block_2.sortKey).toBe(block2SortKey);
   });
 
   it("keeps deleting an older existing block when a replacement wave is removed during create ack", () => {
@@ -396,12 +399,12 @@ describe("sync snapshot advancement", () => {
       content: [
         {
           type: "paragraph",
-          attrs: { blockId: "b_old_a", clientId: "c_old_a", sortKey: "001000" },
+          attrs: { blockId: "b_old_a", clientId: "c_old_a", sortKey: SK0 },
           content: [{ type: "text", text: "old a" }],
         },
         {
           type: "paragraph",
-          attrs: { blockId: "b_old_b", clientId: "c_old_b", sortKey: "002000" },
+          attrs: { blockId: "b_old_b", clientId: "c_old_b", sortKey: SK2 },
           content: [{ type: "text", text: "old b" }],
         },
       ],
@@ -415,22 +418,22 @@ describe("sync snapshot advancement", () => {
       content: [
         {
           type: "paragraph",
-          attrs: { clientId: "c_final", sortKey: "001000" },
+          attrs: { clientId: "c_final", sortKey: SK0 },
           content: [{ type: "text", text: "final text" }],
         },
         {
           type: "paragraph",
-          attrs: { blockId: "b_old_b", clientId: "c_old_b", sortKey: "002000" },
+          attrs: { blockId: "b_old_b", clientId: "c_old_b", sortKey: SK2 },
           content: [{ type: "text", text: "old b" }],
         },
         {
           type: "paragraph",
-          attrs: { clientId: "c_temp_3", sortKey: "003000" },
+          attrs: { clientId: "c_temp_3", sortKey: SK3 },
           content: [{ type: "text", text: "temp 3" }],
         },
         {
           type: "paragraph",
-          attrs: { clientId: "c_temp_4", sortKey: "004000" },
+          attrs: { clientId: "c_temp_4", sortKey: SK4 },
           content: [{ type: "text", text: "temp 4" }],
         },
       ],
@@ -449,7 +452,7 @@ describe("sync snapshot advancement", () => {
       content: [
         {
           type: "paragraph",
-          attrs: { clientId: "c_final", sortKey: "001000" },
+          attrs: { clientId: "c_final", sortKey: SK0 },
           content: [{ type: "text", text: "final text" }],
         },
       ],
@@ -469,7 +472,7 @@ describe("sync snapshot advancement", () => {
         success: true,
         clientId: "c_final",
         blockId: "b_final",
-        sortKey: "001000",
+        sortKey: SK0,
       },
       {
         operation: "delete",
@@ -481,14 +484,14 @@ describe("sync snapshot advancement", () => {
         success: true,
         clientId: "c_temp_3",
         blockId: "b_temp_3",
-        sortKey: "003000",
+        sortKey: SK3,
       },
       {
         operation: "create",
         success: true,
         clientId: "c_temp_4",
         blockId: "b_temp_4",
-        sortKey: "004000",
+        sortKey: SK4,
       },
     ]);
 

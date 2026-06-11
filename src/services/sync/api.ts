@@ -12,6 +12,8 @@ export interface SyncBatchResponse {
   needsReload: boolean;
   conflicts: Array<{ code: string; message: string }>;
   results: SyncBatchResult[];
+  /** 服务端顶层清单摘要；与本地 computeRootManifestDigest 一致时可跳过全量 reconcile */
+  manifestDigest?: string;
 }
 
 type RawSyncBatchResult = Omit<SyncBatchResult, "success"> & {
@@ -103,7 +105,8 @@ type BatchUpdateBody = {
   blockId: string;
   data: {
     payload: Record<string, unknown>;
-    plainText?: string;
+    sortKey?: string;
+    parentId?: string;
   };
 };
 
@@ -133,6 +136,26 @@ function buildCreatePayload(entry: SyncEntry, sortKey?: string): Record<string, 
       ...(sortKey ? { sortKey } : {}),
     },
   };
+}
+
+/** update 请求瘦身：剥离 attrs 中的同步/排序元数据，由顶层字段承载。 */
+function stripUpdatePayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const attrs = (payload.attrs as Record<string, unknown> | undefined) ?? {};
+  const nextAttrs = { ...attrs };
+  for (const key of [
+    "blockId",
+    "clientId",
+    "sortKey",
+    "syncCreateId",
+    "clientBatchId",
+    "data-block-id",
+    "data-client-id",
+    "data-sort-key",
+    "data-sync-create-id",
+  ]) {
+    delete nextAttrs[key];
+  }
+  return { ...payload, attrs: nextAttrs };
 }
 
 function reserveCreateSortKey(requestedSortKey: string | undefined, reservedSortKeys: Set<string>): string | undefined {
@@ -184,18 +207,15 @@ export function buildSyncBatchOperations(input: {
         type: "update",
         blockId: entry.blockId,
         data: {
-          payload: entry.payload,
-          plainText: entry.plainText,
+          payload: stripUpdatePayload(entry.payload),
+          ...(entry.sortKey
+            ? {
+                sortKey: entry.sortKey,
+                parentId: entry.parentId ?? input.rootBlockId,
+              }
+            : {}),
         },
       });
-      if (entry.sortKey) {
-        bodyOperations.push({
-          type: "move",
-          blockId: entry.blockId,
-          parentId: entry.parentId ?? input.rootBlockId,
-          sortKey: entry.sortKey,
-        });
-      }
       continue;
     }
 
@@ -247,6 +267,57 @@ function getDeleteIdentitiesFromBatchResponse(response: SyncBatchResponse): Sync
   });
 }
 
+/**
+ * 网络层瞬时错误判定：fetch 抛 TypeError（断网/DNS/连接重置）、
+ * 网关返回非 JSON（SyntaxError）视为可重试；业务错误不重试。
+ */
+export function isRetryableSyncError(error: unknown): boolean {
+  if (error instanceof TypeError || error instanceof SyntaxError) return true;
+  const message =
+    error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  return (
+    message.includes("failed to fetch") ||
+    message.includes("networkerror") ||
+    message.includes("network error") ||
+    message.includes("load failed") ||
+    message.includes("err_network") ||
+    message.includes("err_internet")
+  );
+}
+
+const SYNC_BATCH_RETRY_DELAYS_MS = [1000, 2000, 4000];
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * 带指数退避的 batch 提交：同一 clientBatchId 重发是安全的
+ * （服务端 sync_batch_receipts 幂等回放）。仅网络层瞬时错误触发重试。
+ */
+export async function postSyncBatchWithRetry(
+  input: Parameters<typeof postSyncBatch>[0],
+  options: { onRetry?: (attempt: number, error: unknown) => void } = {},
+): Promise<SyncBatchResponse> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= SYNC_BATCH_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      return await postSyncBatch(input);
+    } catch (error) {
+      lastError = error;
+      if (
+        !isRetryableSyncError(error) ||
+        attempt === SYNC_BATCH_RETRY_DELAYS_MS.length
+      ) {
+        throw error;
+      }
+      options.onRetry?.(attempt + 1, error);
+      await delay(SYNC_BATCH_RETRY_DELAYS_MS[attempt]);
+    }
+  }
+  throw lastError;
+}
+
 export async function postSyncBatch(input: {
   docId: string;
   rootBlockId: string;
@@ -279,13 +350,11 @@ export async function postSyncBatch(input: {
     draftRevision: input.draftRevision,
     clientBatchId: input.clientBatchId,
     ...getRealtimeOriginIdentity(),
-    source: input.source,
     ...(input.sessionId ? { sessionId: input.sessionId } : {}),
     ...(typeof input.sessionEpoch === "number"
       ? { sessionEpoch: input.sessionEpoch }
       : {}),
     ...(ackedThroughOpSeq > 0 ? { ackedThroughOpSeq } : {}),
-    createVersion: false,
     operations: bodyOperations,
   };
   const deleteIdentities = getDeleteIdentitiesFromBodyOperations(bodyOperations);

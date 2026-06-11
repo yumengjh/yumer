@@ -1,4 +1,5 @@
 import { ensureDocumentIdentity, readIdentityFromAttrs } from "./sync/identity";
+import { compareSortKeys } from "./sync/fractional-key";
 
 export interface TiptapNode {
   type: string;
@@ -104,7 +105,7 @@ export function blocksToTiptapJson(
 ): TiptapDoc {
   const contentBlocks = blocks
     .filter((b) => b.type !== "root")
-    .sort((a, b) => (a.sortKey || "").localeCompare(b.sortKey || ""));
+    .sort((a, b) => compareSortKeys(a.sortKey || "", b.sortKey || ""));
 
   const content: TiptapNode[] = contentBlocks.map((block) => {
     if (block.payload.type && typeof block.payload.type === "string") {

@@ -5,9 +5,11 @@ import {
 } from "../engine";
 import type { SyncDiffHint } from "../types";
 import type { TiptapDoc, TiptapNode } from "@/services/tiptap-converter";
+import { createCanonicalSortKey } from "../order";
+import { assertSortKeyBetween, SK0, SK1 } from "./test-sort-key";
 
 function sortKey(index: number): string {
-  return String((index + 1) * 1000).padStart(6, "0");
+  return createCanonicalSortKey(index - 1);
 }
 
 function paragraph(index: number, text = `block ${index}`): TiptapNode {
@@ -94,14 +96,13 @@ describe("indexed block diff", () => {
       },
     });
 
-    expect(result.entries).toMatchObject([
-      {
-        clientId: "c_inserted",
-        blockId: null,
-        opType: "create",
-        sortKey: "001500",
-      },
-    ]);
+    const create = result.entries.find((entry) => entry.clientId === "c_inserted");
+    expect(create).toMatchObject({
+      clientId: "c_inserted",
+      blockId: null,
+      opType: "create",
+    });
+    assertSortKeyBetween(create?.sortKey, sortKey(0), sortKey(1));
     expect(result.metrics).toMatchObject({
       mode: "structure-hint",
       dirtyCandidateCount: 1,

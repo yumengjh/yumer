@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { applyRemoteOperationsToDoc } from "../remote-ops";
 import type { TiptapDoc } from "@/services/tiptap-converter";
+import { createSortKeyBetween, SK0, SK1 } from "./test-sort-key";
+
+const SK_MID = createSortKeyBetween(SK0, SK1);
+const SK_BEFORE_0 = createSortKeyBetween(null, SK0);
 
 describe("remote sync operations", () => {
   it("applies top-level create update move and delete operations", () => {
@@ -9,12 +13,12 @@ describe("remote sync operations", () => {
       content: [
         {
           type: "paragraph",
-          attrs: { blockId: "block_a", clientId: "client_a", sortKey: "001000" },
+          attrs: { blockId: "block_a", clientId: "client_a", sortKey: SK0 },
           content: [{ type: "text", text: "A" }],
         },
         {
           type: "paragraph",
-          attrs: { blockId: "block_b", clientId: "client_b", sortKey: "002000" },
+          attrs: { blockId: "block_b", clientId: "client_b", sortKey: SK1 },
           content: [{ type: "text", text: "B" }],
         },
       ],
@@ -29,7 +33,7 @@ describe("remote sync operations", () => {
           blockId: "block_c",
           clientId: "client_c",
           parentId: "root_1",
-          sortKey: "001500",
+          sortKey: SK_MID,
           blockType: "paragraph",
           payload: {
             type: "paragraph",
@@ -50,7 +54,7 @@ describe("remote sync operations", () => {
           type: "move",
           blockId: "block_b",
           parentId: "root_1",
-          sortKey: "000500",
+          sortKey: SK_BEFORE_0,
         },
         {
           type: "delete",
@@ -63,12 +67,12 @@ describe("remote sync operations", () => {
       "block_b",
       "block_c",
     ]);
-    expect(next.content[0].attrs?.sortKey).toBe("000500");
+    expect(next.content[0].attrs?.sortKey).toBe(SK_BEFORE_0);
     expect(next.content[0].content?.[0].text).toBe("B2");
     expect(next.content[1].attrs).toMatchObject({
       blockId: "block_c",
       clientId: "client_c",
-      sortKey: "001500",
+      sortKey: SK_MID,
     });
   });
 
@@ -82,7 +86,7 @@ describe("remote sync operations", () => {
             type: "create",
             blockId: "block_nested",
             parentId: "block_parent",
-            sortKey: "001000",
+            sortKey: SK0,
             blockType: "paragraph",
             payload: { type: "paragraph" },
           },

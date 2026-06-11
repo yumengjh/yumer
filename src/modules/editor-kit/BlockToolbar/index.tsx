@@ -195,7 +195,7 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
         setHoveredBlock(block);
         setHoveredAnchor(anchor);
         setHoveredTableCell(tableCell);
-        setHoveredTargetKind(target.kind);
+        setHoveredTargetKind(target?.kind ?? null);
         updatePosition(anchor);
       }
     };

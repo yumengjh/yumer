@@ -1,6 +1,7 @@
 import type { TiptapDoc, TiptapNode } from "@/services/tiptap-converter";
 import { extractPlainText } from "@/services/tiptap-converter";
 import { readIdentityFromAttrs } from "@/services/sync/identity";
+import { createCanonicalSortKey } from "@/services/sync/order";
 
 export type DraftCheckpointBlock = {
   clientId: string;
@@ -63,7 +64,7 @@ function syncCreateIdFor(clientId: string): string {
 }
 
 function createCanonicalOrderKey(index: number): string {
-  return String((index + 1) * 1000).padStart(6, "0");
+  return createCanonicalSortKey(index);
 }
 
 function stripTransientAttrs(node: TiptapNode): Record<string, unknown> {

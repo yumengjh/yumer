@@ -1,6 +1,29 @@
 ﻿import { describe, expect, it } from "vitest";
-import { applyCreateAck, applyServerAck, deriveSyncEntries } from "../engine";
+import {
+  applyCreateAck,
+  applyServerAck,
+  applyServerDeleteAck,
+  deriveSyncEntries,
+} from "../engine";
 import type { TiptapDoc } from "@/services/tiptap-converter";
+import {
+  assertSortKeyBetween,
+  compareSortKeys,
+  createCanonicalSortKey,
+  createSortKeyBetween,
+  SK0,
+  SK1,
+  SK2,
+  SK3,
+  SK4,
+} from "./test-sort-key";
+
+const SK5 = createCanonicalSortKey(5);
+const SK_BEFORE_0 = createSortKeyBetween(null, SK0);
+const SK_SERVER_CREATE = createSortKeyBetween(null, SK0);
+const SK_SERVER_MOVE = createSortKeyBetween(SK0, SK1);
+const SK_SERVER_NESTED_ITEM = createSortKeyBetween(SK0, SK1);
+const SK_SERVER_NESTED_PARA = createSortKeyBetween(SK_SERVER_NESTED_ITEM, SK1);
 
 describe("deriveSyncEntries order handling", () => {
   it("creates a non-colliding sortKey when inserting between existing blocks", () => {
@@ -9,11 +32,11 @@ describe("deriveSyncEntries order handling", () => {
       content: [
         {
           type: "paragraph",
-          attrs: { clientId: "c_a", blockId: "b_a", sortKey: "001000" },
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: SK0 },
         },
         {
           type: "paragraph",
-          attrs: { clientId: "c_b", blockId: "b_b", sortKey: "002000" },
+          attrs: { clientId: "c_b", blockId: "b_b", sortKey: SK2 },
         },
       ],
     };
@@ -22,7 +45,7 @@ describe("deriveSyncEntries order handling", () => {
       content: [
         {
           type: "paragraph",
-          attrs: { clientId: "c_a", blockId: "b_a", sortKey: "001000" },
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: SK0 },
         },
         {
           type: "paragraph",
@@ -31,7 +54,7 @@ describe("deriveSyncEntries order handling", () => {
         },
         {
           type: "paragraph",
-          attrs: { clientId: "c_b", blockId: "b_b", sortKey: "002000" },
+          attrs: { clientId: "c_b", blockId: "b_b", sortKey: SK2 },
         },
       ],
     };
@@ -40,7 +63,7 @@ describe("deriveSyncEntries order handling", () => {
     const create = entries.find((entry) => entry.clientId === "c_x");
 
     expect(create?.opType).toBe("create");
-    expect(create?.sortKey).toBe("001500");
+    assertSortKeyBetween(create?.sortKey, SK0, SK2);
   });
 
   it("does not move unchanged existing blocks when inserting into a document with duplicated sortKeys", () => {
@@ -49,17 +72,17 @@ describe("deriveSyncEntries order handling", () => {
       content: [
         {
           type: "paragraph",
-          attrs: { clientId: "c_a", blockId: "b_a", sortKey: "001000" },
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: SK0 },
           content: [{ type: "text", text: "A" }],
         },
         {
           type: "paragraph",
-          attrs: { clientId: "c_b", blockId: "b_b", sortKey: "001000" },
+          attrs: { clientId: "c_b", blockId: "b_b", sortKey: SK0 },
           content: [{ type: "text", text: "B" }],
         },
         {
           type: "paragraph",
-          attrs: { clientId: "c_c", blockId: "b_c", sortKey: "002000" },
+          attrs: { clientId: "c_c", blockId: "b_c", sortKey: SK2 },
           content: [{ type: "text", text: "C" }],
         },
       ],
@@ -69,7 +92,7 @@ describe("deriveSyncEntries order handling", () => {
       content: [
         {
           type: "paragraph",
-          attrs: { clientId: "c_a", blockId: "b_a", sortKey: "001000" },
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: SK0 },
           content: [{ type: "text", text: "A" }],
         },
         {
@@ -79,12 +102,12 @@ describe("deriveSyncEntries order handling", () => {
         },
         {
           type: "paragraph",
-          attrs: { clientId: "c_b", blockId: "b_b", sortKey: "001000" },
+          attrs: { clientId: "c_b", blockId: "b_b", sortKey: SK0 },
           content: [{ type: "text", text: "B" }],
         },
         {
           type: "paragraph",
-          attrs: { clientId: "c_c", blockId: "b_c", sortKey: "002000" },
+          attrs: { clientId: "c_c", blockId: "b_c", sortKey: SK2 },
           content: [{ type: "text", text: "C" }],
         },
       ],
@@ -104,17 +127,17 @@ describe("deriveSyncEntries order handling", () => {
       content: [
         {
           type: "paragraph",
-          attrs: { clientId: "c_a", blockId: "b_a", sortKey: "001000" },
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: SK0 },
           content: [{ type: "text", text: "A" }],
         },
         {
           type: "paragraph",
-          attrs: { clientId: "c_b", blockId: "b_b", sortKey: "000500" },
+          attrs: { clientId: "c_b", blockId: "b_b", sortKey: SK_BEFORE_0 },
           content: [{ type: "text", text: "B" }],
         },
         {
           type: "paragraph",
-          attrs: { clientId: "c_c", blockId: "b_c", sortKey: "002000" },
+          attrs: { clientId: "c_c", blockId: "b_c", sortKey: SK2 },
           content: [{ type: "text", text: "C" }],
         },
       ],
@@ -124,17 +147,17 @@ describe("deriveSyncEntries order handling", () => {
       content: [
         {
           type: "paragraph",
-          attrs: { clientId: "c_a", blockId: "b_a", sortKey: "001000" },
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: SK0 },
           content: [{ type: "text", text: "A" }],
         },
         {
           type: "paragraph",
-          attrs: { clientId: "c_b", blockId: "b_b", sortKey: "000500" },
+          attrs: { clientId: "c_b", blockId: "b_b", sortKey: SK_BEFORE_0 },
           content: [{ type: "text", text: "B edited" }],
         },
         {
           type: "paragraph",
-          attrs: { clientId: "c_c", blockId: "b_c", sortKey: "002000" },
+          attrs: { clientId: "c_c", blockId: "b_c", sortKey: SK2 },
           content: [{ type: "text", text: "C" }],
         },
       ],
@@ -154,7 +177,7 @@ describe("deriveSyncEntries order handling", () => {
       content: [
         {
           type: "paragraph",
-          attrs: { clientId: "c_a", blockId: "b_a", sortKey: "001000" },
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: SK0 },
         },
       ],
     };
@@ -163,7 +186,7 @@ describe("deriveSyncEntries order handling", () => {
       content: [
         {
           type: "paragraph",
-          attrs: { clientId: "c_a", blockId: "b_a", sortKey: "001000" },
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: SK0 },
         },
         { type: "paragraph", attrs: { clientId: "c_empty_1" } },
         { type: "paragraph", attrs: { clientId: "c_empty_2" } },
@@ -184,11 +207,12 @@ describe("deriveSyncEntries order handling", () => {
       "c_empty_2",
       "c_after",
     ]);
-    expect(creates.map((entry) => entry.sortKey)).toEqual([
-      "002000",
-      "003000",
-      "004000",
-    ]);
+    const sortKeys = creates.map((entry) => entry.sortKey!);
+    expect(sortKeys).toHaveLength(3);
+    for (let index = 1; index < sortKeys.length; index += 1) {
+      expect(compareSortKeys(sortKeys[index - 1], sortKeys[index])).toBeLessThan(0);
+    }
+    expect(compareSortKeys(SK0, sortKeys[0])).toBeLessThan(0);
   });
 
   it("overrides duplicated inherited sortKeys when creating multiple adjacent blocks", () => {
@@ -197,7 +221,7 @@ describe("deriveSyncEntries order handling", () => {
       content: [
         {
           type: "paragraph",
-          attrs: { clientId: "c_a", blockId: "b_a", sortKey: "000998" },
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: SK0 },
         },
       ],
     };
@@ -206,20 +230,20 @@ describe("deriveSyncEntries order handling", () => {
       content: [
         {
           type: "paragraph",
-          attrs: { clientId: "c_a", blockId: "b_a", sortKey: "000998" },
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: SK0 },
         },
         {
           type: "paragraph",
-          attrs: { clientId: "c_new_1", sortKey: "001998" },
+          attrs: { clientId: "c_new_1", sortKey: SK1 },
         },
         {
           type: "paragraph",
-          attrs: { clientId: "c_new_2", sortKey: "001998" },
+          attrs: { clientId: "c_new_2", sortKey: SK1 },
           content: [{ type: "text", text: "2" }],
         },
         {
           type: "paragraph",
-          attrs: { clientId: "c_new_3", sortKey: "001998" },
+          attrs: { clientId: "c_new_3", sortKey: SK1 },
         },
       ],
     };
@@ -228,12 +252,12 @@ describe("deriveSyncEntries order handling", () => {
       (entry) => entry.opType === "create",
     );
 
-    expect(creates.map((entry) => entry.sortKey)).toEqual([
-      "001998",
-      "002998",
-      "003998",
-    ]);
-    expect(new Set(creates.map((entry) => entry.sortKey)).size).toBe(3);
+    const sortKeys = creates.map((entry) => entry.sortKey!);
+    expect(sortKeys).toHaveLength(3);
+    expect(new Set(sortKeys).size).toBe(3);
+    for (let index = 1; index < sortKeys.length; index += 1) {
+      expect(compareSortKeys(sortKeys[index - 1], sortKeys[index])).toBeLessThan(0);
+    }
   });
 
   it("overrides inherited syncCreateId so each create keeps its own stable identity", () => {
@@ -245,7 +269,7 @@ describe("deriveSyncEntries order handling", () => {
           attrs: {
             clientId: "c_1",
             blockId: "b_1",
-            sortKey: "001000",
+            sortKey: SK0,
             syncCreateId: "sync-create:c_1",
           },
           content: [{ type: "text", text: "1" }],
@@ -260,7 +284,7 @@ describe("deriveSyncEntries order handling", () => {
           attrs: {
             clientId: "c_1",
             blockId: "b_1",
-            sortKey: "001000",
+            sortKey: SK0,
             syncCreateId: "sync-create:c_1",
           },
           content: [{ type: "text", text: "1" }],
@@ -301,11 +325,11 @@ describe("deriveSyncEntries order handling", () => {
       content: [
         {
           type: "paragraph",
-          attrs: { clientId: "c_a", blockId: "b_a", sortKey: "001000" },
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: SK0 },
         },
         {
           type: "paragraph",
-          attrs: { clientId: "c_b", blockId: "b_b", sortKey: "002000" },
+          attrs: { clientId: "c_b", blockId: "b_b", sortKey: SK2 },
         },
       ],
     };
@@ -314,11 +338,11 @@ describe("deriveSyncEntries order handling", () => {
       content: [
         {
           type: "paragraph",
-          attrs: { clientId: "c_b", blockId: "b_b", sortKey: "002000" },
+          attrs: { clientId: "c_b", blockId: "b_b", sortKey: SK2 },
         },
         {
           type: "paragraph",
-          attrs: { clientId: "c_a", blockId: "b_a", sortKey: "001000" },
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: SK0 },
         },
       ],
     };
@@ -330,9 +354,9 @@ describe("deriveSyncEntries order handling", () => {
         (entry) => entry.opType === "move" && entry.blockId === "b_b",
       ),
     ).toBe(true);
-    expect(entries.find((entry) => entry.blockId === "b_b")?.sortKey).toBe(
-      "000500",
-    );
+    const movedSortKey = entries.find((entry) => entry.blockId === "b_b")?.sortKey;
+    expect(movedSortKey).toBeDefined();
+    expect(compareSortKeys(movedSortKey!, SK0)).toBeLessThan(0);
   });
 
   it("emits a move when existing blockId-only code blocks change relative order", () => {
@@ -341,12 +365,12 @@ describe("deriveSyncEntries order handling", () => {
       content: [
         {
           type: "paragraph",
-          attrs: { blockId: "b_paragraph", sortKey: "027000" },
+          attrs: { blockId: "b_paragraph", sortKey: SK0 },
           content: [{ type: "text", text: "paragraph" }],
         },
         {
           type: "codeBlock",
-          attrs: { blockId: "b_code", sortKey: "027500" },
+          attrs: { blockId: "b_code", sortKey: SK1 },
           content: [{ type: "text", text: "code" }],
         },
       ],
@@ -356,12 +380,12 @@ describe("deriveSyncEntries order handling", () => {
       content: [
         {
           type: "codeBlock",
-          attrs: { blockId: "b_code", sortKey: "027500" },
+          attrs: { blockId: "b_code", sortKey: SK1 },
           content: [{ type: "text", text: "code" }],
         },
         {
           type: "paragraph",
-          attrs: { blockId: "b_paragraph", sortKey: "027000" },
+          attrs: { blockId: "b_paragraph", sortKey: SK0 },
           content: [{ type: "text", text: "paragraph" }],
         },
       ],
@@ -373,8 +397,8 @@ describe("deriveSyncEntries order handling", () => {
     expect(move).toMatchObject({
       blockId: "b_code",
       opType: "move",
-      sortKey: "013500",
     });
+    expect(compareSortKeys(move!.sortKey!, SK0)).toBeLessThan(0);
     expect(move?.clientId).toEqual(expect.any(String));
     expect(move?.clientId).not.toBe("b_code");
   });
@@ -385,23 +409,23 @@ describe("deriveSyncEntries order handling", () => {
       content: [
         {
           type: "paragraph",
-          attrs: { clientId: "c_2", blockId: "b_2", sortKey: "001750" },
+          attrs: { clientId: "c_2", blockId: "b_2", sortKey: SK1 },
         },
         {
           type: "paragraph",
-          attrs: { clientId: "c_3", blockId: "b_3", sortKey: "002750" },
+          attrs: { clientId: "c_3", blockId: "b_3", sortKey: SK2 },
         },
         {
           type: "paragraph",
-          attrs: { clientId: "c_4", blockId: "b_4", sortKey: "003750" },
+          attrs: { clientId: "c_4", blockId: "b_4", sortKey: SK3 },
         },
         {
           type: "paragraph",
-          attrs: { clientId: "c_5", blockId: "b_5", sortKey: "004750" },
+          attrs: { clientId: "c_5", blockId: "b_5", sortKey: SK4 },
         },
         {
           type: "paragraph",
-          attrs: { clientId: "c_6", blockId: "b_6", sortKey: "005750" },
+          attrs: { clientId: "c_6", blockId: "b_6", sortKey: SK5 },
         },
       ],
     };
@@ -410,23 +434,23 @@ describe("deriveSyncEntries order handling", () => {
       content: [
         {
           type: "paragraph",
-          attrs: { clientId: "c_6", blockId: "b_6", sortKey: "005750" },
+          attrs: { clientId: "c_6", blockId: "b_6", sortKey: SK5 },
         },
         {
           type: "paragraph",
-          attrs: { clientId: "c_2", blockId: "b_2", sortKey: "001750" },
+          attrs: { clientId: "c_2", blockId: "b_2", sortKey: SK1 },
         },
         {
           type: "paragraph",
-          attrs: { clientId: "c_3", blockId: "b_3", sortKey: "002750" },
+          attrs: { clientId: "c_3", blockId: "b_3", sortKey: SK2 },
         },
         {
           type: "paragraph",
-          attrs: { clientId: "c_4", blockId: "b_4", sortKey: "003750" },
+          attrs: { clientId: "c_4", blockId: "b_4", sortKey: SK3 },
         },
         {
           type: "paragraph",
-          attrs: { clientId: "c_5", blockId: "b_5", sortKey: "004750" },
+          attrs: { clientId: "c_5", blockId: "b_5", sortKey: SK4 },
         },
       ],
     };
@@ -435,14 +459,13 @@ describe("deriveSyncEntries order handling", () => {
       (entry) => entry.opType === "move",
     );
 
-    expect(moves).toEqual([
-      {
-        clientId: "c_6",
-        blockId: "b_6",
-        opType: "move",
-        sortKey: "000875",
-      },
-    ]);
+    expect(moves).toHaveLength(1);
+    expect(moves[0]).toMatchObject({
+      clientId: "c_6",
+      blockId: "b_6",
+      opType: "move",
+    });
+    expect(compareSortKeys(moves[0].sortKey!, SK1)).toBeLessThan(0);
   });
 
   it("keeps the existing clientId when a previously loaded block is edited", () => {
@@ -451,7 +474,7 @@ describe("deriveSyncEntries order handling", () => {
       content: [
         {
           type: "paragraph",
-          attrs: { clientId: "c_loaded", blockId: "b_loaded", sortKey: "001000" },
+          attrs: { clientId: "c_loaded", blockId: "b_loaded", sortKey: SK0 },
           content: [{ type: "text", text: "before" }],
         },
       ],
@@ -461,7 +484,7 @@ describe("deriveSyncEntries order handling", () => {
       content: [
         {
           type: "paragraph",
-          attrs: { clientId: "c_loaded", blockId: "b_loaded", sortKey: "001000" },
+          attrs: { clientId: "c_loaded", blockId: "b_loaded", sortKey: SK0 },
           content: [{ type: "text", text: "after" }],
         },
       ],
@@ -488,7 +511,7 @@ describe("deriveSyncEntries order handling", () => {
           attrs: {
             clientId: "c_a",
             blockId: "b_a",
-            sortKey: "001000",
+            sortKey: SK0,
             syncCreateId: "sync-create:c_a",
           },
           content: [{ type: "text", text: "same text" }],
@@ -503,10 +526,10 @@ describe("deriveSyncEntries order handling", () => {
           attrs: {
             clientId: "c_a",
             blockId: "b_a",
-            sortKey: "000984",
+            sortKey: SK_SERVER_CREATE,
             syncCreateId: "sync-create:c_a",
             clientBatchId: "batch_1",
-            "data-sort-key": "000984",
+            "data-sort-key": SK_SERVER_CREATE,
             "data-sync-create-id": "sync-create:c_a",
           },
           content: [{ type: "text", text: "same text" }],
@@ -526,7 +549,7 @@ describe("deriveSyncEntries order handling", () => {
           attrs: {
             clientId: "c_new",
             blockId: null,
-            sortKey: "001000",
+            sortKey: SK0,
             syncCreateId: "sync-create:c_new",
             "data-sync-create-id": "sync-create:c_new",
             clientBatchId: "batch_1",
@@ -536,13 +559,13 @@ describe("deriveSyncEntries order handling", () => {
     };
 
     const patched = applyCreateAck(doc, [
-      { clientId: "c_new", blockId: "b_new", sortKey: "000984" },
+      { clientId: "c_new", blockId: "b_new", sortKey: SK_SERVER_CREATE },
     ]);
 
     expect(patched.content[0].attrs?.blockId).toBe("b_new");
     expect(patched.content[0].attrs?.["data-block-id"]).toBe("b_new");
-    expect(patched.content[0].attrs?.sortKey).toBe("000984");
-    expect(patched.content[0].attrs?.["data-sort-key"]).toBe("000984");
+    expect(patched.content[0].attrs?.sortKey).toBe(SK_SERVER_CREATE);
+    expect(patched.content[0].attrs?.["data-sort-key"]).toBe(SK_SERVER_CREATE);
     expect(patched.content[0].attrs?.syncCreateId).toBeUndefined();
     expect(patched.content[0].attrs?.clientBatchId).toBeUndefined();
     expect(patched.content[0].attrs?.["data-sync-create-id"]).toBeUndefined();
@@ -554,18 +577,18 @@ describe("deriveSyncEntries order handling", () => {
       content: [
         {
           type: "paragraph",
-          attrs: { clientId: "c_existing", blockId: "b_existing", sortKey: "002000" },
+          attrs: { clientId: "c_existing", blockId: "b_existing", sortKey: SK2 },
         },
       ],
     };
 
     const patched = applyServerAck(doc, [
-      { blockId: "b_existing", sortKey: "001500" },
+      { blockId: "b_existing", sortKey: SK_SERVER_MOVE },
     ]);
 
     expect(patched.content[0].attrs?.blockId).toBe("b_existing");
-    expect(patched.content[0].attrs?.sortKey).toBe("001500");
-    expect(patched.content[0].attrs?.["data-sort-key"]).toBe("001500");
+    expect(patched.content[0].attrs?.sortKey).toBe(SK_SERVER_MOVE);
+    expect(patched.content[0].attrs?.["data-sort-key"]).toBe(SK_SERVER_MOVE);
   });
   it("patches nested nodes returned by ack recursively", () => {
     const doc: TiptapDoc = {
@@ -592,18 +615,61 @@ describe("deriveSyncEntries order handling", () => {
     };
 
     const patched = applyServerAck(doc, [
-      { clientId: "item_client", blockId: "block_item", sortKey: "001500" },
-      { clientId: "paragraph_client", blockId: "block_paragraph", sortKey: "001600" },
+      { clientId: "item_client", blockId: "block_item", sortKey: SK_SERVER_NESTED_ITEM },
+      { clientId: "paragraph_client", blockId: "block_paragraph", sortKey: SK_SERVER_NESTED_PARA },
     ]);
 
     const listItem = patched.content[0].content?.[0];
     const paragraph = listItem?.content?.[0];
 
     expect(listItem?.attrs?.blockId).toBe("block_item");
-    expect(listItem?.attrs?.sortKey).toBe("001500");
+    expect(listItem?.attrs?.sortKey).toBe(SK_SERVER_NESTED_ITEM);
     expect(listItem?.attrs?.syncCreateId).toBeUndefined();
     expect(paragraph?.attrs?.blockId).toBe("block_paragraph");
-    expect(paragraph?.attrs?.sortKey).toBe("001600");
+    expect(paragraph?.attrs?.sortKey).toBe(SK_SERVER_NESTED_PARA);
     expect(paragraph?.attrs?.clientBatchId).toBeUndefined();
+  });
+
+  it("removes top-level blocks acknowledged as deleted", () => {
+    const doc: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_keep", blockId: "b_keep" },
+          content: [{ type: "text", text: "keep" }],
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_gone", blockId: "b_gone" },
+          content: [{ type: "text", text: "gone" }],
+        },
+      ],
+    };
+
+    const patched = applyServerDeleteAck(doc, [
+      { blockId: "b_gone", clientId: "c_gone" },
+    ]);
+
+    expect(patched.content).toHaveLength(1);
+    expect(patched.content[0].attrs?.blockId).toBe("b_keep");
+  });
+
+  it("does not re-derive create entries when both snapshots carry acked blockIds", () => {
+    const pending: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_new" },
+          content: [{ type: "text", text: "hello" }],
+        },
+      ],
+    };
+    const acked = applyServerAck(pending, [
+      { clientId: "c_new", blockId: "b_new", sortKey: SK_SERVER_CREATE },
+    ]);
+    const entries = deriveSyncEntries(acked, acked);
+    expect(entries.some((entry) => entry.opType === "create")).toBe(false);
   });
 });

@@ -5,6 +5,8 @@ import {
   postSyncBatch,
   postSyncManifestReconcile,
 } from "../api";
+import { createCanonicalSortKey } from "../order";
+import { compareSortKeys } from "../fractional-key";
 import type { SyncEntry } from "../types";
 
 const { apiPost } = vi.hoisted(() => ({
@@ -24,18 +26,19 @@ describe("sync api payload builder", () => {
   });
 
   it("deduplicates repeated create sortKeys before sending a batch", () => {
+    const duplicateKey = createCanonicalSortKey(1);
     const operations: SyncEntry[] = ["1", "2", "3"].map((suffix) => ({
       clientId: `client_${suffix}`,
       blockId: null,
       opType: "create",
       syncCreateId: `sync-create:client_${suffix}`,
       blockType: "paragraph",
-      sortKey: "001998",
+      sortKey: duplicateKey,
       payload: {
         type: "paragraph",
         attrs: {
           clientId: `client_${suffix}`,
-          sortKey: "001998",
+          sortKey: duplicateKey,
         },
       },
     }));
@@ -46,30 +49,54 @@ describe("sync api payload builder", () => {
       operations,
     });
 
-    const createSortKeys = bodyOperations.map((operation) =>
-      operation.type === "create" ? operation.data.sortKey : null,
-    );
-    const payloadSortKeys = bodyOperations.map((operation) =>
-      operation.type === "create"
-        ? (operation.data.payload.attrs as Record<string, unknown>).sortKey
-        : null,
-    );
-    const payloadSyncCreateIds = bodyOperations.map((operation) =>
-      operation.type === "create"
-        ? (operation.data.payload.attrs as Record<string, unknown>).syncCreateId
-        : null,
-    );
-    const operationSyncCreateIds = bodyOperations.map((operation) =>
-      operation.type === "create" ? operation.syncCreateId : null,
-    );
+    const createSortKeys = bodyOperations
+      .filter((operation) => operation.type === "create")
+      .map((operation) => operation.data.sortKey!);
 
-    expect(createSortKeys).toEqual(["001998", "002998", "003998"]);
-    expect(payloadSortKeys).toEqual(createSortKeys);
-    expect(payloadSyncCreateIds).toEqual([undefined, undefined, undefined]);
-    expect(operationSyncCreateIds).toEqual([
-      "sync-create:client_1",
-      "sync-create:client_2",
-      "sync-create:client_3",
+    expect(createSortKeys).toHaveLength(3);
+    expect(new Set(createSortKeys).size).toBe(3);
+    for (let index = 1; index < createSortKeys.length; index += 1) {
+      expect(compareSortKeys(createSortKeys[index - 1], createSortKeys[index])).toBeLessThan(0);
+    }
+  });
+
+  it("merges structural fields into update and strips sync attrs from payload", () => {
+    const bodyOperations = buildSyncBatchOperations({
+      docId: "doc_1",
+      rootBlockId: "root_1",
+      operations: [
+        {
+          clientId: "client_move",
+          blockId: "block_move",
+          opType: "update",
+          sortKey: createCanonicalSortKey(2),
+          payload: {
+            type: "paragraph",
+            attrs: {
+              blockId: "block_move",
+              clientId: "client_move",
+              sortKey: createCanonicalSortKey(2),
+            },
+            content: [{ type: "text", text: "moved" }],
+          },
+        },
+      ],
+    });
+
+    expect(bodyOperations).toEqual([
+      {
+        type: "update",
+        blockId: "block_move",
+        data: {
+          payload: {
+            type: "paragraph",
+            attrs: {},
+            content: [{ type: "text", text: "moved" }],
+          },
+          sortKey: createCanonicalSortKey(2),
+          parentId: "root_1",
+        },
+      },
     ]);
   });
 

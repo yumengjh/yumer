@@ -8,6 +8,19 @@ import {
   applyRemoteBatchSuccess,
   markRemoteConflict,
 } from "../reducer";
+import {
+  createCanonicalSortKey,
+  createSortKeyBetween,
+  SK0,
+  SK1,
+  SK2,
+  SK3,
+} from "./test-sort-key";
+
+const SK_SERVER_CREATE = createSortKeyBetween(null, SK0);
+const SK_SERVER_MOVE = createSortKeyBetween(SK0, SK1);
+const SK_CREATE_KEY = createCanonicalSortKey(99);
+const SK_DELETE_MOVE = createCanonicalSortKey(50);
 
 describe("sync reducer", () => {
   it("merges create followed by update into one create", () => {
@@ -154,14 +167,14 @@ describe("sync reducer", () => {
       clientId: "c_a",
       blockId: "b_a",
       opType: "move",
-      sortKey: "003000",
+      sortKey: SK3,
     });
 
     expect(state.entries.c_a.payload).toEqual({
       type: "paragraph",
       content: [{ type: "text", text: "changed" }],
     });
-    expect(state.entries.c_a.sortKey).toBe("003000");
+    expect(state.entries.c_a.sortKey).toBe(SK3);
   });
 
   it("clears inflight update entry even when ack omits clientId", () => {
@@ -192,7 +205,7 @@ describe("sync reducer", () => {
       clientId: "client_move_update",
       blockId: "b_move_update",
       opType: "update",
-      sortKey: "002000",
+      sortKey: SK2,
       payload: { type: "paragraph", content: [{ type: "text", text: "changed" }] },
     });
     state = markBatchInflight(state, "batch_partial", ["client_move_update"], false);
@@ -344,7 +357,7 @@ describe("sync reducer", () => {
         success: true,
         clientId: "client_new",
         blockId: "server_block_new",
-        sortKey: "000984",
+        sortKey: SK_SERVER_CREATE,
       },
     ]);
 
@@ -352,12 +365,12 @@ describe("sync reducer", () => {
     expect(state.syncState).toBe("dirty");
     expect(state.entries.client_new.opType).toBe("update");
     expect(state.entries.client_new.blockId).toBe("server_block_new");
-    expect(state.entries.client_new.sortKey).toBe("000984");
+    expect(state.entries.client_new.sortKey).toBe(SK_SERVER_CREATE);
     expect((state.entries.client_new.payload as { attrs?: Record<string, unknown> }).attrs).toMatchObject({
       blockId: "server_block_new",
       "data-block-id": "server_block_new",
-      sortKey: "000984",
-      "data-sort-key": "000984",
+      sortKey: SK_SERVER_CREATE,
+      "data-sort-key": SK_SERVER_CREATE,
     });
     expect(
       (state.entries.client_new.payload as { attrs?: Record<string, unknown> }).attrs?.syncCreateId,
@@ -378,7 +391,7 @@ describe("sync reducer", () => {
       clientId: "client_move",
       blockId: "block_move",
       opType: "move",
-      sortKey: "002000",
+      sortKey: SK2,
     });
     state = markBatchInflight(state, "batch_move_1", ["client_move"], false);
 
@@ -388,7 +401,7 @@ describe("sync reducer", () => {
       opType: "update",
       payload: {
         type: "paragraph",
-        attrs: { clientId: "client_move", blockId: "block_move", sortKey: "002000" },
+        attrs: { clientId: "client_move", blockId: "block_move", sortKey: SK2 },
         content: [{ type: "text", text: "typed while move inflight" }],
       },
     });
@@ -398,15 +411,15 @@ describe("sync reducer", () => {
         operation: "move",
         success: true,
         blockId: "block_move",
-        sortKey: "001500",
+        sortKey: SK_SERVER_MOVE,
       },
     ]);
 
     expect(state.dirtyOrder).toEqual(["client_move"]);
-    expect(state.entries.client_move.sortKey).toBe("001500");
+    expect(state.entries.client_move.sortKey).toBe(SK_SERVER_MOVE);
     expect((state.entries.client_move.payload as { attrs?: Record<string, unknown> }).attrs).toMatchObject({
-      sortKey: "001500",
-      "data-sort-key": "001500",
+      sortKey: SK_SERVER_MOVE,
+      "data-sort-key": SK_SERVER_MOVE,
     });
   });
 
@@ -555,7 +568,7 @@ describe("sync reducer", () => {
       opType: "create",
       syncCreateId: "sync-create:client_fix",
       blockType: "paragraph",
-      sortKey: "001995",
+      sortKey: SK_CREATE_KEY,
       payload: {
         type: "paragraph",
         attrs: { clientId: "client_fix", syncCreateId: "sync-create:client_fix" },
@@ -575,7 +588,7 @@ describe("sync reducer", () => {
     expect((state.entries.client_fix.payload as { attrs?: Record<string, unknown> }).attrs).toMatchObject({
       blockId: null,
       clientId: "client_fix",
-      sortKey: "001995",
+      sortKey: SK_CREATE_KEY,
     });
     expect(
       (state.entries.client_fix.payload as { attrs?: Record<string, unknown> }).attrs?.syncCreateId,
@@ -632,7 +645,7 @@ describe("sync reducer", () => {
       clientId: "client_deleted_moved",
       blockId: "block_deleted_moved",
       opType: "move",
-      sortKey: "009000",
+      sortKey: SK_DELETE_MOVE,
     });
 
     expect(state.dirtyOrder).toEqual(["client_deleted_moved"]);

@@ -45,7 +45,13 @@ describe("manual save baseVersion rebase source", () => {
     );
     const resolvedAt = hookSource.indexOf("resolveBatchSuccess(");
     const latestCaptureAt = hookSource.indexOf(
-      'captureContentSnapshot(latestContentRef.current, "batch-ack-rescan");',
+      'applyBatchAckToDoc(latestContentRef.current)',
+      resolvedAt,
+    );
+    expect(hookSource.indexOf("applyBatchAckToDoc(", resolvedAt)).toBeGreaterThan(
+      resolvedAt,
+    );
+    expect(hookSource.indexOf("snapshotRef.current = patchedSnapshot;", resolvedAt)).toBeGreaterThan(
       resolvedAt,
     );
     const orphanCheckAt = hookSource.indexOf(
