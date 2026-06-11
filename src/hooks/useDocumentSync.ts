@@ -29,6 +29,7 @@ import {
   markBatchInflight,
   markPendingCommit,
   markSyncSessionLost,
+  adoptServerDraftRevision,
   resolveBatchFailure,
   resolveBatchSuccess,
 } from "@/services/sync/reducer";
@@ -186,6 +187,13 @@ function isSyncSessionConflict(conflicts: Array<{ code: string }>): boolean {
     ["SYNC_SESSION_REQUIRED", "SYNC_SESSION_MISMATCH", "SYNC_SESSION_EXPIRED"].includes(
       conflict.code,
     ),
+  );
+}
+
+function isDraftRevisionMismatchOnly(conflicts: Array<{ code: string }>): boolean {
+  return (
+    conflicts.length > 0 &&
+    conflicts.every((conflict) => conflict.code === "DRAFT_REVISION_MISMATCH")
   );
 }
 
@@ -665,7 +673,24 @@ export function useDocumentSync({
       if (current.dirtyOrder.length > 0 || current.inflightBatchId) return;
       if (reconcileRunningRef.current) return;
 
-      const snapshot = snapshotRef.current;
+      let snapshot = snapshotRef.current;
+      const stateForRepair = stateRef.current ?? current;
+      if (snapshot && stateForRepair) {
+        const repaired = repairSnapshotSortKeyOrder(stateForRepair, snapshot);
+        if (repaired.repairedCount > 0) {
+          replaceSyncState(repaired.state);
+          snapshot = repaired.snapshot;
+          snapshotRef.current = repaired.snapshot;
+          snapshotIndexRef.current = createSyncSnapshotIndex(repaired.snapshot, {
+            computePayloadFingerprints: true,
+          });
+          addSyncTrace("idle:sort-key-repair", current.docId, current.sessionId, current.sessionEpoch, () => ({
+            repairedCount: repaired.repairedCount,
+            manifest: buildManifestSummary(repaired.snapshot),
+          }));
+        }
+      }
+
       const manifest = toReconcileManifest(snapshot);
       const manifestKey = buildReconcileKey(current, manifest);
       if (lastReconciledManifestKeyRef.current === manifestKey) return;
@@ -752,7 +777,7 @@ export function useDocumentSync({
         reconcileRunningRef.current = false;
       }
     },
-    [updateSyncState],
+    [replaceSyncState, updateSyncState],
   );
 
   const runDraftCheckpoint = useCallback(
@@ -1042,26 +1067,46 @@ export function useDocumentSync({
             }
 
             if (response.needsReload) {
-              const lostSession = response.conflicts.some((conflict) =>
-                [
-                  "SYNC_SESSION_REQUIRED",
-                  "SYNC_SESSION_MISMATCH",
-                  "SYNC_SESSION_EXPIRED",
-                ].includes(conflict.code),
-              );
-              updateSyncState((prev) =>
-                prev
-                  ? lostSession
+              const lostSession = isSyncSessionConflict(response.conflicts);
+              if (lostSession) {
+                updateSyncState((prev) =>
+                  prev
                     ? markSyncSessionLost(
                         prev,
                         "当前编辑会话已失效，请刷新后继续编辑",
                       )
-                    : resolveBatchFailure(
+                    : prev,
+                );
+                return;
+              }
+              if (
+                isDraftRevisionMismatchOnly(response.conflicts) &&
+                typeof response.draftRevision === "number"
+              ) {
+                updateSyncState((prev) =>
+                  prev
+                    ? adoptServerDraftRevision(
                         prev,
                         clientBatchId,
-                        "检测到版本冲突，请刷新后重试",
-                        true,
+                        response.draftRevision,
                       )
+                    : prev,
+                );
+                addSyncTrace("flush:draft-revision-resync", rebased.docId, rebased.sessionId, rebased.sessionEpoch, () => ({
+                  clientBatchId,
+                  adoptedDraftRevision: response.draftRevision,
+                  conflicts: response.conflicts,
+                }));
+                continue;
+              }
+              updateSyncState((prev) =>
+                prev
+                  ? resolveBatchFailure(
+                      prev,
+                      clientBatchId,
+                      "检测到版本冲突，请刷新后重试",
+                      true,
+                    )
                   : prev,
               );
               return;

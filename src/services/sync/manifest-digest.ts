@@ -38,12 +38,12 @@ export function collectRootManifestNodes(
     });
 }
 
-/** 与后端 computeRootManifestDigest 相同：sha256(blockId1|blockId2|...)。 */
+/** 与后端 computeRootManifestDigest 相同：sha256(blockId:sortKey|...)，按 (sortKey, blockId) 序。 */
 export async function computeRootManifestDigest(
   doc: TiptapDoc | null,
 ): Promise<string> {
   const payload = collectRootManifestNodes(doc)
-    .map((node) => node.blockId)
+    .map((node) => `${node.blockId}:${node.sortKey}`)
     .join("|");
   return sha256Hex(payload);
 }

@@ -7,6 +7,7 @@ import {
   resolveBatchSuccess,
   applyRemoteBatchSuccess,
   markRemoteConflict,
+  adoptServerDraftRevision,
 } from "../reducer";
 import {
   createCanonicalSortKey,
@@ -442,6 +443,25 @@ describe("sync reducer", () => {
     );
 
     expect(state.draftRevision).toBe(8);
+  });
+
+  it("adopts server draftRevision and clears inflight for stale revision retries", () => {
+    let state = createInitialSyncState("doc_1", "root_1", 3, 5);
+    state = enqueueChange(state, {
+      clientId: "client_stale",
+      blockId: "block_stale",
+      opType: "update",
+      payload: { type: "paragraph" },
+    });
+    state = markBatchInflight(state, "batch_stale", ["client_stale"], false);
+
+    state = adoptServerDraftRevision(state, "batch_stale", 8);
+
+    expect(state.draftRevision).toBe(8);
+    expect(state.inflightBatchId).toBeNull();
+    expect(state.syncState).toBe("dirty");
+    expect(state.lastError).toBeNull();
+    expect(state.dirtyOrder).toContain("client_stale");
   });
 
   it("advances lastAckedOpSeq after a fully successful batch", () => {

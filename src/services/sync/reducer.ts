@@ -407,6 +407,24 @@ export function resolveBatchFailure(
   };
 }
 
+/** 服务端 draftRevision 已前进但本批次未应用：采纳 revision 并解除 inflight，供 flush 重试。 */
+export function adoptServerDraftRevision(
+  state: SyncReducerState,
+  batchId: string,
+  serverDraftRevision: number,
+): SyncReducerState {
+  if (state.inflightBatchId !== batchId) return state;
+  return {
+    ...state,
+    inflightBatchId: null,
+    inflightEntryIds: [],
+    inflightEntryRevisions: {},
+    draftRevision: serverDraftRevision,
+    syncState: state.dirtyOrder.length > 0 ? "dirty" : "idle",
+    lastError: null,
+  };
+}
+
 export function markSyncSessionLost(
   state: SyncReducerState,
   error: string,

@@ -12,7 +12,7 @@ export interface SyncBatchResponse {
   needsReload: boolean;
   conflicts: Array<{ code: string; message: string }>;
   results: SyncBatchResult[];
-  /** 服务端顶层清单摘要；与本地 computeRootManifestDigest 一致时可跳过全量 reconcile */
+  /** 服务端顶层清单摘要（blockId:sortKey 序）；与本地 computeRootManifestDigest 一致时可跳过全量 reconcile */
   manifestDigest?: string;
 }
 

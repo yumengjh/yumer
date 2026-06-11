@@ -37,14 +37,19 @@ describe("useDocumentSync source guards", () => {
       'result.operation !== "delete"',
       serverAckMappingsAt,
     );
-    const applyServerAckAt = hookSource.indexOf(
-      "applyServerAck(currentSnapshot, serverAckMappings)",
+    const deleteAckAt = hookSource.indexOf(
+      "const deleteAckMappings = response.results",
+      serverAckMappingsAt,
+    );
+    const deleteAckApplyAt = hookSource.indexOf(
+      "applyServerDeleteAck(nextDoc, deleteAckMappings)",
       serverAckMappingsAt,
     );
 
     expect(serverAckMappingsAt).toBeGreaterThanOrEqual(0);
     expect(operationDeleteAt).toBeGreaterThan(serverAckMappingsAt);
-    expect(operationDeleteAt).toBeLessThan(applyServerAckAt);
+    expect(deleteAckAt).toBeGreaterThan(operationDeleteAt);
+    expect(deleteAckApplyAt).toBeGreaterThan(deleteAckAt);
   });
 
   it("deduplicates idle manifest reconciliation requests", () => {
@@ -136,6 +141,36 @@ describe("useDocumentSync source guards", () => {
     expect(errorClearAt).toBeGreaterThan(stateAt);
   });
 
+  it("resyncs draftRevision and retries flush on DRAFT_REVISION_MISMATCH", () => {
+    const hookSource = fs.readFileSync(
+      path.resolve(process.cwd(), "src/hooks/useDocumentSync.ts"),
+      "utf8",
+    );
+
+    expect(hookSource).toContain("isDraftRevisionMismatchOnly");
+    expect(hookSource).toContain("adoptServerDraftRevision");
+    expect(hookSource).toContain('"flush:draft-revision-resync"');
+    const mismatchAt = hookSource.indexOf("isDraftRevisionMismatchOnly(response.conflicts)");
+    const continueAt = hookSource.indexOf("continue;", mismatchAt);
+    expect(mismatchAt).toBeGreaterThanOrEqual(0);
+    expect(continueAt).toBeGreaterThan(mismatchAt);
+  });
+
+  it("repairs sort keys before idle manifest digest comparison", () => {
+    const hookSource = fs.readFileSync(
+      path.resolve(process.cwd(), "src/hooks/useDocumentSync.ts"),
+      "utf8",
+    );
+
+    const reconcileAt = hookSource.indexOf("const reconcileIdleManifest = useCallback");
+    const repairAt = hookSource.indexOf("repairSnapshotSortKeyOrder(stateForRepair, snapshot)", reconcileAt);
+    const digestAt = hookSource.indexOf("computeRootManifestDigest(snapshot)", repairAt);
+
+    expect(reconcileAt).toBeGreaterThanOrEqual(0);
+    expect(repairAt).toBeGreaterThan(reconcileAt);
+    expect(digestAt).toBeGreaterThan(repairAt);
+  });
+
   it("turns sync session conflicts from reconcile or batch into lease-lost state", () => {
     const hookSource = fs.readFileSync(
       path.resolve(process.cwd(), "src/hooks/useDocumentSync.ts"),
@@ -144,15 +179,18 @@ describe("useDocumentSync source guards", () => {
 
     const reconcileNeedsReloadAt = hookSource.indexOf("if (response.needsReload) {");
     const reconcileLostAt = hookSource.indexOf('markSyncSessionLost(prev, "当前编辑会话已失效，请刷新后继续编辑")', reconcileNeedsReloadAt);
-    const batchNeedsReloadAt = hookSource.indexOf("if (response.needsReload) {", reconcileNeedsReloadAt + 1);
-    const batchConflictListAt = hookSource.indexOf('"SYNC_SESSION_MISMATCH"', batchNeedsReloadAt);
-    const batchLostAt = hookSource.indexOf('markSyncSessionLost(', batchConflictListAt);
+    const flushNeedsReloadAt = hookSource.indexOf("if (response.needsReload) {", reconcileNeedsReloadAt + 1);
+    const batchSessionCheckAt = hookSource.indexOf(
+      "isSyncSessionConflict(response.conflicts)",
+      flushNeedsReloadAt,
+    );
+    const batchLostAt = hookSource.indexOf('markSyncSessionLost(', batchSessionCheckAt);
 
     expect(reconcileNeedsReloadAt).toBeGreaterThanOrEqual(0);
     expect(reconcileLostAt).toBeGreaterThan(reconcileNeedsReloadAt);
-    expect(batchNeedsReloadAt).toBeGreaterThan(reconcileLostAt);
-    expect(batchConflictListAt).toBeGreaterThan(batchNeedsReloadAt);
-    expect(batchLostAt).toBeGreaterThan(batchConflictListAt);
+    expect(flushNeedsReloadAt).toBeGreaterThan(reconcileLostAt);
+    expect(batchSessionCheckAt).toBeGreaterThan(flushNeedsReloadAt);
+    expect(batchLostAt).toBeGreaterThan(batchSessionCheckAt);
   });
 
   it("keeps indexed diff metadata outside React state and consumes hints during snapshot capture", () => {
