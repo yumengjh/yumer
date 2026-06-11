@@ -315,6 +315,45 @@ export function planSortKeyRepairs(doc: TiptapDoc | null): SortKeyRepair[] {
   return repairs;
 }
 
+/**
+ * 视觉位置变更但 attrs sortKey 仍随节点携带时，按新位置重算 sortKey。
+ * 作为 derive 换位检测的二次兜底。
+ */
+export function planRepositionSortKeyRepairs(
+  prevDoc: TiptapDoc,
+  nextDoc: TiptapDoc,
+): SortKeyRepair[] {
+  const prevIndexed = indexTopLevel(normalizeEditorDoc(prevDoc));
+  const nextNodes = Object.values(
+    indexTopLevel(normalizeEditorDoc(nextDoc)),
+  ).sort((left, right) => left.index - right.index);
+  const repairs: SortKeyRepair[] = [];
+
+  for (const nextNode of nextNodes) {
+    const prevNode = prevIndexed[nextNode.matchKey];
+    if (!prevNode?.blockId) continue;
+    if (prevNode.index === nextNode.index) continue;
+    if (nextNode.sortKey !== prevNode.sortKey) continue;
+    if (!isVisuallyNonMonotonicAt(nextNodes, nextNode.index)) continue;
+
+    const desired = sortKeyForPosition(nextNodes, nextNode.index);
+    if (nextNode.sortKey !== desired) {
+      repairs.push({
+        clientId: nextNode.clientId,
+        blockId: nextNode.blockId,
+        sortKey: desired,
+      });
+    }
+  }
+
+  return repairs;
+}
+
+/** 顶层视觉序上 sortKey 是否重复、非单调或缺失。 */
+export function hasVisualOrderDrift(doc: TiptapDoc | null): boolean {
+  return hasCorruptedSortKeys(analyzeSortKeyIntegrity(doc));
+}
+
 /** 把修复后的 sortKey 写回文档顶层节点 attrs。 */
 export function applySortKeyRepairs(
   doc: TiptapDoc,
@@ -342,6 +381,30 @@ export function applySortKeyRepairs(
     };
   });
   return changed ? { ...doc, content } : doc;
+}
+
+function readPersistedSortKey(node: IndexedSyncNode | undefined): string | null {
+  if (!node?.blockId) return null;
+  const raw = node.node.attrs?.sortKey;
+  return typeof raw === "string" && isValidSortKey(raw) ? raw : null;
+}
+
+function isVisuallyNonMonotonicAt(
+  nodes: IndexedSyncNode[],
+  index: number,
+): boolean {
+  const key = readPersistedSortKey(nodes[index]);
+  if (!key) return false;
+  const prevKey = index > 0 ? readPersistedSortKey(nodes[index - 1]) : null;
+  const nextKey =
+    index < nodes.length - 1 ? readPersistedSortKey(nodes[index + 1]) : null;
+  if (prevKey && compareSortKeys(prevKey, key) >= 0) {
+    return true;
+  }
+  if (nextKey && compareSortKeys(key, nextKey) >= 0) {
+    return true;
+  }
+  return false;
 }
 
 function sortKeyForPosition(nextNodes: IndexedSyncNode[], index: number): string {
@@ -767,11 +830,21 @@ export function deriveSyncEntriesWithMetrics(
       continue;
     }
 
-    const nextSortKey =
+    let nextSortKey =
       desiredSortKeys.get(nextNode.clientId) ??
       (shouldRunSortPlan
         ? sortKeyForPosition(orderedNextNodes, nextNode.index)
         : prevNode.sortKey);
+    // 块已换位且 sortKey 未更新，并在新位置造成视觉非单调时，按位置重算 sortKey。
+    if (
+      shouldRunSortPlan &&
+      !shouldSuppressExistingMoves &&
+      prevNode.index !== nextNode.index &&
+      nextNode.sortKey === prevNode.sortKey &&
+      isVisuallyNonMonotonicAt(orderedNextNodes, nextNode.index)
+    ) {
+      nextSortKey = sortKeyForPosition(orderedNextNodes, nextNode.index);
+    }
     if (
       shouldRunSortPlan &&
       !shouldSuppressExistingMoves &&

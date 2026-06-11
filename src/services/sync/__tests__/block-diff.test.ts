@@ -126,13 +126,16 @@ describe("indexed block diff", () => {
 
     expect(result.metrics.mode).toBe("structure-hint");
     expect(result.metrics.sortPlanRan).toBe(true);
-    expect(result.entries).toEqual([
-      expect.objectContaining({
-        clientId: "c_2",
-        blockId: "b_2",
-        opType: "move",
-      }),
-    ]);
+    expect(result.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          clientId: "c_2",
+          blockId: "b_2",
+          opType: "move",
+        }),
+      ]),
+    );
+    expect(result.entries.every((entry) => entry.opType === "move")).toBe(true);
   });
 
   it("falls back to full diff when no hint is available", () => {

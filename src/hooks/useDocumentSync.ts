@@ -697,6 +697,18 @@ export function useDocumentSync({
 
       const localDigest = await computeRootManifestDigest(snapshot);
       const serverDigest = lastServerManifestDigestRef.current;
+      const pendingMoves = Object.values(stateRef.current?.entries ?? {}).some(
+        (entry) => entry.opType === "move",
+      );
+      if (pendingMoves) {
+        addSyncTrace("idle:manifest", current.docId, current.sessionId, current.sessionEpoch, () => ({
+          manifest: buildManifestSummary(snapshot),
+          digestMatch: false,
+          pendingMoves: true,
+        }));
+        return;
+      }
+
       if (serverDigest && localDigest === serverDigest) {
         lastReconciledManifestKeyRef.current = manifestKey;
         addSyncTrace("idle:manifest", current.docId, current.sessionId, current.sessionEpoch, () => ({

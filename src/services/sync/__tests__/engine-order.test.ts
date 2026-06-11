@@ -319,6 +319,45 @@ describe("deriveSyncEntries order handling", () => {
     expect((creates[1].payload?.attrs as Record<string, unknown> | undefined)?.syncCreateId).toBeUndefined();
   });
 
+  it("emits move entries when blocks swap visually but sortKeys travel with nodes", () => {
+    const previous: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: SK0 },
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_b", blockId: "b_b", sortKey: SK2 },
+        },
+      ],
+    };
+    const next: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_b", blockId: "b_b", sortKey: SK0 },
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: SK2 },
+        },
+      ],
+    };
+
+    const moves = deriveSyncEntries(previous, next).filter(
+      (entry) => entry.opType === "move",
+    );
+
+    expect(moves.length).toBeGreaterThan(0);
+    expect(moves.some((entry) => entry.blockId === "b_b")).toBe(true);
+    for (const move of moves) {
+      expect(move.sortKey).toBeDefined();
+    }
+  });
+
   it("emits move entries when existing blocks change relative order", () => {
     const previous: TiptapDoc = {
       type: "doc",
@@ -429,12 +468,13 @@ describe("deriveSyncEntries order handling", () => {
         },
       ],
     };
+    const draggedFrontKey = createSortKeyBetween(null, SK1);
     const next: TiptapDoc = {
       type: "doc",
       content: [
         {
           type: "paragraph",
-          attrs: { clientId: "c_6", blockId: "b_6", sortKey: SK5 },
+          attrs: { clientId: "c_6", blockId: "b_6", sortKey: draggedFrontKey },
         },
         {
           type: "paragraph",

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { SYNC_BATCH_LIMITS, selectSyncBatchOperations, type SyncBatchLimits } from "../batching";
+import {
+  SYNC_BATCH_LIMITS,
+  prioritizeMoveDirtyOrder,
+  selectSyncBatchOperations,
+  type SyncBatchLimits,
+} from "../batching";
 import type { SyncEntry } from "../types";
 
 function entry(clientId: string, opType: SyncEntry["opType"]): SyncEntry {
@@ -34,6 +39,34 @@ describe("sync batching", () => {
       "update_1",
       "delete_1",
     ]);
+  });
+
+  it("prioritizes move operations ahead of updates in the same dirty queue", () => {
+    const entries: Record<string, SyncEntry> = {
+      update_1: entry("update_1", "update"),
+      move_1: entry("move_1", "move"),
+      update_2: entry("update_2", "update"),
+    };
+    const limits: SyncBatchLimits = {
+      total: 2,
+      byOperation: {
+        create: 2,
+        update: 2,
+        delete: 2,
+        move: 2,
+      },
+    };
+
+    expect(
+      selectSyncBatchOperations(
+        ["update_1", "move_1", "update_2"],
+        entries,
+        limits,
+      ).map((item) => item.clientId),
+    ).toEqual(["move_1", "update_1"]);
+    expect(
+      prioritizeMoveDirtyOrder(["update_1", "move_1", "update_2"], entries),
+    ).toEqual(["move_1", "update_1", "update_2"]);
   });
 
   it("rejects non-positive limits", () => {

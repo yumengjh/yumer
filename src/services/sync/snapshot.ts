@@ -6,6 +6,7 @@ import {
   deriveSyncEntriesWithMetrics,
   hasCorruptedSortKeys,
   normalizeEditorDoc,
+  planRepositionSortKeyRepairs,
   planSortKeyRepairs,
   type SyncSnapshotIndex,
 } from "@/services/sync/engine";
@@ -99,18 +100,34 @@ function reconcilePendingEntriesWithSnapshot(
 export function repairSnapshotSortKeyOrder(
   state: SyncReducerState,
   snapshot: TiptapDoc,
+  previousSnapshot?: TiptapDoc | null,
 ): {
   state: SyncReducerState;
   snapshot: TiptapDoc;
   repairedCount: number;
 } {
   const report = analyzeSortKeyIntegrity(snapshot);
-  if (!hasCorruptedSortKeys(report)) {
-    return { state, snapshot, repairedCount: 0 };
+  const corrupted = hasCorruptedSortKeys(report);
+
+  const repairByClientId = new Map<
+    string,
+    { clientId: string; blockId: string | null; sortKey: string }
+  >();
+
+  if (corrupted) {
+    for (const repair of planSortKeyRepairs(snapshot)) {
+      repairByClientId.set(repair.clientId, repair);
+    }
+  }
+
+  if (previousSnapshot) {
+    for (const repair of planRepositionSortKeyRepairs(previousSnapshot, snapshot)) {
+      repairByClientId.set(repair.clientId, repair);
+    }
   }
 
   // 仅修复可寻址的块：有 blockId（可发 move）或已有 pending entry（可合并 sortKey）
-  const repairs = planSortKeyRepairs(snapshot).filter(
+  const repairs = [...repairByClientId.values()].filter(
     (repair) => repair.blockId || state.entries[repair.clientId],
   );
   if (repairs.length === 0) {
@@ -222,7 +239,11 @@ export function advanceSyncSnapshotIndexed(
   );
 
   const localSnapshot = applyLocalSortKeys(normalizedSnapshot, nextState);
-  const repaired = repairSnapshotSortKeyOrder(nextState, localSnapshot);
+  const repaired = repairSnapshotSortKeyOrder(
+    nextState,
+    localSnapshot,
+    previousSnapshot,
+  );
   nextState = repaired.state;
   const snapshot = repaired.snapshot;
   const report = analyzeSortKeyIntegrity(snapshot);

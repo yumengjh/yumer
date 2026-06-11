@@ -29,6 +29,23 @@ function validateSyncBatchLimits(limits: SyncBatchLimits): void {
   assertPositiveInteger(limits.byOperation.move, "limits.byOperation.move");
 }
 
+/** move 优先于 update/create，避免顺序校正被内容批次挤到下一轮。 */
+export function prioritizeMoveDirtyOrder(
+  dirtyOrder: string[],
+  entries: Record<string, SyncEntry>,
+): string[] {
+  const moves: string[] = [];
+  const others: string[] = [];
+  for (const id of dirtyOrder) {
+    if (entries[id]?.opType === "move") {
+      moves.push(id);
+    } else {
+      others.push(id);
+    }
+  }
+  return [...moves, ...others];
+}
+
 export function selectSyncBatchOperations(
   dirtyOrder: string[],
   entries: Record<string, SyncEntry>,
@@ -51,7 +68,8 @@ export function selectSyncBatchOperations(
     move: 0,
   };
 
-  for (const id of dirtyOrder) {
+  const orderedIds = prioritizeMoveDirtyOrder(dirtyOrder, entries);
+  for (const id of orderedIds) {
     if (selected.length >= normalizedLimits.total) break;
 
     const entry = entries[id];
