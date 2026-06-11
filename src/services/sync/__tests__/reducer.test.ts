@@ -5,6 +5,8 @@ import {
   markSyncSessionLost,
   markBatchInflight,
   resolveBatchSuccess,
+  applyRemoteBatchSuccess,
+  markRemoteConflict,
 } from "../reducer";
 
 describe("sync reducer", () => {
@@ -636,6 +638,38 @@ describe("sync reducer", () => {
     expect(state.dirtyOrder).toEqual(["client_deleted_moved"]);
     expect(state.entries.client_deleted_moved.opType).toBe("delete");
     expect(state.entries.client_deleted_moved.blockId).toBe("block_deleted_moved");
+  });
+
+  it("advances base and draft revision after a continuous remote event", () => {
+    let state = createInitialSyncState("doc_1", "root_1", 3, 7);
+
+    state = applyRemoteBatchSuccess(state, {
+      serverHead: 4,
+      previousDraftRevision: 7,
+      draftRevision: 8,
+      eventId: "event_1",
+    });
+
+    expect(state.baseVersion).toBe(4);
+    expect(state.draftRevision).toBe(8);
+    expect(state.lastRemoteEventId).toBe("event_1");
+    expect(state.syncState).toBe("idle");
+  });
+
+  it("marks remote conflicts without dropping pending entries", () => {
+    let state = createInitialSyncState("doc_1", "root_1", 3, 7);
+    state = enqueueChange(state, {
+      clientId: "client_pending_remote",
+      blockId: "block_pending_remote",
+      opType: "update",
+      payload: { type: "paragraph" },
+    });
+
+    state = markRemoteConflict(state, "remote conflict");
+
+    expect(state.syncState).toBe("conflicted");
+    expect(state.lastError).toBe("remote conflict");
+    expect(state.dirtyOrder).toEqual(["client_pending_remote"]);
   });
 
   it("treats empty ack results for inflight entries as a protocol error", () => {

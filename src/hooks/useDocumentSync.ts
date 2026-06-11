@@ -6,6 +6,9 @@ import {
 } from "@/services/document";
 import type { TiptapDoc } from "@/services/tiptap-converter";
 import { postDraftCheckpoint, postSyncBatch, postSyncManifestReconcile, type SyncManifestIdentity } from "@/services/sync/api";
+import { getRealtimeOriginIdentity } from "@/services/realtime/identity";
+import { subscribeDocumentEvents } from "@/services/realtime/document-events";
+import type { DocumentRemoteOpsEvent, RealtimeSseEvent } from "@/services/realtime/types";
 import { selectSyncBatchOperations } from "@/services/sync/batching";
 import { summarizeSyncBatchFailures } from "@/services/sync/batch-failure";
 import { applyCheckpointAck, buildDraftCheckpoint } from "@/services/sync/checkpoint";
@@ -14,11 +17,14 @@ import {
   createSyncSnapshotIndex,
   type SyncSnapshotIndex,
 } from "@/services/sync/engine";
+import { applyRemoteOperationsToDoc } from "@/services/sync/remote-ops";
 import { collectOrphanedCreateDeletes } from "@/services/sync/orphaned-create";
 import {
+  applyRemoteBatchSuccess,
   clearPendingCommit,
   createInitialSyncState,
   enqueueChange,
+  markRemoteConflict,
   markBatchInflight,
   markPendingCommit,
   markSyncSessionLost,
@@ -45,6 +51,8 @@ type UseDocumentSyncArgs = {
   syncSession?: SyncSessionMeta | null;
   content: TiptapDoc | null;
   onContentPatched?: (doc: TiptapDoc) => TiptapDoc | void;
+  onRemoteContentApplied?: (doc: TiptapDoc) => void;
+  onRemoteReloadRequired?: (reason: string) => void | Promise<void>;
   onSessionRecovered?: (syncSession: SyncSessionMeta) => void;
   consumeDiffHint?: (content: TiptapDoc) => SyncDiffHint | null;
 };
@@ -282,6 +290,8 @@ export function useDocumentSync({
   syncSession,
   content,
   onContentPatched,
+  onRemoteContentApplied,
+  onRemoteReloadRequired,
   onSessionRecovered,
   consumeDiffHint,
 }: UseDocumentSyncArgs) {
@@ -295,6 +305,9 @@ export function useDocumentSync({
   const lastReconciledManifestKeyRef = useRef<string | null>(null);
   const autosyncPausedRef = useRef(false);
   const batchFailureCountRef = useRef(0);
+  const remoteReloadRunningRef = useRef(false);
+  const onRemoteContentAppliedRef = useRef(onRemoteContentApplied);
+  const onRemoteReloadRequiredRef = useRef(onRemoteReloadRequired);
   const MAX_BATCH_FAILURES_BEFORE_CHECKPOINT = 2;
 
   const replaceSyncState = useCallback((next: SyncReducerState | null) => {
@@ -331,6 +344,130 @@ export function useDocumentSync({
     );
     return true;
   }, [docId, onSessionRecovered, updateSyncState]);
+
+  useEffect(() => {
+    onRemoteContentAppliedRef.current = onRemoteContentApplied;
+  }, [onRemoteContentApplied]);
+
+  useEffect(() => {
+    onRemoteReloadRequiredRef.current = onRemoteReloadRequired;
+  }, [onRemoteReloadRequired]);
+
+  const requestRemoteReload = useCallback(
+    async (reason: string) => {
+      if (remoteReloadRunningRef.current) return;
+      remoteReloadRunningRef.current = true;
+      try {
+        await onRemoteReloadRequiredRef.current?.(reason);
+      } finally {
+        remoteReloadRunningRef.current = false;
+      }
+    },
+    [],
+  );
+
+  const handleRemoteConflict = useCallback(
+    (reason: string, event?: DocumentRemoteOpsEvent) => {
+      updateSyncState((current) =>
+        current ? markRemoteConflict(current, reason) : current,
+      );
+      if (event) {
+        addSyncTrace("remote:conflict", event.docId, stateRef.current?.sessionId ?? null, stateRef.current?.sessionEpoch ?? null, () => ({
+          eventId: event.eventId,
+          previousDraftRevision: event.previousDraftRevision,
+          remoteDraftRevision: event.draftRevision,
+          localDraftRevision: stateRef.current?.draftRevision ?? null,
+          remoteOperationCount: event.operations.length,
+          reason,
+        }));
+      }
+      void requestRemoteReload(reason);
+    },
+    [requestRemoteReload, updateSyncState],
+  );
+
+  const applyRemoteEvent = useCallback(
+    (event: DocumentRemoteOpsEvent) => {
+      const origin = getRealtimeOriginIdentity();
+      if (
+        event.originClientId === origin.originClientId &&
+        event.originTabId === origin.originTabId
+      ) {
+        return;
+      }
+
+      const current = stateRef.current;
+      const latestContent = latestContentRef.current;
+      if (!current || !latestContent) return;
+
+      const clean =
+        current.syncState === "idle" &&
+        current.dirtyOrder.length === 0 &&
+        !current.inflightBatchId;
+      if (!clean) {
+        handleRemoteConflict("其他设备已修改此文档，当前本地内容已过期。", event);
+        return;
+      }
+
+      if (event.previousDraftRevision !== current.draftRevision) {
+        handleRemoteConflict("远端同步事件与本地草稿版本不连续。", event);
+        return;
+      }
+
+      try {
+        const patched = applyRemoteOperationsToDoc({
+          doc: latestContent,
+          rootBlockId: current.rootBlockId,
+          operations: event.operations,
+        });
+        snapshotRef.current = patched;
+        snapshotIndexRef.current = createSyncSnapshotIndex(patched, {
+          computePayloadFingerprints: true,
+        });
+        latestContentRef.current = patched;
+        updateSyncState((prev) =>
+          prev
+            ? applyRemoteBatchSuccess(prev, {
+                serverHead: event.serverHead,
+                previousDraftRevision: event.previousDraftRevision,
+                draftRevision: event.draftRevision,
+                eventId: event.eventId,
+              })
+            : prev,
+        );
+        onRemoteContentAppliedRef.current?.(patched);
+        addSyncTrace("remote:applied", event.docId, current.sessionId, current.sessionEpoch, () => ({
+          eventId: event.eventId,
+          previousDraftRevision: event.previousDraftRevision,
+          remoteDraftRevision: event.draftRevision,
+          remoteOperationCount: event.operations.length,
+          nextManifest: buildManifestSummary(patched),
+        }));
+      } catch (error) {
+        handleRemoteConflict(
+          error instanceof Error ? error.message : "远端增量应用失败。",
+          event,
+        );
+      }
+    },
+    [handleRemoteConflict, updateSyncState],
+  );
+
+  const handleRealtimeEvent = useCallback(
+    (event: RealtimeSseEvent) => {
+      if (event.type === "heartbeat") return;
+      addSyncTrace("realtime:event", event.docId, stateRef.current?.sessionId ?? null, stateRef.current?.sessionEpoch ?? null, () => ({
+        eventId: event.eventId,
+        type: event.type,
+      }));
+      if (event.type === "document_reload_required") {
+        handleRemoteConflict(event.reason);
+        return;
+      }
+      applyRemoteEvent(event);
+    },
+    [applyRemoteEvent, handleRemoteConflict],
+  );
 
   const captureContentSnapshot = useCallback(
     (
@@ -422,6 +559,25 @@ export function useDocumentSync({
       : null;
     lastReconciledManifestKeyRef.current = null;
   }, [baseVersion, docId, draftRevision, replaceSyncState, rootBlockId, syncSession]);
+
+  useEffect(() => {
+    if (!docId || !rootBlockId || baseVersion == null) return;
+    const subscription = subscribeDocumentEvents({
+      docId,
+      onOpen: () => {
+        addSyncTrace("realtime:connected", docId, stateRef.current?.sessionId ?? null, stateRef.current?.sessionEpoch ?? null, () => ({
+          eventId: null,
+        }));
+      },
+      onEvent: handleRealtimeEvent,
+      onError: (error) => {
+        addSyncTrace("realtime:error", docId, stateRef.current?.sessionId ?? null, stateRef.current?.sessionEpoch ?? null, () => ({
+          message: error instanceof Error ? error.message : String(error),
+        }));
+      },
+    });
+    return () => subscription.close();
+  }, [baseVersion, docId, handleRealtimeEvent, rootBlockId]);
 
   useEffect(() => {
     captureContentSnapshot(content, "editor-effect");

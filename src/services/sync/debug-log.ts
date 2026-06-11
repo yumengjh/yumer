@@ -30,6 +30,11 @@ export type SyncTraceEvent =
   | "editor:ack-merged"
   | "manifest:reconcile"
   | "manifest:reconcile-response"
+  | "realtime:connected"
+  | "realtime:event"
+  | "realtime:error"
+  | "remote:applied"
+  | "remote:conflict"
   | "identity:resurrected"
   | "debug:bookmark";
 
@@ -491,6 +496,10 @@ function summarizeTracePayload(payload: Record<string, unknown>): Record<string,
     "deletedReason",
     "observedEvent",
     "observedTraceId",
+    "eventId",
+    "previousDraftRevision",
+    "remoteDraftRevision",
+    "remoteOperationCount",
   ];
   scalarKeys.forEach((key) => {
     if (payload[key] !== undefined) base[key] = payload[key];

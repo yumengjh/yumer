@@ -61,6 +61,7 @@ export function createInitialSyncState(
     lastError: null,
     hasCorruptedSortKeys: false,
     sortKeyCorruptionReport: null,
+    lastRemoteEventId: null,
   };
 }
 
@@ -416,6 +417,43 @@ export function markSyncSessionLost(
     inflightEntryIds: [],
     inflightEntryRevisions: {},
     syncState: "lease-lost",
+    lastError: error,
+  };
+}
+
+export function applyRemoteBatchSuccess(
+  state: SyncReducerState,
+  input: {
+    serverHead: number;
+    previousDraftRevision: number;
+    draftRevision: number;
+    eventId: string;
+  },
+): SyncReducerState {
+  if (state.draftRevision !== input.previousDraftRevision) {
+    return {
+      ...state,
+      syncState: "conflicted",
+      lastError: "远端同步事件与本地草稿版本不连续，请重新加载",
+    };
+  }
+  return {
+    ...state,
+    baseVersion: input.serverHead,
+    draftRevision: input.draftRevision,
+    lastRemoteEventId: input.eventId,
+    syncState: "idle",
+    lastError: null,
+  };
+}
+
+export function markRemoteConflict(
+  state: SyncReducerState,
+  error: string,
+): SyncReducerState {
+  return {
+    ...state,
+    syncState: "conflicted",
     lastError: error,
   };
 }

@@ -90,6 +90,7 @@ export interface SyncReducerState {
   lastError: string | null;
   hasCorruptedSortKeys: boolean;
   sortKeyCorruptionReport: SortKeyCorruptionReport | null;
+  lastRemoteEventId: string | null;
 }
 
 export interface SortKeyCorruptionReport {

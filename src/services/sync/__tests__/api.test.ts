@@ -254,6 +254,8 @@ describe("sync api payload builder", () => {
         sessionId: "session_1",
         sessionEpoch: 4,
         ackedThroughOpSeq: 9,
+        originClientId: expect.any(String),
+        originTabId: expect.any(String),
       }),
     );
   });

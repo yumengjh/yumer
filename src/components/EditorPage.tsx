@@ -497,6 +497,28 @@ function EditorContent() {
       }
       return doc;
     },
+    onRemoteContentApplied: (doc) => {
+      ignoreNextLocalSnapshotChange();
+      contentRef.current = doc;
+      setContent(doc);
+      setContentDirty(false);
+      setHasUnsavedChanges(false);
+      setSaveStatus("saved");
+    },
+    onRemoteReloadRequired: async (reason) => {
+      if (!currentDoc) return;
+      message.warning(reason || "其他设备已修改此文档，将重新加载最新内容");
+      const loaded = await loadContent(currentDoc.docId);
+      const loadedContent = loaded.content || BLANK_CONTENT;
+      ignoreNextLocalSnapshotChange();
+      contentRef.current = loadedContent;
+      setContent(loadedContent);
+      setLoadedContentDocId(currentDoc.docId);
+      setContentDirty(false);
+      setHasUnsavedChanges(false);
+      markSavedAt(null);
+      setSaveStatus("loaded");
+    },
     onSessionRecovered: applySyncSession,
     consumeDiffHint: consumeSyncDiffHint,
   });

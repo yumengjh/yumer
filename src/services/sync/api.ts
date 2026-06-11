@@ -3,6 +3,7 @@ import { createSortKeyBetween } from "./order";
 import { SyncDebugLog, SyncIdentityWatch, type SyncIdentity } from "./debug-log";
 import type { SyncEntry, SyncBatchResult } from "./types";
 import type { DraftCheckpointMapping, DraftCheckpointRequest } from "./checkpoint";
+import { getRealtimeOriginIdentity } from "@/services/realtime/identity";
 
 export interface SyncBatchResponse {
   serverHead: number;
@@ -277,6 +278,7 @@ export async function postSyncBatch(input: {
     baseVersion: input.baseVersion,
     draftRevision: input.draftRevision,
     clientBatchId: input.clientBatchId,
+    ...getRealtimeOriginIdentity(),
     source: input.source,
     ...(input.sessionId ? { sessionId: input.sessionId } : {}),
     ...(typeof input.sessionEpoch === "number"
