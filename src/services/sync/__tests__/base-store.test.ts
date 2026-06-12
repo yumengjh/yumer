@@ -107,6 +107,52 @@ describe("SyncBaseStore", () => {
     expect(bodyOperations[0].data.payload).toBeUndefined();
   });
 
+  it("seeds base from create ACK so later updates can use delta without reload", async () => {
+    const docId = "doc_create_ack_delta";
+    const blockId = "block_created_live";
+    const store = getSyncBaseStore(docId);
+    store.clear();
+
+    const largeText = "x".repeat(DELTA_REFERENCE_LARGE_BLOCK_BYTES);
+    const createPayload = {
+      type: "codeBlock",
+      attrs: {
+        blockId,
+        clientId: "client_new_code",
+        language: "typescript",
+      },
+      content: [{ type: "text", text: largeText }],
+    };
+
+    await store.recordAck({
+      blockId,
+      ver: 1,
+      payload: createPayload,
+    });
+
+    const bodyOperations = await buildSyncBatchOperations({
+      docId,
+      rootBlockId: "root_1",
+      baseStore: store,
+      operations: [
+        {
+          clientId: "client_new_code",
+          blockId,
+          opType: "update",
+          payload: {
+            ...createPayload,
+            content: [{ type: "text", text: `${largeText}y` }],
+          },
+        },
+      ],
+    });
+
+    expect(bodyOperations[0].type).toBe("update");
+    if (bodyOperations[0].type !== "update") return;
+    expect(bodyOperations[0].data.delta?.baseVer).toBe(1);
+    expect(bodyOperations[0].data.payload).toBeUndefined();
+  });
+
   it("keeps seeded baselines isolated by document id", async () => {
     const blockId = "shared_block_id";
     const docAStore = getSyncBaseStore("doc_seed_isolated_a");

@@ -48,6 +48,15 @@
 | **影响** | 核心状态机逻辑在 store + api 层已测；Hook 层回归依赖 E2E 或 Playwright sync 套件 |
 | **建议** | 在 `e2e/sync/` 增加「故意 stale baseHash → MISMATCH → 单次编辑最终成功」场景 |
 
+### 2.4 会话内新建块 delta base（已修复）
+
+| 项 | 说明 |
+|----|------|
+| **现象** | 同页新建块 edit 始终发全量；刷新后正常 |
+| **根因** | batch ACK 缺少 `version` → `recordAck` 未执行 |
+| **状态** | ✅ 已修复；见 [live-create 复盘](./2026-06-12-delta-live-create-ack-retrospective.md) |
+| **测试** | `base-store.test.ts` create ACK → delta update；`blocks-sync-idempotency.spec.ts` 断言 `version` 存在 |
+
 ---
 
 ## 3. Low 优先级 — 代码与可维护性
@@ -159,6 +168,8 @@ DELTA_MAX_RATIO = 0.5     // 小块常因 JSON 开销无法过线
 
 ## 7. 相关文档
 
+- [2026-06-12 会话内新建块 Delta 复盘](./2026-06-12-delta-live-create-ack-retrospective.md) — batch ACK 须带 `version` 才能 `recordAck`
+- [2026-06-12 全选删除 batch_partial_failure Agent 交接](./2026-06-12-select-all-delete-batch-partial-failure-agent-handoff.md) — P0：partial failure + reload 导致内容错乱
 - [2026-06-12 Delta Overlay 实现审查报告](./2026-06-12-delta-overlay-implementation-review.md) — 完整审查与 §7/8/10 完成状态
 - [2026-06-12 Delta Overlay Review Fixes 复盘](./2026-06-12-delta-overlay-review-fixes-retrospective.md) — 第一轮修复记录
 - [2026-06-12 Delta Overlay + Compaction 混合同步复盘](./2026-06-12-delta-overlay-sync-retrospective.md) — 初版实现与双请求根因

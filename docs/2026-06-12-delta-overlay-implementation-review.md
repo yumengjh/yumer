@@ -349,6 +349,8 @@ autosync 走 batch 路径，当前无实际影响；单块 API 调用方需注�
 
 ## 9. 相关文档
 
+- [2026-06-12 会话内新建块 Delta 复盘](./2026-06-12-delta-live-create-ack-retrospective.md) — batch ACK 保留 `version` 以播种 live-create 的 delta base
+- [2026-06-12 全选删除 batch_partial_failure Agent 交接](./2026-06-12-select-all-delete-batch-partial-failure-agent-handoff.md) — P0 同步缺陷修复规格（含日志与测试计划）
 - [2026-06-12 Delta Overlay 遗留项与已知限制](./2026-06-12-delta-overlay-remaining-items.md) — Low 优先级项、实验策略、caveat 与建议处理顺序
 - [2026-06-12 Delta Overlay Review Fixes 复盘](./2026-06-12-delta-overlay-review-fixes-retrospective.md) — follow-up 修复记录
 - [2026-06-12 Delta Overlay + Compaction 混合同步复盘](./2026-06-12-delta-overlay-sync-retrospective.md) — 初版实现、MISMATCH 排查、双请求根因
