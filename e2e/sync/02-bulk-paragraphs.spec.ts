@@ -9,12 +9,14 @@ import {
   getEditorPlainText,
   reloadEditor,
   waitForEditorReady,
+  waitForEditorText,
 } from "../helpers/editor";
 import {
   assertNoDuplicateCreateStorm,
   assertNoResurrectedBlocks,
   assertNoSyncIncidents,
   waitForDraftSynced,
+  waitForSyncIdle,
 } from "../helpers/sync";
 import { expect, test } from "../fixtures/sync-fixture";
 
@@ -34,6 +36,8 @@ test.describe("同步 E2E — 批量段落", () => {
     expect(topLevelBlocks).toBeGreaterThanOrEqual(blockCount);
 
     await reloadEditor(page);
+    await waitForSyncIdle(page, { timeoutMs: 120_000 });
+    await waitForEditorText(page, "bulk-0", 120_000);
     const reloadedText = await getEditorPlainText(page);
     expect(reloadedText).toContain("bulk-0");
     expect(reloadedText).toContain(`bulk-${blockCount - 1}`);

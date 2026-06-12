@@ -13,6 +13,7 @@ import { selectSyncBatchOperations } from "@/services/sync/batching";
 import { summarizeSyncBatchFailures } from "@/services/sync/batch-failure";
 import { applyCheckpointAck, buildDraftCheckpoint } from "@/services/sync/checkpoint";
 import {
+  alignDocToSortKeyOrder,
   applyServerAck,
   applyServerDeleteAck,
   createSyncSnapshotIndex,
@@ -1259,7 +1260,7 @@ export function useDocumentSync({
               if (deleteAckMappings.length > 0) {
                 nextDoc = applyServerDeleteAck(nextDoc, deleteAckMappings);
               }
-              return nextDoc;
+              return alignDocToSortKeyOrder(nextDoc);
             };
 
             const snapshotBeforeAck = snapshotRef.current;

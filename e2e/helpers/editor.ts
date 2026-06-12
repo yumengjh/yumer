@@ -51,6 +51,104 @@ export async function getEditorPlainText(page: Page): Promise<string> {
   return page.locator(EDITOR_SELECTOR).first().innerText();
 }
 
+export async function getTopLevelBlockTexts(page: Page): Promise<string[]> {
+  return page.locator(EDITOR_SELECTOR).first().evaluate((editor) => {
+    return Array.from(editor.children).map((element) =>
+      (element as HTMLElement).innerText.replace(/\u00b7/g, "\n").trim(),
+    );
+  });
+}
+
+export async function dragBlockToGap(
+  page: Page,
+  sourceIndex: number,
+  targetGapIndex: number,
+): Promise<void> {
+  const editor = page.locator(EDITOR_SELECTOR).first();
+  await editor.waitFor({ state: "visible" });
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const blocks = editor.locator(":scope > *");
+    const blockCount = await blocks.count();
+    if (sourceIndex < 0 || sourceIndex >= blockCount) {
+      throw new Error(`drag sourceIndex ${sourceIndex} 超出块数 ${blockCount}`);
+    }
+
+    const sourceBlock = blocks.nth(sourceIndex);
+    try {
+      await sourceBlock.scrollIntoViewIfNeeded({ timeout: 5000 });
+      const sourceBox = await sourceBlock.boundingBox();
+      if (!sourceBox) {
+        throw new Error(`无法定位源块 index=${sourceIndex}`);
+      }
+
+      const hoverX = sourceBox.x + Math.min(24, sourceBox.width / 2);
+      const hoverY = sourceBox.y + sourceBox.height / 2;
+      await page.mouse.move(hoverX, hoverY);
+      await page.waitForTimeout(80);
+      await page.evaluate(
+        ({ x, y }) => {
+          const wrapper = document.querySelector(".tiptap-editor-wrapper");
+          wrapper?.dispatchEvent(
+            new MouseEvent("mousemove", {
+              bubbles: true,
+              clientX: x,
+              clientY: y,
+            }),
+          );
+        },
+        { x: hoverX, y: hoverY },
+      );
+      await page.waitForTimeout(120);
+
+      const handle = page.locator(".block-handle-wrapper .block-handle__btn").first();
+      for (let hoverAttempt = 0; hoverAttempt < 6; hoverAttempt += 1) {
+        if (await handle.isVisible().catch(() => false)) break;
+        await page.mouse.move(hoverX, hoverY, { steps: 2 });
+        await page.waitForTimeout(100);
+      }
+      await handle.waitFor({ state: "visible", timeout: 15_000 });
+
+      const handleBox = await handle.boundingBox();
+      if (!handleBox) {
+        throw new Error("块拖拽手柄不可见");
+      }
+
+      let targetY: number;
+      if (targetGapIndex <= 0) {
+        const firstBox = await blocks.nth(0).boundingBox();
+        if (!firstBox) throw new Error("无法定位首块");
+        targetY = firstBox.y - 4;
+      } else if (targetGapIndex >= blockCount) {
+        const lastBox = await blocks.nth(blockCount - 1).boundingBox();
+        if (!lastBox) throw new Error("无法定位末块");
+        targetY = lastBox.y + lastBox.height + 4;
+      } else {
+        const targetBox = await blocks.nth(targetGapIndex).boundingBox();
+        if (!targetBox) throw new Error(`无法定位目标 gap ${targetGapIndex}`);
+        targetY = targetBox.y - 4;
+      }
+
+      const startX = handleBox.x + handleBox.width / 2;
+      const startY = handleBox.y + handleBox.height / 2;
+
+      await page.mouse.move(startX, startY);
+      await page.mouse.down();
+      await page.mouse.move(startX, startY - 24, { steps: 6 });
+      await page.mouse.move(startX, targetY, { steps: 16 });
+      await page.waitForTimeout(120);
+      await page.mouse.up();
+      await page.waitForTimeout(300);
+      await page.mouse.move(8, 8);
+      await page.waitForTimeout(80);
+      return;
+    } catch (error) {
+      if (attempt === 2) throw error;
+      await page.waitForTimeout(300);
+    }
+  }
+}
+
 export async function countTopLevelBlocks(page: Page): Promise<number> {
   return page.locator(`${EDITOR_SELECTOR}`).first().locator(":scope > *").count();
 }
@@ -117,6 +215,18 @@ export async function selectAllAndDelete(page: Page): Promise<void> {
 export async function reloadEditor(page: Page): Promise<void> {
   await page.reload({ waitUntil: "domcontentloaded" });
   await waitForEditorReady(page);
+}
+
+export async function waitForEditorText(
+  page: Page,
+  expected: string,
+  timeoutMs = 120_000,
+): Promise<void> {
+  await expect
+    .poll(async () => (await getEditorPlainText(page)).includes(expected), {
+      timeout: timeoutMs,
+    })
+    .toBe(true);
 }
 
 export async function assertEditorBooted(page: Page): Promise<void> {

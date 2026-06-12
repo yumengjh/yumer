@@ -8,12 +8,14 @@ import {
   reloadEditor,
   typeInEditor,
   waitForEditorReady,
+  waitForEditorText,
 } from "../helpers/editor";
 import {
   assertNoResurrectedBlocks,
   assertNoSyncIncidents,
   waitForAtLeastOneSuccessfulBatch,
   waitForDraftSynced,
+  waitForSyncIdle,
 } from "../helpers/sync";
 import { expect, test } from "../fixtures/sync-fixture";
 
@@ -30,6 +32,8 @@ test.describe("同步 E2E — 基础持久化", () => {
     expect(beforeReload).toContain(marker);
 
     await reloadEditor(page);
+    await waitForSyncIdle(page, { timeoutMs: 120_000 });
+    await waitForEditorText(page, marker, 120_000);
     const afterReload = await getEditorPlainText(page);
     expect(afterReload).toContain(marker);
 

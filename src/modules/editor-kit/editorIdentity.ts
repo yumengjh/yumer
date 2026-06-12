@@ -1,4 +1,5 @@
 import type { Editor } from "@tiptap/core";
+import { Fragment, type Node as PmNode } from "@tiptap/pm/model";
 import {
   BLOCK_IDENTITY_NODE_TYPES,
   createClientId,
@@ -235,6 +236,106 @@ function patchEditorBlockIdentityByClientIdFromDoc(
   return matched > 0;
 }
 
+function mergeIdentityAttrsFromNextNode(
+  currentAttrs: Record<string, unknown>,
+  nextNode: TiptapNode,
+): Record<string, unknown> {
+  const nextIdentity = readIdentityFromAttrs(nextNode.attrs);
+  const nextAttrs = { ...currentAttrs };
+  let changed = false;
+
+  if (
+    nextIdentity.clientId &&
+    nextAttrs.clientId !== nextIdentity.clientId
+  ) {
+    nextAttrs.clientId = nextIdentity.clientId;
+    changed = true;
+  }
+
+  const nextBlockId = nextIdentity.blockId ?? null;
+  const currentBlockId =
+    typeof nextAttrs.blockId === "string" ? nextAttrs.blockId : null;
+  if (currentBlockId !== nextBlockId) {
+    nextAttrs.blockId = nextBlockId;
+    if (nextBlockId) {
+      nextAttrs["data-block-id"] = nextBlockId;
+      clearTransientSyncAttrs(nextAttrs);
+    } else {
+      delete nextAttrs["data-block-id"];
+    }
+    changed = true;
+  }
+
+  const nextSortKey =
+    typeof nextNode.attrs?.sortKey === "string" ? nextNode.attrs.sortKey : null;
+  if (nextSortKey && (nextAttrs.sortKey ?? null) !== nextSortKey) {
+    nextAttrs.sortKey = nextSortKey;
+    nextAttrs["data-sort-key"] = nextSortKey;
+    changed = true;
+  }
+
+  return changed ? nextAttrs : currentAttrs;
+}
+
+function reorderEditorTopLevelToMatchDoc(
+  editor: EditorLike,
+  nextDoc: TiptapDoc,
+): boolean {
+  const nextNodes = Array.isArray(nextDoc.content) ? nextDoc.content : [];
+  const { doc } = editor.state;
+  if (doc.childCount !== nextNodes.length || nextNodes.length === 0) {
+    return false;
+  }
+
+  const currentOrder = Array.from({ length: doc.childCount }, (_, index) => {
+    const identity = readIdentityFromAttrs(doc.child(index).attrs);
+    return identity.clientId ?? identity.blockId ?? null;
+  });
+  const targetOrder = nextNodes.map((node) => {
+    const identity = readIdentityFromAttrs(node.attrs);
+    return identity.clientId ?? identity.blockId ?? null;
+  });
+  if (JSON.stringify(currentOrder) === JSON.stringify(targetOrder)) {
+    return false;
+  }
+
+  const nodesByClientId = new Map<string, PmNode>();
+  doc.forEach((node) => {
+    const identity = readIdentityFromAttrs(node.attrs);
+    if (identity.clientId) nodesByClientId.set(identity.clientId, node);
+  });
+
+  const reordered: PmNode[] = [];
+  for (const nextNode of nextNodes) {
+    const identity = readIdentityFromAttrs(nextNode.attrs);
+    const currentNode = identity.clientId
+      ? nodesByClientId.get(identity.clientId)
+      : undefined;
+    if (!currentNode) return false;
+    const mergedAttrs = mergeIdentityAttrsFromNextNode(
+      { ...currentNode.attrs },
+      nextNode,
+    );
+    reordered.push(
+      mergedAttrs === currentNode.attrs
+        ? currentNode
+        : currentNode.type.create(
+            mergedAttrs,
+            currentNode.content,
+            currentNode.marks,
+          ),
+    );
+  }
+
+  const tr = editor.state.tr;
+  tr.replaceWith(0, doc.content.size, Fragment.from(reordered));
+  tr.setMeta(BLOCK_IDENTITY_PATCH_META, true);
+  tr.setMeta("addToHistory", false);
+  tr.setSelection(editor.state.selection.map(tr.doc, tr.mapping));
+  editor.view.dispatch(tr);
+  return true;
+}
+
 export function patchEditorBlockIdentityFromMatchingDoc(
   editor: EditorLike,
   nextDoc: TiptapDoc,
@@ -256,6 +357,9 @@ export function patchEditorBlockIdentityFromDoc(
 ): boolean {
   const nextNodes = Array.isArray(nextDoc.content) ? nextDoc.content : [];
   if (!hasMatchingDocumentContent(editor, nextNodes)) {
+    if (reorderEditorTopLevelToMatchDoc(editor, nextDoc)) {
+      return true;
+    }
     return patchEditorBlockIdentityByClientIdFromDoc(editor, nextNodes);
   }
 

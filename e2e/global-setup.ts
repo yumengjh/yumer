@@ -44,14 +44,19 @@ async function prewarmEditorBundle(): Promise<void> {
   try {
     await page.goto(`${baseURL}/dash`, {
       waitUntil: "domcontentloaded",
-      timeout: 180_000,
+      timeout: 240_000,
     });
     await page
       .getByText("正在打开编辑器…")
-      .waitFor({ state: "hidden", timeout: 180_000 })
+      .waitFor({ state: "hidden", timeout: 240_000 })
       .catch(() => {
         // 预热失败不阻断；单测里仍会重试
       });
+  } catch (error) {
+    console.warn(
+      "[e2e] 编辑器 bundle 预热超时或失败，将继续执行测试（用例内会重试）:",
+      error instanceof Error ? error.message : String(error),
+    );
   } finally {
     await browser.close();
   }

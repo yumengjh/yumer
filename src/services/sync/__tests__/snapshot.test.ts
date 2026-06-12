@@ -3,7 +3,7 @@ import { createInitialSyncState, enqueueChange, markBatchInflight, resolveBatchS
 import { advanceSyncSnapshot } from "../snapshot";
 import { selectSyncBatchOperations } from "../batching";
 import type { TiptapDoc } from "@/services/tiptap-converter";
-import { compareSortKeys, SK0, SK1, SK2, SK3, SK4, SK_EMPTY } from "./test-sort-key";
+import { compareSortKeys, createCanonicalSortKey, SK0, SK1, SK2, SK3, SK4, SK_EMPTY } from "./test-sort-key";
 
 describe("sync snapshot advancement", () => {
   it("initializes the snapshot without enqueueing a change", () => {
@@ -541,5 +541,36 @@ describe("sync snapshot advancement", () => {
       blockId: null,
       opType: "create",
     });
+  });
+
+  it("enqueues move operations when rotated blocks keep their original sortKeys", () => {
+    const state = createInitialSyncState("doc_1", "root_1", 1);
+    const makeBlock = (index: number) => ({
+      type: "paragraph" as const,
+      attrs: {
+        blockId: `b_${index}`,
+        clientId: `c_${index}`,
+        sortKey: createCanonicalSortKey(index),
+      },
+      content: [{ type: "text", text: `order-${index}` }],
+    });
+    const initial: TiptapDoc = {
+      type: "doc",
+      content: [0, 1, 2, 3, 4, 5, 6, 7].map(makeBlock),
+    };
+    const rotatedOrder = [2, 3, 4, 5, 6, 7, 0, 1];
+    const rotated: TiptapDoc = {
+      type: "doc",
+      content: rotatedOrder.map(makeBlock),
+    };
+
+    const bootstrapped = advanceSyncSnapshot(state, null, initial);
+    const advanced = advanceSyncSnapshot(bootstrapped.state, bootstrapped.snapshot, rotated);
+    const moveEntries = Object.values(advanced.state.entries).filter(
+      (entry) => entry.opType === "move",
+    );
+
+    expect(moveEntries.length).toBeGreaterThan(0);
+    expect(advanced.state.dirtyOrder.length).toBeGreaterThan(0);
   });
 });

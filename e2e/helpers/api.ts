@@ -1,4 +1,5 @@
 import { encodeDocId } from "../../src/lib/doc-slug";
+import { compareSortKeys } from "../../src/services/sync/order";
 
 export const API_BASE =
   process.env.PLAYWRIGHT_API_BASE ??
@@ -115,6 +116,7 @@ export async function createE2EDocument(
 export interface EditContentBlockTree {
   blockId: string;
   type: string;
+  sortKey?: string;
   children?: EditContentBlockTree[];
   payload?: {
     attrs?: Record<string, unknown>;
@@ -171,6 +173,33 @@ export function flattenBlockTexts(tree: EditContentBlockTree): string[] {
   };
   walk(tree);
   return texts;
+}
+
+function readBlockSortKey(node: EditContentBlockTree): string {
+  if (typeof node.sortKey === "string" && node.sortKey.trim() !== "") {
+    return node.sortKey;
+  }
+  const attrs = node.payload?.attrs ?? {};
+  const raw = attrs.sortKey ?? attrs["data-sort-key"];
+  return typeof raw === "string" ? raw : "";
+}
+
+/** 顶层 content 块按 sortKey 排序后的文本序（与服务端 draft 加载序一致）。 */
+export function flattenTopLevelBlockTexts(tree: EditContentBlockTree): string[] {
+  const rootChildren = (tree.children ?? []).filter((node) => !isDeletedBlock(node));
+  const sorted = [...rootChildren].sort((left, right) =>
+    compareSortKeys(readBlockSortKey(left), readBlockSortKey(right)),
+  );
+
+  return sorted
+    .map((node) => {
+      const inlineText = (node.payload?.content ?? [])
+        .map((item) => item.text ?? "")
+        .join("")
+        .trim();
+      return inlineText;
+    })
+    .filter((text) => text.length > 0);
 }
 
 export function countBlocksWithText(tree: EditContentBlockTree): number {

@@ -1,10 +1,12 @@
 import type { TiptapDoc } from "@/services/tiptap-converter";
 import {
+  alignSortKeysToVisualOrder,
   analyzeSortKeyIntegrity,
   applySortKeyRepairs,
   createSyncSnapshotIndex,
   deriveSyncEntriesWithMetrics,
   hasCorruptedSortKeys,
+  hasVisualOrderDrift,
   normalizeEditorDoc,
   planRepositionSortKeyRepairs,
   planSortKeyRepairs,
@@ -205,7 +207,10 @@ export function advanceSyncSnapshotIndexed(
   metrics: SyncDiffMetrics;
 } {
   const start = Date.now();
-  const normalizedSnapshot = normalizeEditorDoc(content);
+  let normalizedSnapshot = normalizeEditorDoc(content);
+  if (hasVisualOrderDrift(normalizedSnapshot)) {
+    normalizedSnapshot = alignSortKeysToVisualOrder(normalizedSnapshot);
+  }
   if (!previousSnapshot) {
     let nextState = state;
     let metrics: SyncDiffMetrics | null = null;

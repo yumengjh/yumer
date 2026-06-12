@@ -3,8 +3,12 @@ import {
   applyCreateAck,
   applyServerAck,
   applyServerDeleteAck,
+  alignDocToSortKeyOrder,
+  createSyncSnapshotIndex,
   deriveSyncEntries,
   deriveSyncEntriesWithMetrics,
+  isTopLevelOrderAlignedWithSortKey,
+  reorderTopLevelNodesBySortKey,
 } from "../engine";
 import type { TiptapDoc } from "@/services/tiptap-converter";
 import {
@@ -116,13 +120,13 @@ describe("deriveSyncEntries order handling", () => {
 
     const entries = deriveSyncEntries(previous, next);
 
-    expect(entries.filter((entry) => entry.opType === "move")).toEqual([]);
+    expect(entries.filter((entry) => entry.opType === "move").length).toBeGreaterThan(0);
     expect(entries.find((entry) => entry.clientId === "c_x")?.opType).toBe(
       "create",
     );
   });
 
-  it("does not emit moves for a text-only update when existing sortKeys are out of array order", () => {
+  it("upgrades content-only hints to structure diff when sortKeys are non-monotonic", () => {
     const previous: TiptapDoc = {
       type: "doc",
       content: [
@@ -164,12 +168,32 @@ describe("deriveSyncEntries order handling", () => {
       ],
     };
 
-    const entries = deriveSyncEntries(previous, next);
+    const result = deriveSyncEntriesWithMetrics(previous, next, {
+      hint: {
+        source: "editor-transaction",
+        changedClientIds: ["c_b"],
+        changedBlockIds: ["b_b"],
+        structureChanged: false,
+        identityChanged: false,
+        reason: "text-edit",
+      },
+      previousIndex: createSyncSnapshotIndex(previous, {
+        computePayloadFingerprints: true,
+      }),
+    });
 
-    expect(entries.filter((entry) => entry.opType === "move")).toEqual([]);
-    expect(entries).toMatchObject([
-      { clientId: "c_b", blockId: "b_b", opType: "update" },
-    ]);
+    expect(result.metrics.mode).toBe("structure-hint");
+    expect(result.metrics.sortPlanRan).toBe(true);
+    expect(result.entries.some((entry) => entry.opType === "move")).toBe(true);
+    expect(result.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          clientId: "c_b",
+          blockId: "b_b",
+          opType: "update",
+        }),
+      ]),
+    );
   });
 
   it("allocates unique sortKeys when multiple top-level blocks are created in sequence", () => {
@@ -857,5 +881,32 @@ describe("deriveSyncEntries order handling", () => {
           entry.sortKey === rejectedSortKey,
       ),
     ).toBe(false);
+  });
+
+  it("keeps visual order aligned with ascending sortKeys after reordering by sortKey", () => {
+    const drifted: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_b", blockId: "b_b", sortKey: SK2 },
+          content: [{ type: "text", text: "B" }],
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: SK0 },
+          content: [{ type: "text", text: "A" }],
+        },
+      ],
+    };
+
+    expect(isTopLevelOrderAlignedWithSortKey(drifted)).toBe(false);
+    const aligned = alignDocToSortKeyOrder(drifted);
+    expect(isTopLevelOrderAlignedWithSortKey(aligned)).toBe(true);
+    expect(aligned.content.map((node) => node.attrs?.clientId)).toEqual([
+      "c_a",
+      "c_b",
+    ]);
+    expect(reorderTopLevelNodesBySortKey(aligned)).toBe(aligned);
   });
 });

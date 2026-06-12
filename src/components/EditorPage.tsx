@@ -46,6 +46,7 @@ import {
 import { uploadImage } from "@/services/images";
 import { useDocumentSync } from "@/hooks/useDocumentSync";
 import { SyncTraceLog, buildManifestSummary } from "@/services/sync/debug-log";
+import { alignDocToSortKeyOrder } from "@/services/sync/engine";
 import { readIdentityFromAttrs } from "@/services/sync/identity";
 import type { SyncDiffHint } from "@/services/sync/types";
 import {
@@ -368,7 +369,7 @@ function reconcileEditorWithAckBaseline(
     reconciled = { ...reconciled, content };
   }
 
-  return reconciled;
+  return alignDocToSortKeyOrder(reconciled);
 }
 
 type OutputTab = "html" | "markdown" | "json";

@@ -358,6 +358,50 @@ export function hasVisualOrderDrift(doc: TiptapDoc | null): boolean {
   return hasCorruptedSortKeys(analyzeSortKeyIntegrity(doc));
 }
 
+function readTopLevelSortKey(node: TiptapNode): string | null {
+  const raw = node.attrs?.sortKey ?? node.attrs?.["data-sort-key"];
+  return typeof raw === "string" && isValidSortKey(raw) ? raw : null;
+}
+
+/** 顶层 doc.content 顺序是否与 sortKey 升序一致（单序源不变量）。 */
+export function isTopLevelOrderAlignedWithSortKey(doc: TiptapDoc | null): boolean {
+  return !hasVisualOrderDrift(doc);
+}
+
+/** 按 sortKey 升序重排顶层块；无 sortKey 的块保持相对顺序并置于末尾。 */
+export function reorderTopLevelNodesBySortKey(doc: TiptapDoc): TiptapDoc {
+  if (!Array.isArray(doc.content) || doc.content.length <= 1) return doc;
+
+  type IndexedNode = { node: TiptapNode; index: number; sortKey: string | null };
+  const indexed: IndexedNode[] = doc.content.map((node, index) => ({
+    node,
+    index,
+    sortKey: readTopLevelSortKey(node),
+  }));
+
+  const withKey = indexed.filter((item) => item.sortKey);
+  const withoutKey = indexed.filter((item) => !item.sortKey);
+  const sortedWithKey = [...withKey].sort((left, right) => {
+    const compared = compareSortKeys(left.sortKey!, right.sortKey!);
+    return compared !== 0 ? compared : left.index - right.index;
+  });
+  const reordered = [...sortedWithKey, ...withoutKey].map((item) => item.node);
+  const changed = reordered.some((node, index) => node !== doc.content[index]);
+  return changed ? { ...doc, content: reordered } : doc;
+}
+
+/** sortKey 为权威：若视觉序与 sortKey 不一致则重排 content 数组。 */
+export function alignDocToSortKeyOrder(doc: TiptapDoc): TiptapDoc {
+  if (isTopLevelOrderAlignedWithSortKey(doc)) return doc;
+  return reorderTopLevelNodesBySortKey(doc);
+}
+
+/** 按视觉顺序为顶层块分配严格递增 sortKey（视觉序为权威时的 derive 前对齐）。 */
+export function alignSortKeysToVisualOrder(doc: TiptapDoc): TiptapDoc {
+  const repairs = planSortKeyRepairs(doc);
+  return repairs.length > 0 ? applySortKeyRepairs(doc, repairs) : doc;
+}
+
 /** 把修复后的 sortKey 写回文档顶层节点 attrs。 */
 export function applySortKeyRepairs(
   doc: TiptapDoc,
@@ -747,6 +791,12 @@ function chooseDiffMode(input: {
   if (input.previousIndex.orderKey !== input.nextIndex.orderKey) {
     return "structure-hint";
   }
+  if (
+    hasVisualOrderDrift(input.previousIndex.doc) ||
+    hasVisualOrderDrift(input.nextIndex.doc)
+  ) {
+    return "structure-hint";
+  }
   return "content-hint";
 }
 
@@ -799,11 +849,17 @@ export function deriveSyncEntriesWithMetrics(
   const previousSortKeysAreCorrupted = hasCorruptedSortKeys(
     analyzeSortKeyIntegrity(normalizedPrev),
   );
-  const shouldSuppressExistingMoves = previousSortKeysAreCorrupted;
-  const desiredSortKeys = shouldSuppressExistingMoves || !shouldRunSortPlan
-    ? new Map<string, string>()
-    : planDesiredSortKeys(orderedNextNodes, prevIndexed);
-  metrics.sortPlanRan = shouldRunSortPlan && !shouldSuppressExistingMoves;
+  let desiredSortKeys = new Map<string, string>();
+  if (shouldRunSortPlan) {
+    if (previousSortKeysAreCorrupted) {
+      for (const repair of planSortKeyRepairs(normalizedNext)) {
+        desiredSortKeys.set(repair.clientId, repair.sortKey);
+      }
+    } else {
+      desiredSortKeys = planDesiredSortKeys(orderedNextNodes, prevIndexed);
+    }
+  }
+  metrics.sortPlanRan = shouldRunSortPlan && desiredSortKeys.size > 0;
   const nextFingerprints = new Map<string, string>();
 
   for (const nextNode of orderedNextNodes) {
@@ -842,7 +898,6 @@ export function deriveSyncEntriesWithMetrics(
     // 块已换位且 sortKey 未更新，并在新位置造成视觉非单调时，按位置重算 sortKey。
     if (
       shouldRunSortPlan &&
-      !shouldSuppressExistingMoves &&
       prevNode.index !== nextNode.index &&
       nextNode.sortKey === prevNode.sortKey &&
       isVisuallyNonMonotonicAt(orderedNextNodes, nextNode.index)
@@ -851,7 +906,6 @@ export function deriveSyncEntriesWithMetrics(
     }
     if (
       shouldRunSortPlan &&
-      !shouldSuppressExistingMoves &&
       !options.suppressMoveDerivation &&
       nextSortKey !== prevNode.sortKey
     ) {
