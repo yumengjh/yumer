@@ -106,6 +106,104 @@ describe("SyncBaseStore", () => {
     expect(bodyOperations[0].data.delta?.baseVer).toBe(7);
     expect(bodyOperations[0].data.payload).toBeUndefined();
   });
+
+  it("keeps seeded baselines isolated by document id", async () => {
+    const blockId = "shared_block_id";
+    const docAStore = getSyncBaseStore("doc_seed_isolated_a");
+    const docBStore = getSyncBaseStore("doc_seed_isolated_b");
+    docAStore.clear();
+    docBStore.clear();
+
+    await seedSyncBaseStoreFromBlocks("doc_seed_isolated_a", [
+      {
+        blockId,
+        type: "paragraph",
+        ver: 2,
+        payload: {
+          content: [{ type: "text", text: "from doc A" }],
+        },
+      },
+    ]);
+
+    expect(docAStore.get(blockId)?.ver).toBe(2);
+    expect(docBStore.get(blockId)).toBeUndefined();
+  });
+
+  it("sends full after DELTA_BASE_MISMATCH and clears force-full after successful ACK", async () => {
+    const docId = "doc_force_full_ack";
+    const blockId = "block_force_full_ack";
+    const store = getSyncBaseStore(docId);
+    store.clear();
+    const largeText = "x".repeat(DELTA_REFERENCE_LARGE_BLOCK_BYTES);
+    const fullPayload = {
+      type: "codeBlock",
+      attrs: {
+        blockId,
+        clientId: "client_code",
+        language: "typescript",
+      },
+      content: [{ type: "text", text: `${largeText}y` }],
+    };
+
+    await store.seedFromPayload({
+      blockId,
+      ver: 1,
+      payload: {
+        type: "codeBlock",
+        attrs: { language: "typescript" },
+        content: [{ type: "text", text: largeText }],
+      },
+    });
+    store.forceFullResync(blockId);
+
+    const forcedFullOperations = await buildSyncBatchOperations({
+      docId,
+      rootBlockId: "root_1",
+      baseStore: store,
+      operations: [
+        {
+          clientId: "client_code",
+          blockId,
+          opType: "update",
+          payload: fullPayload,
+        },
+      ],
+    });
+
+    expect(forcedFullOperations[0].type).toBe("update");
+    if (forcedFullOperations[0].type !== "update") return;
+    expect(forcedFullOperations[0].data.payload).toBeDefined();
+    expect(forcedFullOperations[0].data.delta).toBeUndefined();
+
+    await store.recordAck({
+      blockId,
+      ver: 2,
+      payload: fullPayload,
+    });
+    expect(store.shouldForceFull(blockId)).toBe(false);
+
+    const deltaOperations = await buildSyncBatchOperations({
+      docId,
+      rootBlockId: "root_1",
+      baseStore: store,
+      operations: [
+        {
+          clientId: "client_code",
+          blockId,
+          opType: "update",
+          payload: {
+            ...fullPayload,
+            content: [{ type: "text", text: `${largeText}yz` }],
+          },
+        },
+      ],
+    });
+
+    expect(deltaOperations[0].type).toBe("update");
+    if (deltaOperations[0].type !== "update") return;
+    expect(deltaOperations[0].data.delta?.baseVer).toBe(2);
+    expect(deltaOperations[0].data.payload).toBeUndefined();
+  });
 });
 
 describe("delta encoding threshold", () => {

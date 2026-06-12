@@ -3,6 +3,7 @@ import {
   buildSyncBatchOperations,
   postDraftCheckpoint,
   postSyncBatch,
+  postSyncBatchWithRetry,
   postSyncManifestReconcile,
 } from "../api";
 import { createCanonicalSortKey } from "../order";
@@ -227,6 +228,69 @@ describe("sync api payload builder", () => {
         ],
       }),
     ).rejects.toThrow("同步协议错误");
+  });
+
+  it("retries retryable sync batch posts with the same clientBatchId", async () => {
+    const immediateTimeout = vi
+      .spyOn(globalThis, "setTimeout")
+      .mockImplementation((handler: TimerHandler) => {
+        if (typeof handler === "function") handler();
+        return 0 as unknown as ReturnType<typeof setTimeout>;
+      });
+    apiPost
+      .mockRejectedValueOnce(new TypeError("failed to fetch"))
+      .mockResolvedValueOnce({
+        acceptedBatchId: "batch_retry",
+        appliedAt: Date.now(),
+        serverHead: 4,
+        draftRevision: 2,
+        needsReload: false,
+        conflicts: [],
+        results: [
+          {
+            operation: "update",
+            success: true,
+            blockId: "block_retry",
+            version: 2,
+          },
+        ],
+      });
+
+    try {
+      await expect(
+        postSyncBatchWithRetry({
+          docId: "doc_retry",
+          rootBlockId: "root_1",
+          baseVersion: 3,
+          draftRevision: 1,
+          clientBatchId: "batch_retry",
+          source: "autosync",
+          operations: [
+            {
+              clientId: "client_retry",
+              blockId: "block_retry",
+              opType: "update",
+              payload: {
+                type: "paragraph",
+                content: [{ type: "text", text: "retry" }],
+              },
+            },
+          ],
+        }),
+      ).resolves.toMatchObject({
+        serverHead: 4,
+        results: [{ blockId: "block_retry" }],
+      });
+    } finally {
+      immediateTimeout.mockRestore();
+    }
+
+    expect(apiPost).toHaveBeenCalledTimes(2);
+    const firstBody = apiPost.mock.calls[0][1];
+    const secondBody = apiPost.mock.calls[1][1];
+    expect(firstBody.clientBatchId).toBe("batch_retry");
+    expect(secondBody.clientBatchId).toBe("batch_retry");
+    expect(secondBody.operations).toEqual(firstBody.operations);
   });
 
   it("posts draft checkpoints to the document checkpoint endpoint", async () => {

@@ -320,29 +320,30 @@ autosync 走 batch 路径，当前无实际影响；单块 API 调用方需注�
 
 ## 7. 缺失测试覆盖清单
 
-| 优先级 | 场景 |
-|--------|------|
-| 🔴 High | 修复 `block-payload-resolver.service.spec.ts` 期望值；统一全量/delta resolve 路径后补回归 |
-| 🔴 High | 双端 `delta-fixtures.json` golden hash 契约测试 |
-| 🔴 High | `DELTA_BASE_MISMATCH` → `forceFullResync` → 全量成功 → `recordAck` 清除 forceFull 集成测试 |
-| 🟡 Medium | 多步 delta 链（≥3 步）单元测试 |
-| 🟡 Medium | `DELTA_RESULT_MISMATCH` 分支 |
-| 🟡 Medium | `seedSyncBaseStoreFromBlocks` 按 docId 隔离 |
-| 🟡 Medium | `postSyncBatchWithRetry` 幂等重试 |
-| 🟢 Low | 单块 PUT + delta 上行 E2E |
-| 🟢 Low | `sha256Hex` 在 `crypto.subtle` 不可用时的行为 |
+| 优先级 | 场景 | 状态（2026-06-12 follow-up） |
+|--------|------|------|
+| 🔴 High | 修复 `block-payload-resolver.service.spec.ts` 期望值；统一全量/delta resolve 路径后补回归 | ✅ 已完成：`block-payload-resolver.service.spec.ts` 覆盖 full codeBlock canonical 输出与 delta reconstruction |
+| 🔴 High | 双端 `delta-fixtures.json` golden hash 契约测试 | ✅ 已完成：前端 `delta.test.ts`、后端 `block-delta.spec.ts` 校验 fixture `baseHash` / `nextHash` |
+| 🔴 High | `DELTA_BASE_MISMATCH` → `forceFullResync` → 全量成功 → `recordAck` 清除 forceFull 集成测试 | ✅ 已完成：前端 `base-store.test.ts` 覆盖 forceFull 后全量发送、ACK 后清除并恢复 delta |
+| 🟡 Medium | 多步 delta 链（≥3 步）单元测试 | ✅ 已完成：后端 resolver 三步 delta 链重建测试 |
+| 🟡 Medium | `DELTA_RESULT_MISMATCH` 分支 | ✅ 已完成：后端 `shouldAcceptClientDelta` resultHash mismatch 分支测试 |
+| 🟡 Medium | `BatchBlockDto` 必填运行时校验与 TypeScript 类型一致 | ✅ 已完成：`baseVersion` / `clientBatchId` 改为必填类型，保留 `@IsDefined()` |
+| 🟡 Medium | `seedSyncBaseStoreFromBlocks` 按 docId 隔离 | ✅ 已完成：前端 `base-store.test.ts` 覆盖同 blockId 跨 doc 隔离 |
+| 🟡 Medium | `postSyncBatchWithRetry` 幂等重试 | ✅ 已完成：前端 `api.test.ts` 覆盖 retryable error 后同 `clientBatchId` 重发 |
+| 🟢 Low | 单块 PUT + delta 上行 E2E | ⏳ 未处理：低优先级，仍需后续 E2E |
+| 🟢 Low | `sha256Hex` 在 `crypto.subtle` 不可用时的行为 | ⏳ 未处理：低优先级，仍需后续兼容性测试 |
 
 ---
 
 ## 8. 建议修复顺序
 
-| 阶段 | 动作 |
-|------|------|
-| **立即** | 修复 `block-payload-resolver.service.spec.ts`；统一 `resolveBlockPayload` 全量/delta 两条路径输出格式 |
-| **短期** | 客户端消除重复 `computeDelta`；补充多步 delta 链单元测试 |
-| **短期** | 确保部署环境 `pnpm install` 含 `diff-match-patch` |
-| **中期** | 建立跨端 canonical golden 测试；明确两套 hash 用途文档 |
-| **按需** | 实验「全块 delta」时同步调整 `DELTA_MAX_RATIO`；生产恢复 `DELTA_MIN_FULL_SIZE = 8 * 1024` |
+| 阶段 | 动作 | 状态（2026-06-12 follow-up） |
+|------|------|------|
+| **立即** | 修复 `block-payload-resolver.service.spec.ts`；统一 `resolveBlockPayload` 全量/delta 两条路径输出格式 | ✅ 已完成并单独提交：`fix(blocks): normalize resolved full payloads` |
+| **短期** | 客户端消除重复 `computeDelta`；补充多步 delta 链单元测试 | ✅ 已完成：`buildBlockDeltaIfUseful` + 后端三步链测试 |
+| **短期** | 确保部署环境 `pnpm install` 含 `diff-match-patch` | ✅ 已确认：前后端 `package.json` 均声明 `diff-match-patch`；安装状态由部署流程保证 |
+| **中期** | 建立跨端 canonical golden 测试；明确两套 hash 用途文档 | ✅ 已完成：双端 golden hash 单测；后端 `calculateVersionHash` 注释区分 version hash 与 `hashPayloadCanonical` |
+| **按需** | 实验「全块 delta」时同步调整 `DELTA_MAX_RATIO`；生产恢复 `DELTA_MIN_FULL_SIZE = 8 * 1024` | ⏳ 未处理：策略调参不在本轮测试补齐范围 |
 
 ---
 
@@ -355,13 +356,13 @@ autosync 走 batch 路径，当前无实际影响；单块 API 调用方需注�
 
 ## 10. 严重度汇总
 
-| 严重度 | 条目 |
-|--------|------|
-| **Critical** | —（无阻塞性逻辑错误；1 个单测失败为期望值问题） |
-| **High** | 全量/delta resolve 路径不一致；两套 hash 空间；跨端 canonical 无契约测试 |
-| **Medium** | 重复 `computeDelta`；实验配置效果有限；多步链测试缺口；DTO 类型矛盾 |
-| **Low** | PUT/batch 不对称；forceFull 无超时；导入路径不统一；缓存 LRU |
+| 严重度 | 条目 | 状态（2026-06-12 follow-up） |
+|--------|------|------|
+| **Critical** | —（无阻塞性逻辑错误；1 个单测失败为期望值问题） | ✅ 仍无 Critical |
+| **High** | 全量/delta resolve 路径不一致；两套 hash 空间；跨端 canonical 无契约测试 | ✅ 已降级/完成：resolve 输出统一；version hash 已注释区分；双端 golden hash 测试已补 |
+| **Medium** | 重复 `computeDelta`；实验配置效果有限；多步链测试缺口；DTO 类型矛盾 | ✅ 部分完成：重复计算、多步链、DTO、result mismatch、docId 隔离、retry 覆盖已完成；实验策略调参未处理 |
+| **Low** | PUT/batch 不对称；forceFull 无超时；导入路径不统一；缓存 LRU | ⏳ 未处理：保留为后续低优先级清理 |
 
 ---
 
-*本报告基于 2026-06-12 代码快照与测试执行结果。策略常量以各仓库 `delta-policy.ts` 为准。*
+*本报告基于 2026-06-12 代码快照与测试执行结果；2026-06-12 follow-up 已更新第 7/8/10 节状态。策略常量以各仓库 `delta-policy.ts` 为准。*

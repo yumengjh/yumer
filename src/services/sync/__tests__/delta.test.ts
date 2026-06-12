@@ -19,6 +19,8 @@ type DeltaFixture = {
   name: string;
   base: Record<string, unknown>;
   next: Record<string, unknown>;
+  baseHash: string;
+  nextHash: string;
 };
 
 const fixturesPath = join(
@@ -69,6 +71,11 @@ describe("block delta", () => {
       expect(delta.baseVer).toBe(3);
       expect(delta.baseHash).toBe(await hashPayloadCanonical(fixture.base));
       expect(delta.resultHash).toBe(await hashPayloadCanonical(fixture.next));
+    });
+
+    it(`matches golden hashes: ${fixture.name}`, async () => {
+      await expect(hashPayloadCanonical(fixture.base)).resolves.toBe(fixture.baseHash);
+      await expect(hashPayloadCanonical(fixture.next)).resolves.toBe(fixture.nextHash);
     });
   }
 
