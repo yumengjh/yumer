@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import path from "node:path";
 
 // ── 构建时调试日志 ──
 console.log("━━━ next.config.ts 构建环境变量 ━━━");
@@ -12,6 +13,10 @@ const DOC_PATH = "/blog";
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
+  turbopack: {
+    // 避免 monorepo 上层 lockfile 导致 Turbopack 选错 workspace root
+    root: path.resolve(__dirname),
+  },
   async rewrites() {
     return [
       {

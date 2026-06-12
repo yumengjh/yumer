@@ -762,7 +762,7 @@ export function useDocumentSync({
         return;
       }
 
-      if (serverDigest && localDigest === serverDigest) {
+      if (serverDigest && localDigest === serverDigest && manifest.length > 0) {
         lastReconciledManifestKeyRef.current = manifestKey;
         addSyncTrace("idle:manifest", current.docId, current.sessionId, current.sessionEpoch, () => ({
           manifest: buildManifestSummary(snapshot),
@@ -958,6 +958,16 @@ export function useDocumentSync({
           entryCount: Object.keys(initial.entries).length,
         }));
         await reconcileIdleManifest(initial);
+        const emptyManifest = toReconcileManifest(snapshotRef.current).length === 0;
+        if (emptyManifest) {
+          lastReconciledManifestKeyRef.current = null;
+          lastServerManifestDigestRef.current = null;
+          await new Promise((resolve) => window.setTimeout(resolve, 5000));
+          const latest = stateRef.current;
+          if (latest && latest.dirtyOrder.length === 0 && !latest.inflightBatchId) {
+            await reconcileIdleManifest(latest);
+          }
+        }
         return;
       }
 
@@ -977,6 +987,17 @@ export function useDocumentSync({
               entryCount: Object.keys(current.entries).length,
             }));
             await reconcileIdleManifest(current);
+            const emptyManifest = toReconcileManifest(snapshotRef.current).length === 0;
+            if (emptyManifest) {
+              // 弱网/分批 ACK 时，首轮 idle 对账后服务端仍可能有残留 create
+              lastReconciledManifestKeyRef.current = null;
+              lastServerManifestDigestRef.current = null;
+              await new Promise((resolve) => window.setTimeout(resolve, 5000));
+              const latest = stateRef.current;
+              if (latest && latest.dirtyOrder.length === 0 && !latest.inflightBatchId) {
+                await reconcileIdleManifest(latest);
+              }
+            }
             return;
           }
 
@@ -1272,6 +1293,8 @@ export function useDocumentSync({
               createMappings,
             );
             if (orphanedCreateDeletes.length > 0) {
+              lastReconciledManifestKeyRef.current = null;
+              lastServerManifestDigestRef.current = null;
               addSyncTrace(
                 "orphaned-create:delete-enqueued",
                 rebased.docId,

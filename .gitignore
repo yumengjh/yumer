@@ -36,3 +36,12 @@ package-lock.json
 .worktrees/
 
 graphify-out/
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
+# Local E2E run logs
+/e2e-*-run.txt
