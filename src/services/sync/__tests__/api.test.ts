@@ -148,6 +148,53 @@ describe("sync api payload builder", () => {
     expect(bodyOperations[0].data.payload).toBeUndefined();
   });
 
+  it("parses the synced base once when building a delta update", async () => {
+    const blockId = "block_large_code_parse";
+    const baseStore = getSyncBaseStore("doc_delta_parse");
+    baseStore.clear();
+    const largeText = "x".repeat(DELTA_REFERENCE_LARGE_BLOCK_BYTES);
+    await baseStore.seedFromPayload({
+      blockId,
+      ver: 4,
+      payload: {
+        type: "codeBlock",
+        attrs: { language: "typescript" },
+        content: [{ type: "text", text: largeText }],
+      },
+    });
+    const base = baseStore.get(blockId);
+    expect(base).toBeTruthy();
+
+    const parseSpy = vi.spyOn(JSON, "parse");
+    try {
+      await buildSyncBatchOperations({
+        docId: "doc_delta_parse",
+        rootBlockId: "root_1",
+        baseStore,
+        operations: [
+          {
+            clientId: "client_code",
+            blockId,
+            opType: "update",
+            payload: {
+              type: "codeBlock",
+              attrs: {
+                blockId,
+                clientId: "client_code",
+                language: "typescript",
+              },
+              content: [{ type: "text", text: `${largeText}y` }],
+            },
+          },
+        ],
+      });
+
+      expect(parseSpy.mock.calls.filter(([value]) => value === base?.canonical)).toHaveLength(1);
+    } finally {
+      parseSpy.mockRestore();
+    }
+  });
+
   it("rejects malformed batch responses that omit results for non-empty operations", async () => {
     apiPost.mockResolvedValue({
       acceptedBatchId: "batch_missing_results",

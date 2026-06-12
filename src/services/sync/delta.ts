@@ -125,6 +125,11 @@ export function computeDelta(
   const dmp = new DiffMatchPatch();
   const baseText = canonicalStringify(canonicalizeForDelta(basePayload, blockType));
   const nextText = canonicalStringify(canonicalizeForDelta(nextPayload, blockType));
+  return computeDeltaText(baseText, nextText);
+}
+
+function computeDeltaText(baseText: string, nextText: string): string {
+  const dmp = new DiffMatchPatch();
   const patches = dmp.patch_make(baseText, nextText);
   return dmp.patch_toText(patches);
 }
@@ -165,6 +170,36 @@ export async function buildBlockDelta(input: {
     baseHash,
     patch,
     resultHash,
+  };
+}
+
+export async function buildBlockDeltaIfUseful(input: {
+  basePayload: unknown;
+  nextPayload: unknown;
+  baseVer: number;
+  blockType?: string | null;
+  minFullSize?: number;
+  maxRatio?: number;
+}): Promise<BlockDeltaInput | null> {
+  const minFullSize = input.minFullSize ?? DELTA_MIN_FULL_SIZE;
+  const maxRatio = input.maxRatio ?? DELTA_MAX_RATIO;
+  const basePayload = canonicalizeForDelta(input.basePayload, input.blockType);
+  const nextPayload = canonicalizeForDelta(input.nextPayload, input.blockType);
+  const nextText = canonicalStringify(nextPayload);
+  const fullSize = new TextEncoder().encode(nextText).byteLength;
+  if (fullSize < minFullSize) return null;
+
+  const baseText = canonicalStringify(basePayload);
+  const patch = computeDeltaText(baseText, nextText);
+  const patchSize = new TextEncoder().encode(patch).byteLength;
+  if (patchSize > fullSize * maxRatio) return null;
+
+  return {
+    format: DELTA_FORMAT,
+    baseVer: input.baseVer,
+    baseHash: await sha256Hex(baseText),
+    patch,
+    resultHash: await sha256Hex(nextText),
   };
 }
 

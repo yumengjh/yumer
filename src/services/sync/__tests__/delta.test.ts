@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyDelta,
   buildBlockDelta,
+  buildBlockDeltaIfUseful,
   canonicalStringify,
   computeDelta,
   ensurePayloadType,
@@ -83,6 +84,44 @@ describe("block delta", () => {
       content: [{ type: "text", text: `${largeText}y` }],
     };
     expect(shouldSendDelta({ basePayload: largeBase, nextPayload: largeNext })).toBe(true);
+  });
+
+  it("builds a sendable delta only when the patch is worth sending", async () => {
+    const smallBase = { type: "paragraph", content: [{ type: "text", text: "a" }] };
+    const smallNext = { type: "paragraph", content: [{ type: "text", text: "ab" }] };
+
+    await expect(
+      buildBlockDeltaIfUseful({
+        basePayload: smallBase,
+        nextPayload: smallNext,
+        baseVer: 2,
+      }),
+    ).resolves.toBeNull();
+
+    const largeText = "x".repeat(DELTA_REFERENCE_LARGE_BLOCK_BYTES);
+    const largeBase = {
+      type: "codeBlock",
+      attrs: { language: "typescript" },
+      content: [{ type: "text", text: largeText }],
+    };
+    const largeNext = {
+      type: "codeBlock",
+      attrs: { language: "typescript" },
+      content: [{ type: "text", text: `${largeText}y` }],
+    };
+
+    const delta = await buildBlockDeltaIfUseful({
+      basePayload: largeBase,
+      nextPayload: largeNext,
+      baseVer: 2,
+    });
+
+    expect(delta).toMatchObject({
+      format: "dmp-v1",
+      baseVer: 2,
+      baseHash: await hashPayloadCanonical(largeBase),
+      resultHash: await hashPayloadCanonical(largeNext),
+    });
   });
 
   it("merges block type for codeBlock attrs normalization", async () => {

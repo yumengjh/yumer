@@ -5,6 +5,7 @@ export {
   applyDelta,
   hashPayloadCanonical,
   buildBlockDelta,
+  buildBlockDeltaIfUseful,
   shouldSendDelta,
   DELTA_FORMAT,
   DELTA_MIN_FULL_SIZE,

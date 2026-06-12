@@ -6,8 +6,7 @@ import type { DraftCheckpointMapping, DraftCheckpointRequest } from "./checkpoin
 import { getRealtimeOriginIdentity } from "@/services/realtime/identity";
 import { getSyncBaseStore, type SyncBaseStore } from "./base-store";
 import {
-  buildBlockDelta,
-  shouldSendDelta,
+  buildBlockDeltaIfUseful,
   stripPayloadForSync,
 } from "./delta-encoding";
 
@@ -197,27 +196,24 @@ export async function buildSyncBatchOperations(input: {
         : {};
 
       const base = baseStore.get(entry.blockId);
-      const canTryDelta =
-        base &&
-        !baseStore.shouldForceFull(entry.blockId) &&
-        shouldSendDelta({
-          basePayload: JSON.parse(base.canonical) as Record<string, unknown>,
-          nextPayload: strippedPayload,
-        });
+      const basePayload = base ? (JSON.parse(base.canonical) as Record<string, unknown>) : null;
+      const blockType =
+        typeof strippedPayload.type === "string"
+          ? strippedPayload.type
+          : typeof basePayload?.type === "string"
+            ? (basePayload.type as string)
+            : undefined;
+      const delta =
+        base && basePayload && !baseStore.shouldForceFull(entry.blockId)
+          ? await buildBlockDeltaIfUseful({
+              basePayload,
+              nextPayload: strippedPayload,
+              baseVer: base.ver,
+              blockType,
+            })
+          : null;
 
-      if (canTryDelta) {
-        const blockType =
-          typeof strippedPayload.type === "string"
-            ? strippedPayload.type
-            : typeof (JSON.parse(base.canonical) as Record<string, unknown>).type === "string"
-              ? ((JSON.parse(base.canonical) as Record<string, unknown>).type as string)
-              : undefined;
-        const delta = await buildBlockDelta({
-          basePayload: JSON.parse(base.canonical) as Record<string, unknown>,
-          nextPayload: strippedPayload,
-          baseVer: base.ver,
-          blockType,
-        });
+      if (delta) {
         bodyOperations.push({
           type: "update",
           blockId: entry.blockId,
