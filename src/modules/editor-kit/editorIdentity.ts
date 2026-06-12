@@ -209,6 +209,16 @@ function patchEditorBlockIdentityByClientIdFromDoc(
       changed = true;
     }
 
+    if (
+      currentBlockId &&
+      nextSortKey &&
+      (currentNode.attrs.sortKey ?? null) !== nextSortKey
+    ) {
+      nextAttrs.sortKey = nextSortKey;
+      nextAttrs["data-sort-key"] = nextSortKey;
+      changed = true;
+    }
+
     if (changed) {
       tr.setNodeMarkup(offset, undefined, nextAttrs, currentNode.marks);
     }
@@ -289,6 +299,17 @@ export function patchEditorBlockIdentityFromDoc(
     const canPatchCreateAckSortKey = !currentBlockId && Boolean(nextBlockId);
     if (
       canPatchCreateAckSortKey &&
+      nextSortKey &&
+      (currentNode.attrs.sortKey ?? null) !== nextSortKey
+    ) {
+      nextAttrs.sortKey = nextSortKey;
+      nextAttrs["data-sort-key"] = nextSortKey;
+      changed = true;
+    }
+
+    if (
+      currentBlockId &&
+      nextSortKey &&
       (currentNode.attrs.sortKey ?? null) !== nextSortKey
     ) {
       nextAttrs.sortKey = nextSortKey;

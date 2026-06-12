@@ -101,11 +101,16 @@ export function repairSnapshotSortKeyOrder(
   state: SyncReducerState,
   snapshot: TiptapDoc,
   previousSnapshot?: TiptapDoc | null,
+  options: {
+    enqueueMoves?: boolean;
+    suppressedMoveSortKeys?: ReadonlyMap<string, ReadonlySet<string>>;
+  } = {},
 ): {
   state: SyncReducerState;
   snapshot: TiptapDoc;
   repairedCount: number;
 } {
+  const enqueueMoves = options.enqueueMoves !== false;
   const report = analyzeSortKeyIntegrity(snapshot);
   const corrupted = hasCorruptedSortKeys(report);
 
@@ -129,9 +134,21 @@ export function repairSnapshotSortKeyOrder(
   // 仅修复可寻址的块：有 blockId（可发 move）或已有 pending entry（可合并 sortKey）
   const repairs = [...repairByClientId.values()].filter(
     (repair) => repair.blockId || state.entries[repair.clientId],
-  );
+  ).filter((repair) => {
+    if (!repair.blockId) return true;
+    const rejected = options.suppressedMoveSortKeys?.get(repair.blockId);
+    return !rejected?.has(repair.sortKey);
+  });
   if (repairs.length === 0) {
     return { state, snapshot, repairedCount: 0 };
+  }
+
+  if (!enqueueMoves) {
+    return {
+      state,
+      snapshot: applySortKeyRepairs(snapshot, repairs),
+      repairedCount: repairs.length,
+    };
   }
 
   let nextState = state;
@@ -167,12 +184,20 @@ function createIdleMetrics(input: {
   };
 }
 
+export type SyncSnapshotCaptureOptions = {
+  suppressMoveDerivation?: boolean;
+  suppressedMoveSortKeys?: ReadonlyMap<string, ReadonlySet<string>>;
+  /** false 时只写回本地 snapshot sortKey，不入队 move（用于 ACK 后避免与服务端打架） */
+  enqueueSortKeyRepairs?: boolean;
+};
+
 export function advanceSyncSnapshotIndexed(
   state: SyncReducerState,
   previousSnapshot: TiptapDoc | null,
   previousIndex: SyncSnapshotIndex | null,
   content: TiptapDoc,
   hint?: SyncDiffHint | null,
+  captureOptions?: SyncSnapshotCaptureOptions,
 ): {
   state: SyncReducerState;
   snapshot: TiptapDoc;
@@ -224,10 +249,21 @@ export function advanceSyncSnapshotIndexed(
     };
   }
 
+  const deriveOptions = {
+    previousIndex,
+    hint,
+    suppressMoveDerivation: captureOptions?.suppressMoveDerivation,
+    suppressedMoveSortKeys: captureOptions?.suppressedMoveSortKeys,
+  };
+  const repairOptions = {
+    enqueueMoves: captureOptions?.enqueueSortKeyRepairs !== false,
+    suppressedMoveSortKeys: captureOptions?.suppressedMoveSortKeys,
+  };
+
   const derived = deriveSyncEntriesWithMetrics(
     previousSnapshot,
     normalizedSnapshot,
-    { previousIndex, hint },
+    deriveOptions,
   );
   let nextState = state;
   for (const entry of derived.entries) {
@@ -243,6 +279,7 @@ export function advanceSyncSnapshotIndexed(
     nextState,
     localSnapshot,
     previousSnapshot,
+    repairOptions,
   );
   nextState = repaired.state;
   const snapshot = repaired.snapshot;

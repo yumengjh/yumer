@@ -193,6 +193,31 @@ describe("useDocumentSync source guards", () => {
     expect(batchLostAt).toBeGreaterThan(batchSessionCheckAt);
   });
 
+  it("rescans batch ack baseline from live editor content instead of stale React state", () => {
+    const hookSource = fs.readFileSync(
+      path.resolve(process.cwd(), "src/hooks/useDocumentSync.ts"),
+      "utf8",
+    );
+
+    const resolvedAt = hookSource.indexOf("resolveBatchSuccess(");
+    const ackBaselineAt = hookSource.indexOf("const ackBaseline = applyBatchAckToDoc(", resolvedAt);
+    const liveContentAt = hookSource.indexOf("getLiveContent?.()", ackBaselineAt);
+    const rescanAt = hookSource.indexOf(
+      'captureContentSnapshot(ackBaseline, "batch-ack-rescan"',
+      ackBaselineAt,
+    );
+    const suppressMoveAt = hookSource.indexOf("suppressMoveDerivation: true", rescanAt);
+    const mismatchAt = hookSource.indexOf("recordMoveAckSuppression(", resolvedAt);
+    const editorPatchAt = hookSource.indexOf("onContentPatched(ackBaseline)", rescanAt);
+
+    expect(ackBaselineAt).toBeGreaterThan(resolvedAt);
+    expect(liveContentAt).toBeGreaterThan(ackBaselineAt);
+    expect(rescanAt).toBeGreaterThan(liveContentAt);
+    expect(suppressMoveAt).toBeGreaterThan(rescanAt);
+    expect(mismatchAt).toBeGreaterThan(resolvedAt);
+    expect(editorPatchAt).toBeGreaterThan(rescanAt);
+  });
+
   it("keeps indexed diff metadata outside React state and consumes hints during snapshot capture", () => {
     const hookSource = fs.readFileSync(
       path.resolve(process.cwd(), "src/hooks/useDocumentSync.ts"),

@@ -111,6 +111,10 @@ export interface SyncSnapshotIndex {
 export interface DeriveSyncEntriesOptions {
   previousIndex?: SyncSnapshotIndex | null;
   hint?: SyncDiffHint | null;
+  /** batch-ack-rescan 等路径：只同步身份/正文，不在 ACK 当下重推 move */
+  suppressMoveDerivation?: boolean;
+  /** blockId -> 已被服务端拒绝的 sortKey 集合，避免无限重试 */
+  suppressedMoveSortKeys?: ReadonlyMap<string, ReadonlySet<string>>;
 }
 
 export interface DeriveSyncEntriesResult {
@@ -848,14 +852,20 @@ export function deriveSyncEntriesWithMetrics(
     if (
       shouldRunSortPlan &&
       !shouldSuppressExistingMoves &&
+      !options.suppressMoveDerivation &&
       nextSortKey !== prevNode.sortKey
     ) {
-      entries.push({
-        clientId: nextNode.clientId,
-        blockId: prevNode.blockId,
-        opType: "move",
-        sortKey: nextSortKey,
-      });
+      const blockId = prevNode.blockId;
+      const rejected =
+        blockId && options.suppressedMoveSortKeys?.get(blockId);
+      if (!rejected?.has(nextSortKey)) {
+        entries.push({
+          clientId: nextNode.clientId,
+          blockId,
+          opType: "move",
+          sortKey: nextSortKey,
+        });
+      }
     }
 
     const shouldCompare = shouldComparePayload({

@@ -1,9 +1,10 @@
-﻿import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   applyCreateAck,
   applyServerAck,
   applyServerDeleteAck,
   deriveSyncEntries,
+  deriveSyncEntriesWithMetrics,
 } from "../engine";
 import type { TiptapDoc } from "@/services/tiptap-converter";
 import {
@@ -711,5 +712,150 @@ describe("deriveSyncEntries order handling", () => {
     ]);
     const entries = deriveSyncEntries(acked, acked);
     expect(entries.some((entry) => entry.opType === "create")).toBe(false);
+  });
+
+  it("does not enqueue empty payload updates when ack rescan uses live editor content", () => {
+    const ackMapping = {
+      clientId: "c_new",
+      blockId: "b_new",
+      sortKey: SK_SERVER_CREATE,
+    };
+    const ackedSnapshot: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: {
+            clientId: "c_new",
+            blockId: "b_new",
+            sortKey: SK_SERVER_CREATE,
+          },
+          content: [{ type: "text", text: "typed while waiting for ack" }],
+        },
+      ],
+    };
+    const staleReactContent: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_new" },
+          content: [],
+        },
+      ],
+    };
+    const liveEditorContent: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_new" },
+          content: [{ type: "text", text: "typed while waiting for ack" }],
+        },
+      ],
+    };
+
+    const staleBaseline = applyServerAck(staleReactContent, [ackMapping]);
+    const staleEntries = deriveSyncEntries(ackedSnapshot, staleBaseline);
+    expect(
+      staleEntries.some(
+        (entry) =>
+          entry.opType === "update" &&
+          entry.clientId === "c_new" &&
+          !JSON.stringify(entry.payload).includes("typed while waiting for ack"),
+      ),
+    ).toBe(true);
+
+    const liveBaseline = applyServerAck(liveEditorContent, [ackMapping]);
+    const liveEntries = deriveSyncEntries(ackedSnapshot, liveBaseline);
+    expect(liveEntries.some((entry) => entry.opType === "update")).toBe(false);
+  });
+
+  it("does not derive move entries when suppressMoveDerivation is set", () => {
+    const previous: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: SK0 },
+          content: [{ type: "text", text: "A" }],
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_b", blockId: "b_b", sortKey: SK1 },
+          content: [{ type: "text", text: "B" }],
+        },
+      ],
+    };
+    const next: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_b", blockId: "b_b", sortKey: SK1 },
+          content: [{ type: "text", text: "B" }],
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: SK0 },
+          content: [{ type: "text", text: "A" }],
+        },
+      ],
+    };
+
+    const entries = deriveSyncEntriesWithMetrics(previous, next, {
+      suppressMoveDerivation: true,
+    }).entries;
+    expect(entries.some((entry) => entry.opType === "move")).toBe(false);
+  });
+
+  it("skips move entries for sortKeys rejected by the server", () => {
+    const previous: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: SK0 },
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_b", blockId: "b_b", sortKey: SK2 },
+        },
+      ],
+    };
+    const next: TiptapDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_b", blockId: "b_b", sortKey: SK0 },
+        },
+        {
+          type: "paragraph",
+          attrs: { clientId: "c_a", blockId: "b_a", sortKey: SK2 },
+        },
+      ],
+    };
+
+    const baseline = deriveSyncEntriesWithMetrics(previous, next).entries.filter(
+      (entry) => entry.opType === "move" && entry.blockId === "b_b",
+    );
+    expect(baseline.length).toBe(1);
+    const rejectedSortKey = baseline[0].sortKey!;
+
+    const suppressed = new Map<string, Set<string>>([
+      ["b_b", new Set([rejectedSortKey])],
+    ]);
+    const entries = deriveSyncEntriesWithMetrics(previous, next, {
+      suppressedMoveSortKeys: suppressed,
+    }).entries;
+    expect(
+      entries.some(
+        (entry) =>
+          entry.opType === "move" &&
+          entry.blockId === "b_b" &&
+          entry.sortKey === rejectedSortKey,
+      ),
+    ).toBe(false);
   });
 });

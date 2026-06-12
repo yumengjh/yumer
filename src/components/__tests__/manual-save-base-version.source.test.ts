@@ -1,4 +1,4 @@
-﻿import fs from "node:fs";
+import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -45,7 +45,7 @@ describe("manual save baseVersion rebase source", () => {
     );
     const resolvedAt = hookSource.indexOf("resolveBatchSuccess(");
     const latestCaptureAt = hookSource.indexOf(
-      'applyBatchAckToDoc(latestContentRef.current)',
+      "getLiveContent?.() ?? latestContentRef.current",
       resolvedAt,
     );
     expect(hookSource.indexOf("applyBatchAckToDoc(", resolvedAt)).toBeGreaterThan(

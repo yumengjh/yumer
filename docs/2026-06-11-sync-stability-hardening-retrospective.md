@@ -1,6 +1,6 @@
 # 2026-06-11 内容同步稳定性加固复盘
 
-> 覆盖三阶段工作：基础设施加固（Phase 1）、digest / 恢复链路补强（Phase 2）、视觉序强一致（Phase 3）  
+> 覆盖四阶段工作：基础设施加固（Phase 1）、digest / 恢复链路补强（Phase 2）、视觉序强一致（Phase 3）、ACK 基线/live 编辑器对齐与 move 死循环防护（Phase 4）  
 > 涉及仓库：`yuediter`（前端）、`yumer-server`（后端，Phase 1～2）
 
 ---
@@ -16,6 +16,7 @@
 | Phase 1 | ACK 基线 + fractional sortKey + 首批容错 | `applyBatchAckToDoc`、fractional indexing、manifest digest 捎带、flush 退避 |
 | Phase 2 | digest 精度 + draftRevision 自愈 + idle 前修复 | `blockId:sortKey` digest、`adoptServerDraftRevision`、idle reconcile 前 sortKey repair |
 | Phase 3 | 视觉序强一致 + move 优先 flush | 换位检测、`planRepositionSortKeyRepairs`、`prioritizeMoveDirtyOrder` |
+| Phase 4 | ACK/live 基线对齐 + move 死循环防护 | `getLiveContent`、`reconcileEditorWithAckBaseline`、move ACK sortKey patch、`suppressMoveDerivation`、`recordMoveAckSuppression` |
 
 ---
 
@@ -29,6 +30,7 @@
 - 同一批 CREATE 被重复发送，服务端块数膨胀、sortKey 震荡；
 - 偶发「保存成功」但本地快照与服务端 manifest 不一致；
 - 网络抖动或响应丢失后，`draftRevision` 不匹配导致同步卡死，只能手动刷新。
+- Phase 3 验收后仍偶发：**正文被空 UPDATE 覆盖**、**多轮拖拽触发 move 无限请求**（请求 `a3`、ACK 恒为 `a2`）。
 
 ### 数据层影响
 
@@ -70,6 +72,43 @@ Phase 1 digest 算法：`sha256(blockId₁|blockId₂|…)`，blockId 按 `(sort
 
 典型场景：batch 已成功、响应丢失，客户端用旧 `draftRevision` 重试 → `DRAFT_REVISION_MISMATCH` + `needsReload`。旧逻辑进入 `conflicted`，`error` 态自动重试不覆盖 conflicted，用户只能刷新。
 
+- `DRAFT_REVISION_MISMATCH` 直接进入 conflicted，队列无法自动排空（Phase 2 已修）。
+- `batch-ack-rescan` 使用滞后的 React `content` 而非实时编辑器 JSON → 误判空 payload UPDATE（Phase 4 已修）。
+- move ACK 的 sortKey 未写回 ProseMirror → 与服务端 canonical key 持续打架（Phase 4 已修）。
+
+### 3.6 batch-ack-rescan 使用 stale React 基线（Phase 4 修复，严重）
+
+Phase 1 已将 `batch-ack-rescan` 改为对 `applyBatchAckToDoc(...)` 后的内容做 diff，但基线仍来自 `latestContentRef`（React `content` 状态）。编辑器变更经 `startTransition` 更新，**显著滞后于** `editor.getJSON()`。
+
+典型竞态：
+
+```text
+用户快速输入 → ProseMirror 已有完整正文
+CREATE ACK 返回 → batch-ack-rescan 用过期 ref（空段落）做 diff
+deriveSyncEntries → 入队空 payload UPDATE → 下一批 flush 清空服务端正文
+```
+
+`onContentPatched` 使用实时 `editor.getJSON()`，与 rescan 基线不一致，加剧 snapshot / 编辑器 / 队列三方漂移。日志特征：本地快照有正文、「当前文档」blockId 已写入但 content 为空。
+
+### 3.7 move ACK 与 derive 打架导致无限 flush（Phase 4 修复，严重）
+
+Phase 3 后多轮拖拽场景暴露：
+
+```text
+客户端 POST move  sortKey=a3
+服务端 ACK       sortKey=a2   （canonical 序未采纳 a3，或 duplicate sortKey 冲突）
+```
+
+循环链路：
+
+1. 拖拽后 duplicate sortKey（如两个块 attrs 均为 `a2`）→ derive / repair 计算 move `a3`；
+2. 服务端 ACK 返回 `a2`；
+3. **`patchEditorBlockIdentityFromDoc` 仅对 create ACK patch sortKey**，move ACK 不写回编辑器；
+4. `batch-ack-rescan` 与 `ack:order-repair` 再次 derive / 入队 move `a3`；
+5. 每 ~200ms 重复同一请求，`draftRevision` 线性上涨，刷新后顺序仍与服务端不一致。
+
+日志特征：连续 batch 请求体相同、`ackedThroughOpSeq` 递增、`manifestDigest` 不变。
+
 ### 3.5 结构性弱点（Phase 1 大部分已处理）
 
 | 弱点 | 后果 | 状态 |
@@ -81,6 +120,8 @@ Phase 1 digest 算法：`sha256(blockId₁|blockId₂|…)`，blockId 按 `(sort
 | 多标签页并发 | 旧 tab 覆盖新草稿 | ⚠️ 依赖 draftRevision + session |
 | 换位后 sortKey 随节点携带 | LIS 误判无需 move，刷新按服务端重排 | ✅ Phase 3 |
 | move 被 update 批次挤占 | 顺序校正延迟多轮 flush | ✅ Phase 3 |
+| ACK rescan 用 stale React 非 live editor | 空 UPDATE、正文丢失 | ✅ Phase 4 |
+| move ACK sortKey 不写回 PM | 与服务端 sortKey 无限重试 | ✅ Phase 4 |
 
 ---
 
@@ -146,6 +187,30 @@ digest  = sha256(payload)
 
 关键文件：`engine.ts`、`snapshot.ts`、`batching.ts`、`useDocumentSync.ts`。
 
+### 4.8 ACK/live 基线对齐（Phase 4，正文专项）
+
+**根因**：`batch-ack-rescan` 与 `onContentPatched` 使用不同「当前正文」来源（React ref vs ProseMirror）。
+
+**修复**（`useDocumentSync.ts` + `EditorPage.tsx`）：
+
+1. **`getLiveContent`**：ACK 时优先 `editor.getJSON()`，fallback `contentRef`；
+2. **`ackBaseline = applyBatchAckToDoc(getLiveContent())`**：rescan 基于实时正文 + ACK 身份补丁；
+3. **`onContentPatched(ackBaseline)`**：传入 live baseline，不再传入仅含 snapshot 正文的 patched doc；
+4. **`reconcileEditorWithAckBaseline`**：合并 ACK attrs，并剔除服务端已确认删除的块；
+5. 消除 ACK 路径上对 snapshot 的重复 `applyServerAck` / `applyServerDeleteAck`。
+
+### 4.9 move 死循环防护（Phase 4，顺序专项）
+
+**修复**：
+
+1. **`patchEditorBlockIdentityFromDoc`**（`editorIdentity.ts`）：已有 `blockId` 的块在 move ACK 时也 patch `sortKey`（此前仅 create ACK）；
+2. **`batch-ack-rescan` / `ack-content-patch`**：`suppressMoveDerivation: true`，ACK 当下不重推 move；
+3. **`ack:order-repair`**：`enqueueMoves: false`，只写回本地 snapshot sortKey；
+4. **`recordMoveAckSuppression`**：请求 sortKey ≠ ACK sortKey 时记录 `(blockId, sortKey)`，后续 derive / repair 不再重试同一目标；
+5. **`deriveSyncEntries` / `repairSnapshotSortKeyOrder`**：支持 `suppressedMoveSortKeys` 过滤。
+
+关键文件：`useDocumentSync.ts`、`editorIdentity.ts`、`engine.ts`、`snapshot.ts`。
+
 ### 4.7 其他 Phase 1 加固
 
 - corruption 主动修复、`repairSnapshotSortKeyOrder`（ACK 后）；
@@ -157,17 +222,22 @@ digest  = sha256(payload)
 
 ## 5. 验证
 
-| 范围 | Phase 1 | Phase 2 | Phase 3 |
-|------|---------|---------|---------|
-| 前端 `src/services/sync` 单测 | 99/99 | 101/101 | 114/114 |
-| 前端 source guards | — | 11/11 | 11/11 |
-| 后端 `blocks-sync-idempotency` | 19/19 | 19/19 | 19/19 |
-| 用户复测（高频编辑 + 刷新） | 正常 | 正常 | 正常 |
-| 用户复测（多次拖拽 + 刷新） | 不稳定 | 部分改善 | **正常** |
+| 范围 | Phase 1 | Phase 2 | Phase 3 | Phase 4 |
+|------|---------|---------|---------|---------|
+| 前端 `src/services/sync` 单测 | 99/99 | 101/101 | 114/114 | 104/104 |
+| 前端 source guards + editor identity | — | 11/11 | 11/11 | 12/12 + 7/7 |
+| 后端 `blocks-sync-idempotency` | 19/19 | 19/19 | 19/19 | 19/19 |
+| 用户复测（高频编辑 + 刷新） | 正常 | 正常 | 正常 | 待复测 |
+| 用户复测（多次拖拽 + 刷新） | 不稳定 | 部分改善 | 正常 | 待复测 |
+| 用户复测（快速输入 + ACK 竞态） | — | — | — | 待复测 |
 
 新增用例（Phase 3）：换位且 sortKey 随节点携带、move 批次优先级、全序旋转多块 move、非单调换位检测忽略 pending 插入。
 
-**用户验收（2026-06-11）**：内容同步与顺序同步均符合预期；一轮测试中多次移动后刷新，顺序仍与编辑结束前一致。
+新增用例（Phase 4）：stale ref 会入队空 UPDATE / live editor 不会；`suppressMoveDerivation`；server 拒绝 sortKey 后不再 derive 同目标 move；move ACK sortKey patch 不重建文档。
+
+**用户验收（Phase 1～3，2026-06-11）**：内容同步与顺序同步均符合预期；一轮测试中多次移动后刷新，顺序仍与编辑结束前一致。
+
+**Phase 4 触发背景**：Phase 3 验收后用户在高频输入与多轮拖拽中分别报告正文丢失、move 无限请求；本阶段为生产阻断级 hotfix。
 
 ---
 
@@ -181,7 +251,9 @@ digest  = sha256(payload)
    - `identity:resurrected`；
    - `flush:draft-revision-resync` trace 频率；
    - reconcile 触发率（Phase 2 上线初期可能略升，属预期）；
-   - `DRAFT_REVISION_MISMATCH` 后是否仍大量进入 conflicted。
+   - `DRAFT_REVISION_MISMATCH` 后是否仍大量进入 conflicted；
+   - `move:ack-mismatch` trace（Phase 4，dev 控制台）；
+   - 同一 `blockId` + `sortKey` 的 move 是否在 ACK 后停止重发。
 
 ---
 
@@ -196,7 +268,8 @@ digest  = sha256(payload)
 | 项 | 状态 | 说明 |
 |----|------|------|
 | 视觉序强一致（单 tab） | ✅ Phase 3 已完成 | 换位检测 + move 优先 + 用户多轮拖拽刷新验收通过 |
-| 同步健康仪表盘 | 待做 | `DRAFT_REVISION_MISMATCH` 率、`digestMatch` 跳过率、`orphaned-create`、`identity:resurrected` |
+| ACK/live 基线 + move 死循环 | ✅ Phase 4 已完成 | 待用户复测正文 + 多轮拖拽 |
+| 同步健康仪表盘 | 待做 | `DRAFT_REVISION_MISMATCH` 率、`digestMatch` 跳过率、`orphaned-create`、`identity:resurrected`、`move:ack-mismatch` |
 | 端到端场景自动化 | 待做 | Playwright：大批量粘贴/删除/拖拽 → idle → 刷新断言 |
 | digest 跨端契约测试 | 待做 | 共享 fixture JSON，FE/BE 各跑单测 |
 
@@ -281,6 +354,14 @@ fractional key、digest v2、退避、自愈对用户透明，但决定大规模
 
 用户感知 autosync 完成往往来自 update ACK；若 move 被推迟，刷新仍按服务端旧序重排。move 必须优先 flush，且 idle 前不能有未排空的 move 队列。
 
+### 8.9 ACK rescan 必须与编辑器「同一时刻」的正文对齐
+
+React `content` 经 `startTransition` 滞后于 ProseMirror；同步 diff 的基线必须用 `getLiveContent()`（或等价实时 JSON），否则会在 CREATE ACK 后误判空 UPDATE，直接清空服务端正文。
+
+### 8.10 服务端 canonical sortKey 与客户端视觉序冲突时，禁止盲重试
+
+move 请求 `a3`、ACK 返回 `a2` 时，说明服务端未采纳该序位（duplicate key、canonical 归一化等）。应：（1）把 ACK sortKey 写回编辑器 attrs；（2）ACK 路径 suppress move derive；（3）记录 rejected sortKey，避免 infinite flush。视觉序与服务端不一致应通过**下一次用户拖拽 + 全新 sortKey 规划**或 reconcile 解决，而非同一目标 sortKey 轮询。
+
 ---
 
 ## 9. 相关文档
@@ -293,12 +374,16 @@ fractional key、digest v2、退避、自愈对用户透明，但决定大规模
 
 ## 10. 最终结论
 
-三阶段工作确立了同步链路的核心 invariant：
+四阶段工作确立了同步链路的核心 invariant：
 
 > **batch ACK 成功后，客户端同步基线（snapshot）必须与服务端已确认的身份与删除事实一致，然后才能对编辑器内容做下一次 diff。**
+
+> **batch ACK 后的 rescan 必须使用与 `onContentPatched` 同一时刻的 live 编辑器 JSON，不得使用滞后的 React content ref。**
 
 > **idle 对账时，digest 必须能检测 sortKey 漂移；draftRevision 落后时应自动追上而非卡死。**
 
 > **换位或视觉非单调时，必须 enqueue move 且优先 flush，直至服务端 sortKey 序与编辑器一致。**
 
-在此 invariant 下，**单 tab** 高频编辑、多次拖拽排序后刷新，内容与顺序均已通过用户验收。剩余主要风险在**多标签页并发**与**冲突态用户体验**；下一步按 §7 推进可观测性仪表盘与 E2E 自动化，再做多 tab 与 `expectedBlockVersion` 协议精度。
+> **move ACK 若返回与请求不同的 sortKey，必须写回 attrs、停止同目标重试，不得在 ACK 路径立即 re-derive move。**
+
+在此 invariant 下，**单 tab** 高频编辑、多次拖拽排序后刷新，内容与顺序在 Phase 3 已通过用户验收；Phase 4 修复 Phase 3 后暴露的正文丢失与 move 无限请求，**待用户复测确认**。剩余主要风险在**多标签页并发**、**冲突态用户体验**与**服务端 move 拒单根因**（为何 ACK `a2` 而非 `a3`）；下一步按 §7 推进可观测性仪表盘与 E2E 自动化，再做多 tab 与 `expectedBlockVersion` 协议精度。

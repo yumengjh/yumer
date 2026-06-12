@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import {
   acquireSyncSession,
   renewSyncSession,
@@ -34,10 +34,10 @@ import {
   resolveBatchSuccess,
 } from "@/services/sync/reducer";
 import { computeRootManifestDigest } from "@/services/sync/manifest-digest";
-import { advanceSyncSnapshotIndexed, repairSnapshotSortKeyOrder } from "@/services/sync/snapshot";
+import { advanceSyncSnapshotIndexed, repairSnapshotSortKeyOrder, type SyncSnapshotCaptureOptions } from "@/services/sync/snapshot";
 import { createSortKeysBetween } from "@/services/sync/order";
 import { SyncTraceLog, buildManifestSummary, type SyncTraceEvent } from "@/services/sync/debug-log";
-import type { SyncDiffHint, SyncEntry, SyncReducerState } from "@/services/sync/types";
+import type { SyncBatchResult, SyncDiffHint, SyncEntry, SyncReducerState } from "@/services/sync/types";
 
 type SyncSource = "autosync" | "manual-save";
 type SyncSnapshotCaptureSource =
@@ -53,6 +53,8 @@ type UseDocumentSyncArgs = {
   draftRevision: number;
   syncSession?: SyncSessionMeta | null;
   content: TiptapDoc | null;
+  /** 优先于 content / latestContentRef，用于 batch ACK 后 rescan，避免 React 延迟导致正文被空 UPDATE 覆盖 */
+  getLiveContent?: () => TiptapDoc | null;
   onContentPatched?: (doc: TiptapDoc) => TiptapDoc | void;
   onRemoteContentApplied?: (doc: TiptapDoc) => void;
   onRemoteReloadRequired?: (reason: string) => void | Promise<void>;
@@ -75,6 +77,48 @@ function createReconcileId(): string {
 function logSyncEvent(event: string, details: Record<string, unknown>) {
   if (process.env.NODE_ENV === "production") return;
   console.debug(`[sync] ${event}`, details);
+}
+
+function recordMoveAckSuppression(
+  results: SyncBatchResult[],
+  operations: SyncEntry[],
+  suppressedRef: MutableRefObject<Map<string, Set<string>>>,
+) {
+  for (let index = 0; index < results.length; index += 1) {
+    const result = results[index];
+    const operation = operations[index];
+    if (
+      !operation ||
+      result.operation !== "move" ||
+      !result.success ||
+      !operation.blockId ||
+      !operation.sortKey ||
+      !result.sortKey
+    ) {
+      continue;
+    }
+
+    const blockId = operation.blockId;
+    if (operation.sortKey !== result.sortKey) {
+      let rejected = suppressedRef.current.get(blockId);
+      if (!rejected) {
+        rejected = new Set();
+        suppressedRef.current.set(blockId, rejected);
+      }
+      rejected.add(operation.sortKey);
+      logSyncEvent("move:ack-mismatch", {
+        blockId,
+        requestedSortKey: operation.sortKey,
+        ackedSortKey: result.sortKey,
+      });
+      continue;
+    }
+
+    const rejected = suppressedRef.current.get(blockId);
+    if (rejected?.delete(operation.sortKey) && rejected.size === 0) {
+      suppressedRef.current.delete(blockId);
+    }
+  }
 }
 
 function logDiffEvent(details: {
@@ -331,6 +375,7 @@ export function useDocumentSync({
   draftRevision,
   syncSession,
   content,
+  getLiveContent,
   onContentPatched,
   onRemoteContentApplied,
   onRemoteReloadRequired,
@@ -349,6 +394,7 @@ export function useDocumentSync({
   const autosyncPausedRef = useRef(false);
   const batchFailureCountRef = useRef(0);
   const errorRetryAttemptRef = useRef(0);
+  const suppressedMoveSortKeysRef = useRef<Map<string, Set<string>>>(new Map());
   const remoteReloadRunningRef = useRef(false);
   const onRemoteContentAppliedRef = useRef(onRemoteContentApplied);
   const onRemoteReloadRequiredRef = useRef(onRemoteReloadRequired);
@@ -517,6 +563,7 @@ export function useDocumentSync({
     (
       nextContent: TiptapDoc | null,
       source: SyncSnapshotCaptureSource = "editor-effect",
+      captureOptions?: SyncSnapshotCaptureOptions,
     ): SyncReducerState | null => {
       const current = stateRef.current;
       if (!current || !nextContent) return current;
@@ -529,6 +576,10 @@ export function useDocumentSync({
         snapshotIndexRef.current,
         nextContent,
         diffHint,
+        {
+          suppressedMoveSortKeys: suppressedMoveSortKeysRef.current,
+          ...captureOptions,
+        },
       );
       snapshotRef.current = advanced.snapshot;
       snapshotIndexRef.current = advanced.index;
@@ -584,6 +635,7 @@ export function useDocumentSync({
       snapshotIndexRef.current = null;
       lastReconciledManifestKeyRef.current = null;
       lastServerManifestDigestRef.current = null;
+      suppressedMoveSortKeysRef.current.clear();
       return;
     }
 
@@ -604,6 +656,7 @@ export function useDocumentSync({
       : null;
     lastReconciledManifestKeyRef.current = null;
     lastServerManifestDigestRef.current = null;
+    suppressedMoveSortKeysRef.current.clear();
   }, [baseVersion, docId, draftRevision, replaceSyncState, rootBlockId, syncSession]);
 
   useEffect(() => {
@@ -1188,8 +1241,9 @@ export function useDocumentSync({
               return nextDoc;
             };
 
-            if (snapshotRef.current) {
-              const patchedSnapshot = applyBatchAckToDoc(snapshotRef.current);
+            const snapshotBeforeAck = snapshotRef.current;
+            if (snapshotBeforeAck) {
+              const patchedSnapshot = applyBatchAckToDoc(snapshotBeforeAck);
               if (patchedSnapshot && patchedSnapshot !== snapshotRef.current) {
                 snapshotRef.current = patchedSnapshot;
                 snapshotIndexRef.current = createSyncSnapshotIndex(patchedSnapshot, {
@@ -1198,10 +1252,19 @@ export function useDocumentSync({
               }
             }
 
-            captureContentSnapshot(
-              applyBatchAckToDoc(latestContentRef.current),
-              "batch-ack-rescan",
+            recordMoveAckSuppression(
+              response.results,
+              operations,
+              suppressedMoveSortKeysRef,
             );
+
+            const ackBaseline = applyBatchAckToDoc(
+              getLiveContent?.() ?? latestContentRef.current,
+            );
+            captureContentSnapshot(ackBaseline, "batch-ack-rescan", {
+              suppressMoveDerivation: true,
+              enqueueSortKeyRepairs: false,
+            });
 
             const currentSnapshot = snapshotRef.current;
             const orphanedCreateDeletes = collectOrphanedCreateDeletes(
@@ -1235,26 +1298,21 @@ export function useDocumentSync({
               (serverAckMappings.length > 0 || deleteAckMappings.length > 0)
             ) {
               let patched = currentSnapshot;
-              if (serverAckMappings.length > 0) {
-                patched = applyServerAck(patched, serverAckMappings);
-              }
-              if (deleteAckMappings.length > 0) {
-                patched = applyServerDeleteAck(patched, deleteAckMappings);
-              }
               addSyncTrace("ack:patch", rebased.docId, rebased.sessionId, rebased.sessionEpoch, () => ({
                 clientBatchId,
                 mappings: serverAckMappings,
-                beforeManifest: buildManifestSummary(currentSnapshot),
+                beforeManifest: buildManifestSummary(snapshotBeforeAck),
                 afterManifest: buildManifestSummary(patched),
               }));
 
-              // ACK 写回的 server sortKey 可能与当前视觉顺序不一致
-              // （flush 期间用户移动过块）：立即检测并入队校正 move
+              // ACK 后只做本地 sortKey 写回，不在 ACK 当下重推 move（避免与服务端 canonical key 打架）
               const ackState = stateRef.current;
               if (ackState) {
-                const repaired = repairSnapshotSortKeyOrder(ackState, patched);
+                const repaired = repairSnapshotSortKeyOrder(ackState, patched, undefined, {
+                  enqueueMoves: false,
+                  suppressedMoveSortKeys: suppressedMoveSortKeysRef.current,
+                });
                 if (repaired.repairedCount > 0) {
-                  replaceSyncState(repaired.state);
                   patched = repaired.snapshot;
                   addSyncTrace("ack:order-repair", rebased.docId, rebased.sessionId, rebased.sessionEpoch, () => ({
                     clientBatchId,
@@ -1268,11 +1326,14 @@ export function useDocumentSync({
               snapshotIndexRef.current = createSyncSnapshotIndex(patched, {
                 computePayloadFingerprints: true,
               });
-              if (onContentPatched && patched !== currentSnapshot) {
+              if (onContentPatched && ackBaseline) {
                 try {
-                  const applied = onContentPatched(patched);
+                  const applied = onContentPatched(ackBaseline);
                   if (applied && applied.type === "doc") {
-                    captureContentSnapshot(applied, "ack-content-patch");
+                    captureContentSnapshot(applied, "ack-content-patch", {
+                      suppressMoveDerivation: true,
+                      enqueueSortKeyRepairs: false,
+                    });
                   }
                 } catch (error) {
                   logSyncEvent("ack:content-patch-failed", {
@@ -1335,7 +1396,7 @@ export function useDocumentSync({
         flushRunningRef.current = false;
       }
     },
-    [captureContentSnapshot, onContentPatched, reconcileIdleManifest, replaceSyncState, runDraftCheckpoint, updateSyncState],
+    [captureContentSnapshot, getLiveContent, onContentPatched, reconcileIdleManifest, replaceSyncState, runDraftCheckpoint, updateSyncState],
   );
 
   // error 态自动重试：指数退避（2s 起，封顶 30s），网络恢复后队列自动排空，

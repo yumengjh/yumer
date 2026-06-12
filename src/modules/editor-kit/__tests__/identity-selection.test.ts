@@ -168,6 +168,60 @@ describe("markdown editor identity patching", () => {
     editor.destroy();
   });
 
+  it("patches move ack sortKey onto existing blocks without rebuilding the document", () => {
+    const editor = new Editor({
+      extensions: [
+        StarterKit.configure({
+          heading: { levels: [1, 2, 3, 4, 5, 6] },
+        }),
+        BlockIdAttribute,
+      ],
+      content: {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            attrs: {
+              blockId: "server-move",
+              "data-block-id": "server-move",
+              clientId: "client-move",
+              sortKey: "a3",
+            },
+            content: [{ type: "text", text: "still typing" }],
+          },
+        ],
+      },
+    });
+
+    editor.commands.setTextSelection(4);
+    const selectionBeforePatch = editor.state.selection.from;
+
+    const patched = patchEditorBlockIdentityFromDoc(editor, {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          attrs: {
+            blockId: "server-move",
+            "data-block-id": "server-move",
+            clientId: "client-move",
+            sortKey: "a2",
+          },
+          content: [{ type: "text", text: "still typing" }],
+        },
+      ],
+    } as TiptapDoc);
+
+    expect(patched).toBe(true);
+    expect(editor.state.selection.from).toBe(selectionBeforePatch);
+    expect((editor.getJSON() as TiptapDoc).content[0]?.attrs?.sortKey).toBe("a2");
+    expect((editor.getJSON() as TiptapDoc).content[0]?.content?.[0]?.text).toBe(
+      "still typing",
+    );
+
+    editor.destroy();
+  });
+
   it("does not treat external content with matching clientId as an identity-only patch", () => {
     const editor = new Editor({
       extensions: [

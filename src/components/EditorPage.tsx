@@ -347,6 +347,30 @@ function mergeAckAttrsIntoCurrentEditorDoc(current: TiptapDoc, ackDoc: TiptapDoc
   return changed ? { ...current, content } : current;
 }
 
+/** 合并 ACK 身份，并剔除服务端已确认删除、但编辑器仍残留的块。 */
+function reconcileEditorWithAckBaseline(
+  current: TiptapDoc,
+  ackBaseline: TiptapDoc,
+): TiptapDoc {
+  const ackClientIds = new Set<string>();
+  for (const node of ackBaseline.content ?? []) {
+    const identity = readIdentityFromAttrs(node.attrs);
+    if (identity.clientId) ackClientIds.add(identity.clientId);
+  }
+
+  let reconciled = mergeAckAttrsIntoCurrentEditorDoc(current, ackBaseline);
+  const content = (reconciled.content ?? []).filter((node) => {
+    const identity = readIdentityFromAttrs(node.attrs);
+    return !identity.clientId || ackClientIds.has(identity.clientId);
+  });
+
+  if (content.length !== (reconciled.content?.length ?? 0)) {
+    reconciled = { ...reconciled, content };
+  }
+
+  return reconciled;
+}
+
 type OutputTab = "html" | "markdown" | "json";
 
 const BLANK_CONTENT: TiptapDoc = {
@@ -471,16 +495,27 @@ function EditorContent() {
     draftRevision: currentDraftMeta?.draftRevision ?? 0,
     syncSession: syncEngineEnabled ? currentSyncSession : null,
     content: syncEngineEnabled ? syncContent : null,
-    onContentPatched: (doc) => {
+    getLiveContent: () => {
+      const fromEditor = editorRef.current?.getJSON() as TiptapDoc | undefined;
+      if (fromEditor?.type === "doc") return fromEditor;
+      const fromRef = contentRef.current;
+      if (fromRef && typeof fromRef === "object" && (fromRef as TiptapDoc).type === "doc") {
+        return fromRef as TiptapDoc;
+      }
+      return null;
+    },
+    onContentPatched: (ackBaseline) => {
       const latestEditorContent = editorRef.current?.getJSON() as TiptapDoc | undefined;
       if (latestEditorContent?.type === "doc") {
-        // create ack 只合并 attrs，不回灌旧 snapshot 内容，避免覆盖用户正在输入的文本/顺序。
-        // 同时必须把 blockId/sortKey 写回 editor 与 React content，否则下一次刷新前的首行更新会丢失身份。
-        const merged = mergeAckAttrsIntoCurrentEditorDoc(latestEditorContent, doc);
-        if (merged !== latestEditorContent) {
-          editorRef.current?.patchBlockIdentityFromDoc(merged);
-          contentRef.current = merged;
-          setContent(merged);
+        // ackBaseline 来自实时编辑器 + ACK 补丁；只合并身份/结构，不回灌旧 snapshot 正文。
+        const reconciled = reconcileEditorWithAckBaseline(
+          latestEditorContent,
+          ackBaseline,
+        );
+        if (reconciled !== latestEditorContent) {
+          editorRef.current?.patchBlockIdentityFromDoc(reconciled);
+          contentRef.current = reconciled;
+          setContent(reconciled);
           if (currentDoc && SyncTraceLog.isEnabled()) {
             SyncTraceLog.add(
               "editor:ack-merged",
@@ -488,14 +523,14 @@ function EditorContent() {
               currentSyncSession?.sessionId ?? null,
               currentSyncSession?.sessionEpoch ?? null,
               {
-                manifest: buildManifestSummary(merged),
+                manifest: buildManifestSummary(reconciled),
               },
             );
           }
         }
-        return merged;
+        return reconciled;
       }
-      return doc;
+      return ackBaseline;
     },
     onRemoteContentApplied: (doc) => {
       ignoreNextLocalSnapshotChange();
