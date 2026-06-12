@@ -137,6 +137,29 @@ describe("sync debug log", () => {
     expect(exported.incidents).toEqual([]);
   });
 
+  it("keeps suppressed reload diagnostics in the compact AI bundle", () => {
+    installBrowserStorage();
+    SyncDebugLog.setEnabled(true);
+    SyncTraceLog.add("realtime:reload-suppressed", "doc_1", "session_1", 1, {
+      eventId: "reload_required:doc_1:1",
+      reason: "batch_partial_failure",
+      dirtyOrderLength: 2,
+      syncState: "error",
+      inflightBatchId: "batch_1",
+    });
+
+    const compact = JSON.parse(SyncTraceLog.exportAiBundle({ docId: "doc_1" }));
+
+    expect(compact.traceLog[0].event).toBe("realtime:reload-suppressed");
+    expect(compact.traceLog[0].payload).toMatchObject({
+      eventId: "reload_required:doc_1:1",
+      reason: "batch_partial_failure",
+      dirtyOrderLength: 2,
+      syncState: "error",
+      inflightBatchId: "batch_1",
+    });
+  });
+
   it("exports a compact AI bundle without large raw payload content", () => {
     installBrowserStorage();
     SyncDebugLog.setEnabled(true);

@@ -8,6 +8,7 @@ import {
   applyRemoteBatchSuccess,
   markRemoteConflict,
   adoptServerDraftRevision,
+  shouldSuppressBatchPartialFailureReload,
 } from "../reducer";
 import {
   createCanonicalSortKey,
@@ -703,6 +704,26 @@ describe("sync reducer", () => {
     expect(state.syncState).toBe("conflicted");
     expect(state.lastError).toBe("remote conflict");
     expect(state.dirtyOrder).toEqual(["client_pending_remote"]);
+  });
+
+  it("suppresses batch_partial_failure reload while this tab still has pending sync work", () => {
+    let state = createInitialSyncState("doc_1", "root_1", 3, 7);
+    state = enqueueChange(state, {
+      clientId: "client_pending_partial",
+      blockId: "block_pending_partial",
+      opType: "delete",
+    });
+
+    expect(shouldSuppressBatchPartialFailureReload(state, "batch_partial_failure")).toBe(
+      true,
+    );
+    expect(shouldSuppressBatchPartialFailureReload(state, "server_compaction")).toBe(false);
+  });
+
+  it("allows batch_partial_failure reload for a clean idle tab", () => {
+    const state = createInitialSyncState("doc_1", "root_1", 3, 7);
+
+    expect(shouldSuppressBatchPartialFailureReload(state, "batch_partial_failure")).toBe(false);
   });
 
   it("treats empty ack results for inflight entries as a protocol error", () => {

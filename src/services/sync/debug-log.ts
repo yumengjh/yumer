@@ -37,6 +37,7 @@ export type SyncTraceEvent =
   | "realtime:connected"
   | "realtime:event"
   | "realtime:error"
+  | "realtime:reload-suppressed"
   | "remote:applied"
   | "remote:conflict"
   | "identity:resurrected"
@@ -501,9 +502,12 @@ function summarizeTracePayload(payload: Record<string, unknown>): Record<string,
     "observedEvent",
     "observedTraceId",
     "eventId",
+    "reason",
     "previousDraftRevision",
     "remoteDraftRevision",
     "remoteOperationCount",
+    "syncState",
+    "inflightBatchId",
   ];
   scalarKeys.forEach((key) => {
     if (payload[key] !== undefined) base[key] = payload[key];

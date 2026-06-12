@@ -35,6 +35,7 @@ import {
   adoptServerDraftRevision,
   resolveBatchFailure,
   resolveBatchSuccess,
+  shouldSuppressBatchPartialFailureReload,
 } from "@/services/sync/reducer";
 import { computeRootManifestDigest } from "@/services/sync/manifest-digest";
 import { advanceSyncSnapshotIndexed, repairSnapshotSortKeyOrder, type SyncSnapshotCaptureOptions } from "@/services/sync/snapshot";
@@ -597,6 +598,23 @@ export function useDocumentSync({
         type: event.type,
       }));
       if (event.type === "document_reload_required") {
+        const current = stateRef.current;
+        if (shouldSuppressBatchPartialFailureReload(current, event.reason)) {
+          addSyncTrace(
+            "realtime:reload-suppressed",
+            event.docId,
+            current?.sessionId ?? null,
+            current?.sessionEpoch ?? null,
+            () => ({
+              eventId: event.eventId,
+              reason: event.reason,
+              dirtyOrderLength: current?.dirtyOrder.length ?? 0,
+              syncState: current?.syncState ?? null,
+              inflightBatchId: current?.inflightBatchId ?? null,
+            }),
+          );
+          return;
+        }
         handleRemoteConflict(event.reason);
         return;
       }

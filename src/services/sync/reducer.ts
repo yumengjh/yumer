@@ -476,6 +476,18 @@ export function markRemoteConflict(
   };
 }
 
+export function shouldSuppressBatchPartialFailureReload(
+  state: SyncReducerState | null,
+  reason: string | null | undefined,
+): boolean {
+  if (reason !== "batch_partial_failure" || !state) return false;
+  return (
+    state.dirtyOrder.length > 0 ||
+    state.syncState === "error" ||
+    state.inflightBatchId !== null
+  );
+}
+
 export function markPendingCommit(state: SyncReducerState): SyncReducerState {
   return {
     ...state,
