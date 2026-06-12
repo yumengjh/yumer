@@ -1,10 +1,18 @@
 import DiffMatchPatch from "diff-match-patch";
 import { normalizeCodeBlockAttrs } from "@/modules/editor-kit/code/codeBlockOptions";
+import {
+  COMPACTION_CHAIN_LIMIT,
+  DELTA_FORMAT,
+  DELTA_MAX_RATIO,
+  DELTA_MIN_FULL_SIZE,
+} from "./delta-policy";
 
-export const DELTA_FORMAT = "dmp-v1" as const;
-export const DELTA_MIN_FULL_SIZE = 8 * 1024;
-export const DELTA_MAX_RATIO = 0.5;
-export const COMPACTION_CHAIN_LIMIT = 12;
+export {
+  COMPACTION_CHAIN_LIMIT,
+  DELTA_FORMAT,
+  DELTA_MAX_RATIO,
+  DELTA_MIN_FULL_SIZE,
+} from "./delta-policy";
 
 export type DeltaFormat = typeof DELTA_FORMAT;
 

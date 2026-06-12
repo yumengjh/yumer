@@ -10,6 +10,10 @@ export {
   DELTA_MIN_FULL_SIZE,
   DELTA_MAX_RATIO,
 } from "./delta";
+export {
+  COMPACTION_CHAIN_LIMIT,
+  DELTA_REFERENCE_LARGE_BLOCK_BYTES,
+} from "./delta-policy";
 
 /** update 请求瘦身：剥离 attrs 中的同步/排序元数据，由顶层字段承载。 */
 export function stripPayloadForSync(payload: Record<string, unknown>): Record<string, unknown> {

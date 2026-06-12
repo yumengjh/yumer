@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { getSyncBaseStore, seedSyncBaseStoreFromBlocks, toSyncPayload } from "../base-store";
 import { stripPayloadForSync } from "../delta-encoding";
-import { DELTA_MIN_FULL_SIZE } from "../delta";
+import {
+  DELTA_MIN_FULL_SIZE,
+  DELTA_REFERENCE_LARGE_BLOCK_BYTES,
+} from "../delta-policy";
 import { buildSyncBatchOperations } from "../api";
 
 describe("SyncBaseStore", () => {
@@ -63,7 +66,7 @@ describe("SyncBaseStore", () => {
     const store = getSyncBaseStore(docId);
     store.clear();
 
-    const largeText = "x".repeat(DELTA_MIN_FULL_SIZE);
+    const largeText = "x".repeat(DELTA_REFERENCE_LARGE_BLOCK_BYTES);
     await seedSyncBaseStoreFromBlocks(docId, [
       {
         blockId,
@@ -106,13 +109,15 @@ describe("SyncBaseStore", () => {
 });
 
 describe("delta encoding threshold", () => {
-  it("uses the shared 8KB threshold constant", () => {
-    expect(DELTA_MIN_FULL_SIZE).toBe(8 * 1024);
+  it("uses zero min size so delta is gated only by patch ratio", () => {
+    expect(DELTA_MIN_FULL_SIZE).toBe(0);
     const stripped = stripPayloadForSync({
       type: "codeBlock",
       attrs: { blockId: "b1" },
-      content: [{ type: "text", text: "x".repeat(DELTA_MIN_FULL_SIZE) }],
+      content: [{ type: "text", text: "x".repeat(DELTA_REFERENCE_LARGE_BLOCK_BYTES) }],
     });
-    expect(JSON.stringify(stripped).length).toBeGreaterThanOrEqual(DELTA_MIN_FULL_SIZE);
+    expect(JSON.stringify(stripped).length).toBeGreaterThanOrEqual(
+      DELTA_REFERENCE_LARGE_BLOCK_BYTES,
+    );
   });
 });

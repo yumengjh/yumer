@@ -8,7 +8,7 @@ import {
 import { createCanonicalSortKey } from "../order";
 import { compareSortKeys } from "../fractional-key";
 import { getSyncBaseStore } from "../base-store";
-import { DELTA_MIN_FULL_SIZE } from "../delta";
+import { DELTA_REFERENCE_LARGE_BLOCK_BYTES } from "../delta-policy";
 import type { SyncEntry } from "../types";
 
 const { apiPost } = vi.hoisted(() => ({
@@ -106,7 +106,7 @@ describe("sync api payload builder", () => {
     const blockId = "block_large_code";
     const baseStore = getSyncBaseStore("doc_delta");
     baseStore.clear();
-    const largeText = "x".repeat(DELTA_MIN_FULL_SIZE);
+    const largeText = "x".repeat(DELTA_REFERENCE_LARGE_BLOCK_BYTES);
     await baseStore.seedFromPayload({
       blockId,
       ver: 4,
