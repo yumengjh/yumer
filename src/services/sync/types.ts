@@ -113,4 +113,5 @@ export interface SyncBatchResult {
   diagnosticCode?: string;
   matchBy?: string;
   tombstoned?: boolean;
+  version?: number;
 }

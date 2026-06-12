@@ -7,6 +7,7 @@ import {
   createSortKeysBetween,
   isValidSortKey,
 } from "./order";
+import { canonicalStringify } from "./delta";
 import type {
   SortKeyCorruptionReport,
   SyncDiffHint,
@@ -52,40 +53,8 @@ function getSortKey(node: TiptapNode, fallbackIndex: number): string {
     : fallbackSortKey(fallbackIndex);
 }
 
-function normalizePayload(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map((item) => normalizePayload(item));
-  }
-  if (!value || typeof value !== "object") return value;
-
-  const raw = value as Record<string, unknown>;
-  const out: Record<string, unknown> = {};
-
-  for (const key of Object.keys(raw).sort((a, b) => a.localeCompare(b))) {
-    const next = normalizePayload(raw[key]);
-    if (next === undefined) continue;
-    out[key] = next;
-  }
-
-  if (out.attrs && typeof out.attrs === "object" && !Array.isArray(out.attrs)) {
-    const attrs = { ...(out.attrs as Record<string, unknown>) };
-    delete attrs.blockId;
-    delete attrs.clientId;
-    delete attrs.sortKey;
-    delete attrs.syncCreateId;
-    delete attrs.clientBatchId;
-    delete attrs["data-block-id"];
-    delete attrs["data-client-id"];
-    delete attrs["data-sort-key"];
-    delete attrs["data-sync-create-id"];
-    out.attrs = attrs;
-  }
-
-  return out;
-}
-
 function payloadFingerprint(node: TiptapNode): string {
-  return JSON.stringify(normalizePayload(node));
+  return canonicalStringify(node);
 }
 
 export type IndexedSyncNode = {

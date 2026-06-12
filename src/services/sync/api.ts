@@ -4,6 +4,12 @@ import { SyncDebugLog, SyncIdentityWatch, type SyncIdentity } from "./debug-log"
 import type { SyncEntry, SyncBatchResult } from "./types";
 import type { DraftCheckpointMapping, DraftCheckpointRequest } from "./checkpoint";
 import { getRealtimeOriginIdentity } from "@/services/realtime/identity";
+import { getSyncBaseStore, type SyncBaseStore } from "./base-store";
+import {
+  buildBlockDelta,
+  shouldSendDelta,
+  stripPayloadForSync,
+} from "./delta-encoding";
 
 export interface SyncBatchResponse {
   serverHead: number;
@@ -104,7 +110,14 @@ type BatchUpdateBody = {
   type: "update";
   blockId: string;
   data: {
-    payload: Record<string, unknown>;
+    payload?: Record<string, unknown>;
+    delta?: {
+      format: "dmp-v1";
+      baseVer: number;
+      baseHash: string;
+      patch: string;
+      resultHash: string;
+    };
     sortKey?: string;
     parentId?: string;
   };
@@ -140,46 +153,18 @@ function buildCreatePayload(entry: SyncEntry, sortKey?: string): Record<string, 
 
 /** update 请求瘦身：剥离 attrs 中的同步/排序元数据，由顶层字段承载。 */
 function stripUpdatePayload(payload: Record<string, unknown>): Record<string, unknown> {
-  const attrs = (payload.attrs as Record<string, unknown> | undefined) ?? {};
-  const nextAttrs = { ...attrs };
-  for (const key of [
-    "blockId",
-    "clientId",
-    "sortKey",
-    "syncCreateId",
-    "clientBatchId",
-    "data-block-id",
-    "data-client-id",
-    "data-sort-key",
-    "data-sync-create-id",
-  ]) {
-    delete nextAttrs[key];
-  }
-  return { ...payload, attrs: nextAttrs };
+  return stripPayloadForSync(payload);
 }
 
-function reserveCreateSortKey(requestedSortKey: string | undefined, reservedSortKeys: Set<string>): string | undefined {
-  if (!requestedSortKey) return requestedSortKey;
-  if (!reservedSortKeys.has(requestedSortKey)) {
-    reservedSortKeys.add(requestedSortKey);
-    return requestedSortKey;
-  }
-
-  let candidate = requestedSortKey;
-  while (reservedSortKeys.has(candidate)) {
-    candidate = createSortKeyBetween(candidate, null);
-  }
-  reservedSortKeys.add(candidate);
-  return candidate;
-}
-
-export function buildSyncBatchOperations(input: {
+export async function buildSyncBatchOperations(input: {
   docId: string;
   rootBlockId: string;
   operations: SyncEntry[];
-}): BatchOperationBody[] {
+  baseStore?: SyncBaseStore;
+}): Promise<BatchOperationBody[]> {
   const bodyOperations: BatchOperationBody[] = [];
   const reservedCreateSortKeys = new Set<string>();
+  const baseStore = input.baseStore ?? getSyncBaseStore(input.docId);
 
   for (const entry of input.operations) {
     if (entry.opType === "create") {
@@ -203,19 +188,54 @@ export function buildSyncBatchOperations(input: {
 
     if (entry.opType === "update") {
       if (!entry.blockId || !entry.payload) continue;
-      bodyOperations.push({
-        type: "update",
-        blockId: entry.blockId,
-        data: {
-          payload: stripUpdatePayload(entry.payload),
-          ...(entry.sortKey
-            ? {
-                sortKey: entry.sortKey,
-                parentId: entry.parentId ?? input.rootBlockId,
-              }
-            : {}),
-        },
-      });
+      const strippedPayload = stripUpdatePayload(entry.payload);
+      const structuralFields = entry.sortKey
+        ? {
+            sortKey: entry.sortKey,
+            parentId: entry.parentId ?? input.rootBlockId,
+          }
+        : {};
+
+      const base = baseStore.get(entry.blockId);
+      const canTryDelta =
+        base &&
+        !baseStore.shouldForceFull(entry.blockId) &&
+        shouldSendDelta({
+          basePayload: JSON.parse(base.canonical) as Record<string, unknown>,
+          nextPayload: strippedPayload,
+        });
+
+      if (canTryDelta) {
+        const blockType =
+          typeof strippedPayload.type === "string"
+            ? strippedPayload.type
+            : typeof (JSON.parse(base.canonical) as Record<string, unknown>).type === "string"
+              ? ((JSON.parse(base.canonical) as Record<string, unknown>).type as string)
+              : undefined;
+        const delta = await buildBlockDelta({
+          basePayload: JSON.parse(base.canonical) as Record<string, unknown>,
+          nextPayload: strippedPayload,
+          baseVer: base.ver,
+          blockType,
+        });
+        bodyOperations.push({
+          type: "update",
+          blockId: entry.blockId,
+          data: {
+            delta,
+            ...structuralFields,
+          },
+        });
+      } else {
+        bodyOperations.push({
+          type: "update",
+          blockId: entry.blockId,
+          data: {
+            payload: strippedPayload,
+            ...structuralFields,
+          },
+        });
+      }
       continue;
     }
 
@@ -239,6 +259,21 @@ export function buildSyncBatchOperations(input: {
   }
 
   return bodyOperations;
+}
+
+function reserveCreateSortKey(requestedSortKey: string | undefined, reservedSortKeys: Set<string>): string | undefined {
+  if (!requestedSortKey) return requestedSortKey;
+  if (!reservedSortKeys.has(requestedSortKey)) {
+    reservedSortKeys.add(requestedSortKey);
+    return requestedSortKey;
+  }
+
+  let candidate = requestedSortKey;
+  while (reservedSortKeys.has(candidate)) {
+    candidate = createSortKeyBetween(candidate, null);
+  }
+  reservedSortKeys.add(candidate);
+  return candidate;
 }
 
 function getDeleteIdentitiesFromBodyOperations(operations: BatchOperationBody[]): SyncIdentity[] {
@@ -328,8 +363,9 @@ export async function postSyncBatch(input: {
   sessionId?: string;
   sessionEpoch?: number;
   operations: SyncEntry[];
+  baseStore?: SyncBaseStore;
 }): Promise<SyncBatchResponse> {
-  const bodyOperations = buildSyncBatchOperations(input);
+  const bodyOperations = await buildSyncBatchOperations(input);
   const ackedThroughOpSeq = input.operations.reduce((max, entry) => {
     return typeof entry.revision === "number" ? Math.max(max, entry.revision) : max;
   }, 0);

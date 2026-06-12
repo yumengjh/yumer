@@ -10,7 +10,9 @@ import { getRealtimeOriginIdentity } from "@/services/realtime/identity";
 import { subscribeDocumentEvents } from "@/services/realtime/document-events";
 import type { DocumentRemoteOpsEvent, RealtimeSseEvent } from "@/services/realtime/types";
 import { selectSyncBatchOperations } from "@/services/sync/batching";
-import { summarizeSyncBatchFailures } from "@/services/sync/batch-failure";
+import { summarizeSyncBatchFailures, isDeltaBaseMismatchResult } from "@/services/sync/batch-failure";
+import { getSyncBaseStore } from "@/services/sync/base-store";
+import { stripPayloadForSync, canonicalStringify } from "@/services/sync/delta-encoding";
 import { applyCheckpointAck, buildDraftCheckpoint } from "@/services/sync/checkpoint";
 import {
   alignDocToSortKeyOrder,
@@ -80,14 +82,56 @@ function logSyncEvent(event: string, details: Record<string, unknown>) {
   console.debug(`[sync] ${event}`, details);
 }
 
+function findBatchOperationForResult(
+  result: SyncBatchResult,
+  operations: SyncEntry[],
+): SyncEntry | undefined {
+  if (result.blockId) {
+    const byBlockId = operations.find(
+      (entry) =>
+        entry.blockId === result.blockId &&
+        (entry.opType === "update" ||
+          entry.opType === "move" ||
+          entry.opType === "delete"),
+    );
+    if (byBlockId) return byBlockId;
+  }
+  if (result.clientId) {
+    return operations.find((entry) => entry.clientId === result.clientId);
+  }
+  return undefined;
+}
+
+function buildAckSyncedPayloadByBlockId(
+  results: SyncBatchResult[],
+  operations: SyncEntry[],
+): Map<string, string> {
+  const synced = new Map<string, string>();
+  for (const result of results) {
+    const operation = findBatchOperationForResult(result, operations);
+    if (
+      !result.success ||
+      result.operation !== "update" ||
+      !result.blockId ||
+      !operation?.payload
+    ) {
+      continue;
+    }
+    synced.set(
+      result.blockId,
+      canonicalStringify(stripPayloadForSync(operation.payload)),
+    );
+  }
+  return synced;
+}
+
 function recordMoveAckSuppression(
   results: SyncBatchResult[],
   operations: SyncEntry[],
   suppressedRef: MutableRefObject<Map<string, Set<string>>>,
 ) {
-  for (let index = 0; index < results.length; index += 1) {
-    const result = results[index];
-    const operation = operations[index];
+  for (const result of results) {
+    const operation = findBatchOperationForResult(result, operations);
     if (
       !operation ||
       result.operation !== "move" ||
@@ -262,6 +306,7 @@ function collectFailedClientIds(
   const failed = new Set<string>();
   results.forEach((result, index) => {
     if (result.success) return;
+    if (isDeltaBaseMismatchResult(result)) return;
     const message = (result.error ?? "").toLowerCase();
     if (
       result.operation === "delete" &&
@@ -580,6 +625,7 @@ export function useDocumentSync({
         {
           suppressedMoveSortKeys: suppressedMoveSortKeysRef.current,
           ...captureOptions,
+          captureSource: captureOptions?.captureSource ?? source,
         },
       );
       snapshotRef.current = advanced.snapshot;
@@ -1148,6 +1194,48 @@ export function useDocumentSync({
               lastServerManifestDigestRef.current = response.manifestDigest;
             }
 
+            const ackSyncedPayloadByBlockId = buildAckSyncedPayloadByBlockId(
+              response.results,
+              operations,
+            );
+            const ackRescanOptions: SyncSnapshotCaptureOptions = {
+              suppressMoveDerivation: true,
+              enqueueSortKeyRepairs: false,
+              ackSyncedPayloadByBlockId,
+              captureSource: "batch-ack-rescan",
+            };
+
+            const baseStore = getSyncBaseStore(rebased.docId);
+            const baseAckTasks: Promise<void>[] = [];
+            for (const result of response.results) {
+              const operation = findBatchOperationForResult(result, operations);
+              if (isDeltaBaseMismatchResult(result) && result.blockId) {
+                baseStore.forceFullResync(result.blockId);
+                continue;
+              }
+              const ackPayload = operation?.payload
+                ? stripPayloadForSync(operation.payload)
+                : null;
+              if (
+                result.success &&
+                ackPayload &&
+                result.blockId &&
+                typeof result.version === "number" &&
+                (result.operation === "update" || result.operation === "create")
+              ) {
+                baseAckTasks.push(
+                  baseStore.recordAck({
+                    blockId: result.blockId,
+                    ver: result.version,
+                    payload: ackPayload,
+                  }),
+                );
+              }
+            }
+            if (baseAckTasks.length > 0) {
+              await Promise.all(baseAckTasks);
+            }
+
             const batchFailure = summarizeSyncBatchFailures(response.results);
             if (!response.needsReload && !batchFailure) {
               batchFailureCountRef.current = 0;
@@ -1283,10 +1371,7 @@ export function useDocumentSync({
             const ackBaseline = applyBatchAckToDoc(
               getLiveContent?.() ?? latestContentRef.current,
             );
-            captureContentSnapshot(ackBaseline, "batch-ack-rescan", {
-              suppressMoveDerivation: true,
-              enqueueSortKeyRepairs: false,
-            });
+            captureContentSnapshot(ackBaseline, "batch-ack-rescan", ackRescanOptions);
 
             const currentSnapshot = snapshotRef.current;
             const orphanedCreateDeletes = collectOrphanedCreateDeletes(
@@ -1352,13 +1437,7 @@ export function useDocumentSync({
               });
               if (onContentPatched && ackBaseline) {
                 try {
-                  const applied = onContentPatched(ackBaseline);
-                  if (applied && applied.type === "doc") {
-                    captureContentSnapshot(applied, "ack-content-patch", {
-                      suppressMoveDerivation: true,
-                      enqueueSortKeyRepairs: false,
-                    });
-                  }
+                  onContentPatched(ackBaseline);
                 } catch (error) {
                   logSyncEvent("ack:content-patch-failed", {
                     docId: rebased.docId,

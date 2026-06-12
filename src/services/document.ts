@@ -9,6 +9,7 @@ import {
 } from "./tiptap-converter";
 import { ensureDocumentIdentity } from "./sync/identity";
 import { compareSortKeys, integerToSortKey } from "./sync/fractional-key";
+import { seedSyncBaseStoreFromBlocks } from "./sync/base-store";
 
 // ─── 类型定义 ───
 
@@ -74,6 +75,8 @@ export interface Block {
   sortKey: string;
   indent: number;
   collapsed: boolean;
+  ver?: number;
+  hash?: string;
   children?: Block[];
 }
 
@@ -578,6 +581,16 @@ export async function loadDocumentContentV2(
 
   const flatBlocks = flattenBlockTreeInDocumentOrder(resp.tree);
   const contentBlocks = flatBlocks.filter((b) => b.type !== "root");
+  await seedSyncBaseStoreFromBlocks(
+    docId,
+    contentBlocks.map((block) => ({
+      blockId: block.blockId,
+      type: block.type,
+      ver: block.ver,
+      hash: block.hash,
+      payload: block.payload,
+    })),
+  );
 
   if (contentBlocks.length === 0) {
     return {

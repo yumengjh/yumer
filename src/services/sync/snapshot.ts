@@ -1,4 +1,4 @@
-import type { TiptapDoc } from "@/services/tiptap-converter";
+import type { TiptapDoc, TiptapNode } from "@/services/tiptap-converter";
 import {
   alignSortKeysToVisualOrder,
   analyzeSortKeyIntegrity,
@@ -14,9 +14,11 @@ import {
 } from "@/services/sync/engine";
 import { readIdentityFromAttrs } from "@/services/sync/identity";
 import { enqueueChange } from "@/services/sync/reducer";
+import { canonicalStringify, stripPayloadForSync } from "./delta-encoding";
 import type {
   SyncDiffHint,
   SyncDiffMetrics,
+  SyncEntry,
   SyncReducerState,
 } from "@/services/sync/types";
 
@@ -186,12 +188,74 @@ function createIdleMetrics(input: {
   };
 }
 
+export type SyncSnapshotCaptureSource =
+  | "editor-effect"
+  | "batch-ack-rescan"
+  | "ack-content-patch"
+  | "manual-save-capture";
+
+const SKIP_DERIVE_WHEN_CANONICALLY_EQUAL_SOURCES = new Set<SyncSnapshotCaptureSource>([
+  "editor-effect",
+  "batch-ack-rescan",
+  "ack-content-patch",
+]);
+
+function shouldSkipDeriveWhenCanonicallyEqual(
+  source?: SyncSnapshotCaptureSource,
+): boolean {
+  return source ? SKIP_DERIVE_WHEN_CANONICALLY_EQUAL_SOURCES.has(source) : false;
+}
+
+function collectTopLevelSyncNodes(doc: TiptapDoc): Map<string, TiptapNode> {
+  const nodes = new Map<string, TiptapNode>();
+  for (const node of doc.content ?? []) {
+    const identity = readIdentityFromAttrs(node.attrs);
+    const key = identity.blockId ?? identity.clientId;
+    if (key) nodes.set(key, node);
+  }
+  return nodes;
+}
+
+/** 按 blockId/clientId 对比各块 canonical payload，忽略仅 sync attrs 的差异。 */
+export function docSyncPayloadsEqual(left: TiptapDoc, right: TiptapDoc): boolean {
+  const leftNodes = collectTopLevelSyncNodes(left);
+  const rightNodes = collectTopLevelSyncNodes(right);
+  if (leftNodes.size !== rightNodes.size) return false;
+
+  for (const [key, leftNode] of leftNodes) {
+    const rightNode = rightNodes.get(key);
+    if (!rightNode) return false;
+    if (canonicalStringify(leftNode) !== canonicalStringify(rightNode)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export type SyncSnapshotCaptureOptions = {
   suppressMoveDerivation?: boolean;
   suppressedMoveSortKeys?: ReadonlyMap<string, ReadonlySet<string>>;
   /** false 时只写回本地 snapshot sortKey，不入队 move（用于 ACK 后避免与服务端打架） */
   enqueueSortKeyRepairs?: boolean;
+  /** batch ACK 后：刚成功同步的 block canonical，用于过滤 rescan 产生的冗余 update */
+  ackSyncedPayloadByBlockId?: ReadonlyMap<string, string>;
+  captureSource?: SyncSnapshotCaptureSource;
 };
+
+export function filterRedundantAckRescanEntries(
+  entries: SyncEntry[],
+  ackSyncedPayloadByBlockId?: ReadonlyMap<string, string>,
+): SyncEntry[] {
+  if (!ackSyncedPayloadByBlockId?.size) return entries;
+
+  return entries.filter((entry) => {
+    if (entry.opType !== "update" || !entry.blockId || !entry.payload) return true;
+    const syncedCanonical = ackSyncedPayloadByBlockId.get(entry.blockId);
+    if (!syncedCanonical) return true;
+    const nextCanonical = canonicalStringify(stripPayloadForSync(entry.payload));
+    return nextCanonical !== syncedCanonical;
+  });
+}
 
 export function advanceSyncSnapshotIndexed(
   state: SyncReducerState,
@@ -210,6 +274,25 @@ export function advanceSyncSnapshotIndexed(
   let normalizedSnapshot = normalizeEditorDoc(content);
   if (hasVisualOrderDrift(normalizedSnapshot)) {
     normalizedSnapshot = alignSortKeysToVisualOrder(normalizedSnapshot);
+  }
+  if (
+    previousSnapshot &&
+    shouldSkipDeriveWhenCanonicallyEqual(captureOptions?.captureSource) &&
+    docSyncPayloadsEqual(previousSnapshot, normalizedSnapshot)
+  ) {
+    const index = createSyncSnapshotIndex(normalizedSnapshot, {
+      computePayloadFingerprints: true,
+    });
+    return {
+      state,
+      snapshot: normalizedSnapshot,
+      index,
+      metrics: createIdleMetrics({
+        topLevelCount: index.blocks.length,
+        fingerprintCount: index.blocks.length,
+        durationMs: Date.now() - start,
+      }),
+    };
   }
   if (!previousSnapshot) {
     let nextState = state;
@@ -270,8 +353,12 @@ export function advanceSyncSnapshotIndexed(
     normalizedSnapshot,
     deriveOptions,
   );
+  const entries = filterRedundantAckRescanEntries(
+    derived.entries,
+    captureOptions?.ackSyncedPayloadByBlockId,
+  );
   let nextState = state;
-  for (const entry of derived.entries) {
+  for (const entry of entries) {
     nextState = enqueueChange(nextState, entry);
   }
   nextState = reconcilePendingEntriesWithSnapshot(
@@ -303,7 +390,10 @@ export function advanceSyncSnapshotIndexed(
         : createSyncSnapshotIndex(snapshot, {
             computePayloadFingerprints: true,
           }),
-    metrics: derived.metrics,
+    metrics: {
+      ...derived.metrics,
+      derivedEntryCount: entries.length,
+    },
   };
 }
 

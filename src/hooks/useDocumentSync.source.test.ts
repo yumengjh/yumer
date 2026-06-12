@@ -206,14 +206,18 @@ describe("useDocumentSync source guards", () => {
       'captureContentSnapshot(ackBaseline, "batch-ack-rescan"',
       ackBaselineAt,
     );
-    const suppressMoveAt = hookSource.indexOf("suppressMoveDerivation: true", rescanAt);
+    const ackRescanOptionsAt = hookSource.indexOf(
+      "const ackRescanOptions: SyncSnapshotCaptureOptions",
+    );
+    const suppressMoveAt = hookSource.indexOf("suppressMoveDerivation: true", ackRescanOptionsAt);
     const mismatchAt = hookSource.indexOf("recordMoveAckSuppression(", resolvedAt);
     const editorPatchAt = hookSource.indexOf("onContentPatched(ackBaseline)", rescanAt);
 
     expect(ackBaselineAt).toBeGreaterThan(resolvedAt);
     expect(liveContentAt).toBeGreaterThan(ackBaselineAt);
     expect(rescanAt).toBeGreaterThan(liveContentAt);
-    expect(suppressMoveAt).toBeGreaterThan(rescanAt);
+    expect(ackRescanOptionsAt).toBeGreaterThanOrEqual(0);
+    expect(suppressMoveAt).toBeGreaterThan(ackRescanOptionsAt);
     expect(mismatchAt).toBeGreaterThan(resolvedAt);
     expect(editorPatchAt).toBeGreaterThan(rescanAt);
   });

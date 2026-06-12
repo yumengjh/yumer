@@ -7,6 +7,8 @@ import {
 } from "../api";
 import { createCanonicalSortKey } from "../order";
 import { compareSortKeys } from "../fractional-key";
+import { getSyncBaseStore } from "../base-store";
+import { DELTA_MIN_FULL_SIZE } from "../delta";
 import type { SyncEntry } from "../types";
 
 const { apiPost } = vi.hoisted(() => ({
@@ -25,7 +27,7 @@ describe("sync api payload builder", () => {
     apiPost.mockReset();
   });
 
-  it("deduplicates repeated create sortKeys before sending a batch", () => {
+  it("deduplicates repeated create sortKeys before sending a batch", async () => {
     const duplicateKey = createCanonicalSortKey(1);
     const operations: SyncEntry[] = ["1", "2", "3"].map((suffix) => ({
       clientId: `client_${suffix}`,
@@ -43,7 +45,7 @@ describe("sync api payload builder", () => {
       },
     }));
 
-    const bodyOperations = buildSyncBatchOperations({
+    const bodyOperations = await buildSyncBatchOperations({
       docId: "doc_1",
       rootBlockId: "root_1",
       operations,
@@ -60,8 +62,8 @@ describe("sync api payload builder", () => {
     }
   });
 
-  it("merges structural fields into update and strips sync attrs from payload", () => {
-    const bodyOperations = buildSyncBatchOperations({
+  it("merges structural fields into update and strips sync attrs from payload", async () => {
+    const bodyOperations = await buildSyncBatchOperations({
       docId: "doc_1",
       rootBlockId: "root_1",
       operations: [
@@ -98,6 +100,52 @@ describe("sync api payload builder", () => {
         },
       },
     ]);
+  });
+
+  it("sends delta for large code block updates when a synced base exists", async () => {
+    const blockId = "block_large_code";
+    const baseStore = getSyncBaseStore("doc_delta");
+    baseStore.clear();
+    const largeText = "x".repeat(DELTA_MIN_FULL_SIZE);
+    await baseStore.seedFromPayload({
+      blockId,
+      ver: 4,
+      payload: {
+        type: "codeBlock",
+        attrs: { language: "typescript" },
+        content: [{ type: "text", text: largeText }],
+      },
+    });
+
+    const bodyOperations = await buildSyncBatchOperations({
+      docId: "doc_delta",
+      rootBlockId: "root_1",
+      baseStore,
+      operations: [
+        {
+          clientId: "client_code",
+          blockId,
+          opType: "update",
+          payload: {
+            type: "codeBlock",
+            attrs: {
+              blockId,
+              clientId: "client_code",
+              language: "typescript",
+              lineNumbers: true,
+            },
+            content: [{ type: "text", text: `${largeText}y` }],
+          },
+        },
+      ],
+    });
+
+    expect(bodyOperations).toHaveLength(1);
+    expect(bodyOperations[0].type).toBe("update");
+    if (bodyOperations[0].type !== "update") return;
+    expect(bodyOperations[0].data.delta?.format).toBe("dmp-v1");
+    expect(bodyOperations[0].data.delta?.baseVer).toBe(4);
+    expect(bodyOperations[0].data.payload).toBeUndefined();
   });
 
   it("rejects malformed batch responses that omit results for non-empty operations", async () => {
@@ -171,8 +219,8 @@ describe("sync api payload builder", () => {
     expect(response.draftRevision).toBe(5);
   });
 
-  it("sends delete tombstones by client identity when a deleted create has no server blockId", () => {
-    const bodyOperations = buildSyncBatchOperations({
+  it("sends delete tombstones by client identity when a deleted create has no server blockId", async () => {
+    const bodyOperations = await buildSyncBatchOperations({
       docId: "doc_1",
       rootBlockId: "root_1",
       operations: [

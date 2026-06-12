@@ -62,8 +62,8 @@ describe("manual save baseVersion rebase source", () => {
       "snapshotRef.current = patched;",
       orphanCheckAt,
     );
-    const editorCaptureAt = hookSource.indexOf(
-      'captureContentSnapshot(applied, "ack-content-patch");',
+    const editorPatchAt = hookSource.indexOf(
+      "onContentPatched(ackBaseline)",
       ackBaselineAt,
     );
 
@@ -71,9 +71,8 @@ describe("manual save baseVersion rebase source", () => {
     expect(latestCaptureAt).toBeGreaterThan(resolvedAt);
     expect(orphanCheckAt).toBeGreaterThan(latestCaptureAt);
     expect(ackBaselineAt).toBeGreaterThan(orphanCheckAt);
-    expect(editorCaptureAt).toBeGreaterThan(ackBaselineAt);
-    expect(hookSource).toContain("draftRevision: rebased.draftRevision,");
-    expect(hookSource).toContain("response.draftRevision,");
-    expect(hookSource).toContain('logSyncEvent("ack:content-patch-failed"');
+    expect(editorPatchAt).toBeGreaterThan(ackBaselineAt);
+    expect(hookSource).toContain('captureContentSnapshot(ackBaseline, "batch-ack-rescan"');
+    expect(hookSource).toContain('captureSource: "batch-ack-rescan"');
   });
 });
