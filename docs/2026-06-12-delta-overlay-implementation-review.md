@@ -349,6 +349,8 @@ autosync 走 batch 路径，当前无实际影响；单块 API 调用方需注�
 
 ## 9. 相关文档
 
+- [2026-06-12 Delta Overlay 遗留项与已知限制](./2026-06-12-delta-overlay-remaining-items.md) — Low 优先级项、实验策略、caveat 与建议处理顺序
+- [2026-06-12 Delta Overlay Review Fixes 复盘](./2026-06-12-delta-overlay-review-fixes-retrospective.md) — follow-up 修复记录
 - [2026-06-12 Delta Overlay + Compaction 混合同步复盘](./2026-06-12-delta-overlay-sync-retrospective.md) — 初版实现、MISMATCH 排查、双请求根因
 - [2026-06-11 同步稳定性加固复盘](./2026-06-11-sync-stability-hardening-retrospective.md) — 更早的 sync 稳定性工作
 
