@@ -879,8 +879,9 @@ export function deriveSyncEntriesWithMetrics(
       nextSortKey !== prevNode.sortKey
     ) {
       const blockId = prevNode.blockId;
-      const rejected =
-        blockId && options.suppressedMoveSortKeys?.get(blockId);
+      const rejected = blockId
+        ? options.suppressedMoveSortKeys?.get(blockId)
+        : undefined;
       if (!rejected?.has(nextSortKey)) {
         entries.push({
           clientId: nextNode.clientId,

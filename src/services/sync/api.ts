@@ -12,7 +12,7 @@ import {
 
 export interface SyncBatchResponse {
   serverHead: number;
-  draftRevision?: number;
+  draftRevision: number;
   ackedThroughOpSeq?: number;
   needsReload: boolean;
   conflicts: Array<{ code: string; message: string }>;
