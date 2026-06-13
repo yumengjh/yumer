@@ -910,6 +910,24 @@ export function useDocumentSync({
     [replaceSyncState, updateSyncState],
   );
 
+  const markCurrentManifestReconciledIfDigestMatches = useCallback(async () => {
+    const current = stateRef.current;
+    const snapshot = snapshotRef.current;
+    const serverDigest = lastServerManifestDigestRef.current;
+    if (!current || !snapshot || !serverDigest) return;
+
+    const manifest = toReconcileManifest(snapshot);
+    if (manifest.length === 0) return;
+
+    const localDigest = await computeRootManifestDigest(snapshot);
+    if (localDigest !== serverDigest) return;
+
+    lastReconciledManifestKeyRef.current = buildReconcileKey(
+      current,
+      manifest,
+    );
+  }, []);
+
   const runDraftCheckpoint = useCallback(
     async (latestContent?: TiptapDoc | null): Promise<boolean> => {
       const current = stateRef.current;
@@ -1465,6 +1483,9 @@ export function useDocumentSync({
                 }
               }
             }
+            if (!batchFailure) {
+              await markCurrentManifestReconciledIfDigestMatches();
+            }
             if (batchFailure) {
               const failedIds = collectFailedClientIds(
                 response.results,
@@ -1517,7 +1538,7 @@ export function useDocumentSync({
         flushRunningRef.current = false;
       }
     },
-    [captureContentSnapshot, getLiveContent, onContentPatched, reconcileIdleManifest, replaceSyncState, runDraftCheckpoint, updateSyncState],
+    [captureContentSnapshot, getLiveContent, markCurrentManifestReconciledIfDigestMatches, onContentPatched, reconcileIdleManifest, replaceSyncState, runDraftCheckpoint, updateSyncState],
   );
 
   // error 态自动重试：指数退避（2s 起，封顶 30s），网络恢复后队列自动排空，

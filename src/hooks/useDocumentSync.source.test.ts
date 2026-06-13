@@ -222,6 +222,40 @@ describe("useDocumentSync source guards", () => {
     expect(editorPatchAt).toBeGreaterThan(rescanAt);
   });
 
+  it("marks batch manifest digest as reconciled before idle reconcile can post", () => {
+    const hookSource = fs.readFileSync(
+      path.resolve(process.cwd(), "src/hooks/useDocumentSync.ts"),
+      "utf8",
+    );
+
+    const helperAt = hookSource.indexOf(
+      "const markCurrentManifestReconciledIfDigestMatches",
+    );
+    const digestCompareAt = hookSource.indexOf(
+      "localDigest !== serverDigest",
+      helperAt,
+    );
+    const markKeyAt = hookSource.indexOf(
+      "lastReconciledManifestKeyRef.current = buildReconcileKey",
+      digestCompareAt,
+    );
+    const ackRescanAt = hookSource.indexOf(
+      'captureContentSnapshot(ackBaseline, "batch-ack-rescan"',
+    );
+    const markCallAt = hookSource.indexOf(
+      "await markCurrentManifestReconciledIfDigestMatches()",
+      ackRescanAt,
+    );
+    const batchFailureAt = hookSource.indexOf("if (batchFailure)", ackRescanAt);
+
+    expect(helperAt).toBeGreaterThanOrEqual(0);
+    expect(digestCompareAt).toBeGreaterThan(helperAt);
+    expect(markKeyAt).toBeGreaterThan(digestCompareAt);
+    expect(ackRescanAt).toBeGreaterThanOrEqual(0);
+    expect(markCallAt).toBeGreaterThan(ackRescanAt);
+    expect(markCallAt).toBeLessThan(batchFailureAt);
+  });
+
   it("keeps indexed diff metadata outside React state and consumes hints during snapshot capture", () => {
     const hookSource = fs.readFileSync(
       path.resolve(process.cwd(), "src/hooks/useDocumentSync.ts"),
