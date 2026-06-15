@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import type { ReactNode } from "react";
-import { Dropdown, Tooltip, App, ColorPicker, Divider } from "antd";
+import { Dropdown, Tooltip, App, ColorPicker, Divider, Popover } from "antd";
 import type { Editor } from "@tiptap/react";
 import type { Selection } from "prosemirror-state";
 import {
@@ -543,6 +543,7 @@ export default function DesktopToolbar({
   const codeIconProps = { style: { fontSize: 19 } };
   const pictureIconProps = { style: { fontSize: 19 }, strokeWidth: 3.25 };
   const tableIconProps = { style: { fontSize: 19 } };
+  const blockInsertItemIds = ["highlight-block", "code-block", "table", "image"] as const;
 
   const alignItems = [
     { key: "left", label: "左对齐", icon: <AlignLeftIcon {...strokeMenuIconProps} /> },
@@ -580,6 +581,46 @@ export default function DesktopToolbar({
   const getCurrentLineHeight = (): string => {
     return toolbarState.lineHeight;
   };
+
+  const visibleBlockInsertItems = blockInsertItemIds.filter((id) => {
+    if (!enabledItemIds) return true;
+    if (id === "code-block") {
+      return enabledItemIds.has("code-block") || enabledItemIds.has("code-language");
+    }
+    return enabledItemIds.has(id);
+  });
+
+  const handleBlockInsertAction = useCallback(
+    (id: (typeof blockInsertItemIds)[number], options?: { language?: string; rows?: number; cols?: number }) => {
+      if (!tiptap) return;
+      switch (id) {
+        case "highlight-block":
+          if (tiptap.state.selection.empty) {
+            tiptap.chain().focus().insertHighlightBlock({ backgroundColor: lastHighlightColor }).run();
+          } else {
+            tiptap.chain().focus().toggleHighlightBlockFromSelection({ backgroundColor: lastHighlightColor }).run();
+          }
+          break;
+        case "code-block":
+          tiptap
+            .chain()
+            .focus()
+            .setCodeBlock({ language: options?.language || getCurrentCodeLanguage() || "text" })
+            .run();
+          break;
+        case "table":
+          handleTableInsert(options?.rows || lastTableSize.rows, options?.cols || lastTableSize.cols);
+          break;
+        case "image":
+          savedSelectionRef.current = tiptap.state.selection;
+          imageInputRef.current?.click();
+          break;
+        default:
+          break;
+      }
+    },
+    [getCurrentCodeLanguage, handleTableInsert, lastHighlightColor, lastTableSize.cols, lastTableSize.rows, tiptap],
+  );
 
   const toolbarGroups: ToolbarItem[][] = [
     [
@@ -709,11 +750,12 @@ export default function DesktopToolbar({
     ],
   ];
 
-  const visibleToolbarGroups = enabledItemIds
-    ? toolbarGroups
-        .map((group) => group.filter((item) => enabledItemIds.has(item.id)))
-        .filter((group) => group.length > 0)
-    : toolbarGroups;
+  const hiddenToolbarItemIds = new Set(["highlight-block", "image", "code-language", "table"]);
+  const visibleToolbarGroups = toolbarGroups
+    .map((group) =>
+      group.filter((item) => !hiddenToolbarItemIds.has(item.id) && (!enabledItemIds || enabledItemIds.has(item.id))),
+    )
+    .filter((group) => group.length > 0);
 
   return (
     <div className={`toolbar toolbar--${variant}`}>
@@ -728,6 +770,153 @@ export default function DesktopToolbar({
           if (file) void handleImageFileSelect(file);
         }}
       />
+      {visibleBlockInsertItems.length > 0 && (
+        <div className="toolbar-group">
+          <Dropdown
+            trigger={["click"]}
+            disabled={!editorReady}
+            open={openDropdown === "block-insert"}
+            onOpenChange={(open) => {
+              setOpenDropdown(open ? "block-insert" : null);
+            }}
+            popupRender={() => (
+              <div
+                className="ant-dropdown-menu block-insert-menu"
+                style={{ borderRadius: "4px", border: "1px solid var(--app-border)", boxShadow: "none" }}
+              >
+                {visibleBlockInsertItems.map((id) => {
+                  const itemConfig: Record<
+                    (typeof blockInsertItemIds)[number],
+                    { icon: ReactNode; label: string; popover?: ReactNode }
+                  > = {
+                    "highlight-block": {
+                      icon: (
+                        <span className="color-icon-wrap">
+                          <HighlightBlockIcon />
+                          <span className="color-icon-indicator" style={{ backgroundColor: lastHighlightColor }} />
+                        </span>
+                      ),
+                      label: "高亮块",
+                      popover: (
+                        <div className="block-insert-popover-content">
+                          <div className="block-insert-popover-title">高亮块颜色</div>
+                          <div className="block-insert-color-grid">
+                            {highlightBlockColors.map((color) => (
+                              <div
+                                key={color}
+                                className={`color-swatch ${lastHighlightColor === color ? "selected" : ""}`}
+                                style={{ backgroundColor: color }}
+                                onClick={() => setLastHighlightColor(color)}
+                                title={color}
+                              >
+                                {lastHighlightColor === color && <span className="color-checkmark">✓</span>}
+                              </div>
+                            ))}
+                          </div>
+                          <button
+                            type="button"
+                            className="block-insert-action-btn"
+                            onClick={() => {
+                              handleBlockInsertAction("highlight-block");
+                              setOpenDropdown(null);
+                            }}
+                          >
+                            插入高亮块
+                          </button>
+                        </div>
+                      ),
+                    },
+                    "code-block": {
+                      icon: <CodeIcon {...codeIconProps} />,
+                      label: "代码块",
+                      popover: (
+                        <div className="block-insert-popover-content">
+                          <div className="block-insert-popover-title">代码语言</div>
+                          <div className="block-insert-option-list">
+                            {codeLanguageItems.map((langItem) => (
+                              <div
+                                key={langItem.key}
+                                className="block-insert-option-item"
+                                onClick={() => {
+                                  handleBlockInsertAction("code-block", { language: langItem.key });
+                                  setOpenDropdown(null);
+                                }}
+                              >
+                                {langItem.label}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ),
+                    },
+                    table: {
+                      icon: <TableIcon {...tableIconProps} />,
+                      label: "表格",
+                      popover: (
+                        <div className="block-insert-popover-content">
+                          <div className="block-insert-popover-title">表格尺寸</div>
+                          <TablePicker
+                            onSelect={(rows, cols) => {
+                              handleBlockInsertAction("table", { rows, cols });
+                              setOpenDropdown(null);
+                            }}
+                          />
+                        </div>
+                      ),
+                    },
+                    image: {
+                      icon: <PictureIcon {...pictureIconProps} />,
+                      label: "图片",
+                    },
+                  };
+
+                  const content = (
+                    <div
+                      className="ant-dropdown-menu-item block-insert-menu-item"
+                      onClick={() => {
+                        if (!itemConfig[id].popover) {
+                          handleBlockInsertAction(id);
+                          setOpenDropdown(null);
+                        }
+                      }}
+                    >
+                      <span className="block-insert-menu-icon">{itemConfig[id].icon}</span>
+                      <span className="block-insert-menu-label">{itemConfig[id].label}</span>
+                      {itemConfig[id].popover ? <span className="block-insert-menu-caret">›</span> : null}
+                    </div>
+                  );
+
+                  return itemConfig[id].popover ? (
+                    <Popover key={id} placement="rightTop" trigger="hover" mouseEnterDelay={0.1} content={itemConfig[id].popover}>
+                      {content}
+                    </Popover>
+                  ) : (
+                    <div key={id}>{content}</div>
+                  );
+                })}
+              </div>
+            )}
+          >
+            <Tooltip title="插入块" placement="bottom" trigger="hover" mouseEnterDelay={0.5}>
+              <button
+                type="button"
+                className="toolbar-button"
+                disabled={!editorReady}
+                aria-label="插入块"
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                }}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+              >
+                <PlusOutlined />
+              </button>
+            </Tooltip>
+          </Dropdown>
+        </div>
+      )}
       {visibleToolbarGroups.map((group, index) => (
         <div className="toolbar-group" key={`toolbar-group-${index}`}>
           {group.map((item) =>
