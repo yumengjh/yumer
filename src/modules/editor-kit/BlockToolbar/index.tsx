@@ -4,7 +4,7 @@ import { BlockHandle } from './BlockHandle';
 import { BlockMenu } from './BlockMenu';
 import { collectBlockToolbarHighlightRects, type BlockToolbarHighlightRect } from './blockHighlight';
 import { resolveBlockToolbarTarget, type BlockToolbarTarget, type BlockToolbarTargetKind } from './blockTarget';
-import { computeBlockHandlePosition } from './blockPosition';
+import { computeBlockHandlePosition, type PositionKind } from './blockPosition';
 import { shouldRetainHoveredTarget } from './targetTransition';
 import { planExplicitMoveSortKey, withExplicitMoveSortKeyAttrs } from './sortKeyReorder';
 import './style.css';
@@ -134,10 +134,10 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
     return resolveBlockToolbarTarget(element, editorElement, clientY);
   }, [getEditorDom]);
 
-  const updatePosition = useCallback((block: HTMLElement) => {
+  const updatePosition = useCallback((block: HTMLElement, kind?: PositionKind) => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
-    setPosition(computeBlockHandlePosition(block, wrapper));
+    setPosition(computeBlockHandlePosition(block, wrapper, { kind }));
   }, [wrapperRef]);
 
   useEffect(() => {
@@ -196,7 +196,7 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
         setHoveredAnchor(anchor);
         setHoveredTableCell(tableCell);
         setHoveredTargetKind(target?.kind ?? null);
-        updatePosition(anchor);
+        updatePosition(anchor, target?.kind);
       }
     };
 
@@ -258,11 +258,16 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
         const fallback = pendingDeleteFallbackRef.current;
         pendingDeleteFallbackRef.current = null;
 
-        const fallbackElement = fallback?.element && editorDom.contains(fallback.element)
+        let fallbackElement = fallback?.element && editorDom.contains(fallback.element)
           ? fallback.element
           : fallback
             ? document.elementFromPoint(fallback.clientX, fallback.clientY)
             : null;
+
+        // If elementFromPoint didn't work, try to find ANY top-level child
+        if (!fallbackElement || !editorDom.contains(fallbackElement)) {
+          fallbackElement = editorDom.firstElementChild as HTMLElement | null;
+        }
 
         const nextTarget = resolveBlockToolbarTarget(fallbackElement, editorDom, fallback?.clientY);
         if (nextTarget) {
@@ -270,7 +275,19 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
           setHoveredAnchor(nextTarget.anchorElement);
           setHoveredTableCell(nextTarget.tableCellElement ?? null);
           setHoveredTargetKind(nextTarget.kind);
-          updatePosition(nextTarget.anchorElement);
+          updatePosition(nextTarget.anchorElement, nextTarget.kind);
+          setUpdateCount(c => c + 1);
+          return;
+        }
+
+        // Absolute last resort: if editor has any child, use it directly
+        const firstChild = editorDom.firstElementChild as HTMLElement | null;
+        if (firstChild) {
+          setHoveredBlock(firstChild);
+          setHoveredAnchor(firstChild);
+          setHoveredTableCell(null);
+          setHoveredTargetKind('block');
+          updatePosition(firstChild, 'block');
           setUpdateCount(c => c + 1);
           return;
         }
@@ -308,16 +325,16 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
   useEffect(() => {
     if (!hoveredAnchor) return;
     const wrapper = wrapperRef.current;
-    updatePosition(hoveredAnchor);
-    const onResize = () => updatePosition(hoveredAnchor);
-    const onScroll = () => updatePosition(hoveredAnchor);
+    updatePosition(hoveredAnchor, hoveredTargetKind ?? undefined);
+    const onResize = () => updatePosition(hoveredAnchor, hoveredTargetKind ?? undefined);
+    const onScroll = () => updatePosition(hoveredAnchor, hoveredTargetKind ?? undefined);
     window.addEventListener('resize', onResize);
     wrapper?.addEventListener('scroll', onScroll, { passive: true });
     return () => {
       window.removeEventListener('resize', onResize);
       wrapper?.removeEventListener('scroll', onScroll);
     };
-  }, [hoveredAnchor, updateCount, updatePosition, wrapperRef]);
+  }, [hoveredAnchor, hoveredTargetKind, updateCount, updatePosition, wrapperRef]);
 
   // 点击外部关闭菜单
   useEffect(() => {

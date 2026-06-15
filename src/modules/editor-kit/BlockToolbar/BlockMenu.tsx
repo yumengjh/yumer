@@ -59,25 +59,6 @@ function getTopLevelAncestor(
   return cur;
 }
 
-function getDeleteFallbackBlock(
-  block: HTMLElement,
-  view: import('prosemirror-view').EditorView,
-): HTMLElement | null {
-  const depth = getPMDepth(block, view);
-  const topLevel = getTopLevelAncestor(block, view.dom);
-  const deleteTarget =
-    depth > 1 && block.parentElement && block.parentElement.children.length <= 1
-      ? block.parentElement
-      : block;
-
-  return (
-    (deleteTarget.nextElementSibling as HTMLElement | null) ??
-    (deleteTarget.previousElementSibling as HTMLElement | null) ??
-    (topLevel.nextElementSibling as HTMLElement | null) ??
-    (topLevel.previousElementSibling as HTMLElement | null)
-  );
-}
-
 export function BlockMenu({ onClose, hoveredBlock, hoveredTableCell, onWillDeleteBlock }: BlockMenuProps) {
   const editor = useMarkdownEditor();
   const { uploadImage } = useMarkdownEditorContext();
@@ -153,23 +134,61 @@ export function BlockMenu({ onClose, hoveredBlock, hoveredTableCell, onWillDelet
     const range = getBlockRange(hoveredBlock, view);
     if (!range) return;
     const blockId = hoveredBlock.dataset.blockId;
-    onWillDeleteBlock?.(getDeleteFallbackBlock(hoveredBlock, view));
 
+    // Remember the block's viewport position BEFORE delete for fallback resolution
+    const blockRect = hoveredBlock.getBoundingClientRect();
+    const centerX = blockRect.left + blockRect.width / 2;
+    const centerY = blockRect.top + blockRect.height / 2;
+
+    // Execute the delete transaction
+    const tr = view.state.tr;
     if (range.depth > 1 && hoveredBlock.parentElement &&
         hoveredBlock.parentElement.children.length <= 1) {
       const parentRange = getBlockRange(hoveredBlock.parentElement, view);
       if (parentRange) {
-        view.dispatch(view.state.tr.delete(parentRange.from, parentRange.to));
+        tr.delete(parentRange.from, parentRange.to);
       }
     } else if (view.state.doc.childCount <= 1) {
-      view.dispatch(
-        view.state.tr
-          .delete(0, doc.content.size)
-          .insert(0, view.state.schema.nodes.paragraph.create())
-      );
+      tr.delete(0, doc.content.size)
+        .insert(0, view.state.schema.nodes.paragraph.create());
     } else {
-      view.dispatch(view.state.tr.delete(range.from, range.to));
+      tr.delete(range.from, range.to);
     }
+    view.dispatch(tr);
+
+    // AFTER the transaction: resolve fallback using mapped position + coords fallback
+    let fallbackEl: HTMLElement | null = null;
+    try {
+      const mappedPos = tr.mapping.map(range.from);
+      const clampedPos = Math.min(mappedPos, view.state.doc.content.size);
+      const $mapped = view.state.doc.resolve(clampedPos);
+      if ($mapped.depth >= 1) {
+        const topLevelPos = $mapped.before(1);
+        const topLevelNode = view.state.doc.nodeAt(topLevelPos);
+        if (topLevelNode) {
+          const domNode = view.nodeDOM(topLevelPos);
+          fallbackEl = domNode instanceof HTMLElement ? domNode : (domNode as Node)?.parentElement as HTMLElement | null;
+        }
+      }
+    } catch {
+      // Position mapping failed, will use coords fallback below
+    }
+
+    // If position mapping didn't find a valid element, use coordinates
+    if (!fallbackEl || !view.dom.contains(fallbackEl)) {
+      const domEl = document.elementFromPoint(centerX, centerY);
+      if (domEl && view.dom.contains(domEl)) {
+        const el = domEl instanceof HTMLElement ? domEl : domEl.parentElement;
+        fallbackEl = el ? getTopLevelAncestor(el, view.dom) : null;
+      }
+    }
+
+    // If still no fallback, try to find ANY top-level child in the editor
+    if (!fallbackEl || fallbackEl === view.dom as HTMLElement) {
+      fallbackEl = view.dom.firstElementChild as HTMLElement | null;
+    }
+
+    onWillDeleteBlock?.(fallbackEl);
 
     if (blockId) {
       message.success('块已删除，等待自动同步');
