@@ -138,8 +138,8 @@
 }
 
 .align-menu-btn {
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -149,6 +149,7 @@
   cursor: pointer;
   color: var(--toolbar-icon);
   line-height: 1;
+  font-size: 19px;
 }
 
 .align-menu-btn:hover {
@@ -502,6 +503,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  line-height: 1;
 }
 
 .bg-color-icon,

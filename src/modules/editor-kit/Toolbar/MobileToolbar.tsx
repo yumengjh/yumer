@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Drawer, Button, Divider } from "antd";
-import { EllipsisOutlined, HighlightOutlined } from "@ant-design/icons";
+import { EllipsisOutlined } from "@ant-design/icons";
 import {
   UndoIcon,
   RedoIcon,
@@ -12,6 +12,7 @@ import {
   OrderedListIcon,
   CheckListIcon,
   CodeIcon,
+  TextColorIcon,
   BgColorIcon,
   TableIcon,
   DividerIcon,
@@ -37,6 +38,12 @@ export default function MobileToolbar({ enabledItemIds }: MobileToolbarProps = {
   const [pressedAction, setPressedAction] = useState<string | null>(null);
   const pressedTimerRef = useRef<number | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const orderedListIconProps = { style: { fontSize: 19 } };
+  const checkListIconProps = { style: { fontSize: 20 } };
+  const bulletListIconProps = { style: { fontSize: 21 }, strokeWidth: 2.7 };
+  const codeIconProps = { style: { fontSize: 19 } };
+  const pictureIconProps = { style: { fontSize: 19 }, strokeWidth: 3.25 };
+  const tableIconProps = { style: { fontSize: 19 } };
 
   const clearPressedAction = () => {
     if (pressedTimerRef.current) {
@@ -56,10 +63,10 @@ export default function MobileToolbar({ enabledItemIds }: MobileToolbarProps = {
     { id: "italic",       icon: <ItalicIcon />,         label: "斜体" },
     { id: "strike",       icon: <StrikethroughIcon />,  label: "删除线" },
     { id: "underline",    icon: <UnderlineIcon />,      label: "下划线" },
-    { id: "bullet-list",  icon: <UnorderedListIcon />,  label: "无序列表" },
-    { id: "ordered-list", icon: <OrderedListIcon />,    label: "有序列表" },
-    { id: "check-list",   icon: <CheckListIcon />,      label: "任务列表" },
-    { id: "code-block",   icon: <CodeIcon />,           label: "代码块" },
+    { id: "bullet-list",  icon: <UnorderedListIcon {...bulletListIconProps} />,  label: "无序列表" },
+    { id: "ordered-list", icon: <OrderedListIcon {...orderedListIconProps} />,   label: "有序列表" },
+    { id: "check-list",   icon: <CheckListIcon {...checkListIconProps} />,       label: "任务列表" },
+    { id: "code-block",   icon: <CodeIcon {...codeIconProps} />,                 label: "代码块" },
     { id: "divider",      icon: <DividerIcon />,        label: "分割线" },
     { id: "clearFormat",  icon: <ClearFormatIcon />,    label: "清除格式" },
   ];
@@ -230,10 +237,10 @@ export default function MobileToolbar({ enabledItemIds }: MobileToolbarProps = {
         <div className="drawer-section">
           <h4>颜色与插入</h4>
           <div className="drawer-grid">
-            <Button icon={<HighlightOutlined />} onClick={() => { actions.setTextColor("#1677ff"); setMoreOpen(false); }}>蓝色文字</Button>
+            <Button icon={<TextColorIcon />} onClick={() => { actions.setTextColor("#1677ff"); setMoreOpen(false); }}>蓝色文字</Button>
             <Button icon={<BgColorIcon />}  onClick={() => { actions.setBgColor("#FFF2CC");  setMoreOpen(false); }}>高亮背景</Button>
-            <Button icon={<TableIcon />}     onClick={handleTable}>插入 3×3 表格</Button>
-            <Button icon={<PictureIcon />}   onClick={() => imageInputRef.current?.click()}>上传图片</Button>
+            <Button icon={<TableIcon {...tableIconProps} />}   onClick={handleTable}>插入 3×3 表格</Button>
+            <Button icon={<PictureIcon {...pictureIconProps} />} onClick={() => imageInputRef.current?.click()}>上传图片</Button>
           </div>
         </div>
       </Drawer>

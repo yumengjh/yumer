@@ -1,9 +1,6 @@
-interface ChevronIconProps {
-  className?: string;
-  style?: React.CSSProperties;
-}
+import type { IconProps } from "./IconProps";
 
-export default function ChevronIcon({ className, style }: ChevronIconProps) {
+export default function ChevronIcon({ className, style }: IconProps) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"

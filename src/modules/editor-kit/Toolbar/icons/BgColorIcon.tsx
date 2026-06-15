@@ -1,11 +1,10 @@
-export default function BgColorIcon({ style }: { style?: React.CSSProperties }) {
+import type { IconProps } from "./IconProps";
+
+export default function BgColorIcon({ className, style }: IconProps) {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 48 48" style={style}>
-      <path d="M0 0h48v48H0z" fill="none" />
-      <g fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3">
-        <path d="M45 39.4c0 3.093-2.239 5.6-5 5.6s-5-2.507-5-5.6c0-2.853 2.307-5.705 3.786-7.242c.674-.7 1.754-.7 2.428 0C42.694 33.695 45 36.548 45 39.4M4.618 9.799c.544-.78 1.544-.98 2.46-.726c2.881.8 9.583 2.716 15.93 4.927c1.436.5 2.33 1.99 1.935 3.459c-.395 1.468-1.916 2.313-3.41 2.03c-6.605-1.249-13.37-2.93-16.267-3.674c-.92-.236-1.686-.909-1.766-1.855a6.4 6.4 0 0 1 .188-2.18a6.4 6.4 0 0 1 .93-1.981" />
-        <path d="M9.496 16.867a275 275 0 0 0-5.338 6.825c-1.517 2.005-1.57 4.751.003 6.714A62 62 0 0 0 8.61 35.39a62 62 0 0 0 4.985 4.448c1.963 1.573 4.709 1.52 6.715.003a288 288 0 0 0 18.043-14.874a1.96 1.96 0 0 0 .062-2.856L21.888 5.586a1.964 1.964 0 0 0-2.856.062a267 267 0 0 0-4.804 5.506" />
-      </g>
+    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" className={className} style={style}>
+      <path d="M0 0h24v24H0z" fill="none" />
+      <path fill="currentColor" d="M9.6 14.95h4.8l.875 2.425q.1.275.35.45t.55.175q.5 0 .813-.413t.112-.912l-3.8-10.05q-.125-.275-.375-.45T12.375 6h-.75q-.3 0-.55.175t-.375.45l-3.8 10.05q-.2.475.1.9t.8.425q.325 0 .563-.175t.362-.475zm.6-1.75l1.75-4.95h.1l1.75 4.95zM4 22q-.825 0-1.412-.587T2 20V4q0-.825.588-1.412T4 2h16q.825 0 1.413.588T22 4v16q0 .825-.587 1.413T20 22z" />
     </svg>
   );
 }

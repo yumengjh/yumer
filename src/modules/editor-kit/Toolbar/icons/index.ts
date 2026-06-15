@@ -1,6 +1,7 @@
 export { default as UndoIcon } from "./UndoIcon";
 export { default as RedoIcon } from "./RedoIcon";
 export { default as ClearFormatIcon } from "./ClearFormatIcon";
+export { default as CodeCleanupIcon } from "./CodeCleanupIcon";
 export { default as FormatPainterIcon } from "./FormatPainterIcon";
 export { default as CursorIcon } from "./CursorIcon";
 export { default as BoldIcon } from "./BoldIcon";

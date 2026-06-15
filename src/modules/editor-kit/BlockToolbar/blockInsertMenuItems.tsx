@@ -35,13 +35,13 @@ export const BLOCK_INSERT_MENU_ITEMS: NonNullable<MenuProps["items"]> = [
   { key: "heading2", label: "标题 2" },
   { key: "heading3", label: "标题 3" },
   { type: "divider" },
-  { key: "bulletList", icon: <UnorderedListIcon />, label: "无序列表" },
-  { key: "orderedList", icon: <OrderedListIcon />, label: "有序列表" },
-  { key: "taskList", icon: <CheckListIcon />, label: "代办列表" },
+  { key: "bulletList", icon: <UnorderedListIcon style={{ fontSize: 21 }} strokeWidth={2.7} />, label: "无序列表" },
+  { key: "orderedList", icon: <OrderedListIcon style={{ fontSize: 19 }} />, label: "有序列表" },
+  { key: "taskList", icon: <CheckListIcon style={{ fontSize: 20 }} />, label: "代办列表" },
   { key: "blockquote", icon: <MessageOutlined />, label: "引用" },
-  { key: "codeBlock", icon: <CodeIcon />, label: "代码块" },
+  { key: "codeBlock", icon: <CodeIcon style={{ fontSize: 18 }} />, label: "代码块" },
   { key: "divider", icon: <DividerIcon />, label: "分割线" },
-  { key: "table", icon: <TableIcon />, label: "表格" },
+  { key: "table", icon: <TableIcon style={{ fontSize: 18 }} />, label: "表格" },
 ];
 
 export function getBlockInsertMenuKeys(items: NonNullable<MenuProps["items"]>): string[] {

@@ -12,6 +12,7 @@ import {
   UndoIcon,
   RedoIcon,
   ClearFormatIcon,
+  CodeCleanupIcon,
   FormatPainterIcon,
   CursorIcon,
   BoldIcon,
@@ -533,14 +534,24 @@ export default function DesktopToolbar({
     return toolbarState.fontSize;
   };
 
+  const strokeToolbarIconProps = { style: { fontSize: 19 }, strokeWidth: 2.35 };
+  const strokeMenuIconProps = { style: { fontSize: 20 }, strokeWidth: 2.45 };
+  const indentToolbarIconProps = { style: { fontSize: 19 }, strokeWidth: 2.7 };
+  const bulletListIconProps = { style: { fontSize: 21 }, strokeWidth: 2.7 };
+  const orderedListIconProps = { style: { fontSize: 19 } };
+  const checkListIconProps = { style: { fontSize: 20 } };
+  const codeIconProps = { style: { fontSize: 19 } };
+  const pictureIconProps = { style: { fontSize: 19 }, strokeWidth: 3.25 };
+  const tableIconProps = { style: { fontSize: 19 } };
+
   const alignItems = [
-    { key: "left", label: "左对齐", icon: <AlignLeftIcon /> },
-    { key: "center", label: "居中", icon: <AlignCenterIcon /> },
-    { key: "right", label: "右对齐", icon: <AlignRightIcon /> },
+    { key: "left", label: "左对齐", icon: <AlignLeftIcon {...strokeMenuIconProps} /> },
+    { key: "center", label: "居中", icon: <AlignCenterIcon {...strokeMenuIconProps} /> },
+    { key: "right", label: "右对齐", icon: <AlignRightIcon {...strokeMenuIconProps} /> },
     {
       key: "justify",
       label: "两端对齐",
-      icon: <AlignLeftIcon style={{ transform: "scaleX(-1)" }} />,
+      icon: <AlignLeftIcon {...strokeMenuIconProps} style={{ ...strokeMenuIconProps.style, transform: "scaleX(-1)" }} />,
     },
   ].map((item) => ({
     key: item.key,
@@ -551,12 +562,12 @@ export default function DesktopToolbar({
   const getCurrentAlignment = (): { label: string; icon: ReactNode; key: string } => {
     const align = toolbarState.textAlign;
     const alignMap: Record<string, { label: string; icon: ReactNode }> = {
-      left: { label: "左对齐", icon: <AlignLeftIcon /> },
-      center: { label: "居中", icon: <AlignCenterIcon /> },
-      right: { label: "右对齐", icon: <AlignRightIcon /> },
+      left: { label: "左对齐", icon: <AlignLeftIcon {...strokeToolbarIconProps} /> },
+      center: { label: "居中", icon: <AlignCenterIcon {...strokeToolbarIconProps} /> },
+      right: { label: "右对齐", icon: <AlignRightIcon {...strokeToolbarIconProps} /> },
       justify: {
         label: "两端对齐",
-        icon: <AlignLeftIcon style={{ transform: "scaleX(-1)" }} />,
+        icon: <AlignLeftIcon {...strokeToolbarIconProps} style={{ ...strokeToolbarIconProps.style, transform: "scaleX(-1)" }} />,
       },
     };
     return { ...(alignMap[align] || alignMap.left), key: align };
@@ -594,7 +605,7 @@ export default function DesktopToolbar({
       {
         id: "code-cleanup",
         label: "\u4ee3\u7801\u6e05\u7406",
-        content: <ClearFormatIcon />,
+        content: <CodeCleanupIcon />,
         type: "code-cleanup-picker",
       },
     ],
@@ -653,7 +664,7 @@ export default function DesktopToolbar({
       {
         id: "line-height",
         label: "行高",
-        content: <LineHeightIcon />,
+        content: <LineHeightIcon {...strokeToolbarIconProps} />,
         type: "dropdown",
       },
     ],
@@ -661,18 +672,18 @@ export default function DesktopToolbar({
       {
         id: "indent",
         label: "缩进",
-        content: <IndentIcon />,
+        content: <IndentIcon {...indentToolbarIconProps} />,
         type: "indent-picker",
       },
     ],
     [
-      { id: "bullet-list", label: "无序列表", content: <UnorderedListIcon /> },
+      { id: "bullet-list", label: "无序列表", content: <UnorderedListIcon {...bulletListIconProps} /> },
       {
         id: "ordered-list",
         label: "有序列表",
         content: (
           <span className="dropdown-icon-text">
-            <OrderedListIcon />
+            <OrderedListIcon {...orderedListIconProps} />
             <span className="text-label">
               {orderedListTypeItems.find((item) => item.key === getCurrentOrderedListType())
                 ?.label || "1."}
@@ -681,20 +692,20 @@ export default function DesktopToolbar({
         ),
         type: "dropdown",
       },
-      { id: "check-list", label: "待办列表", content: <CheckListIcon /> },
+      { id: "check-list", label: "待办列表", content: <CheckListIcon {...checkListIconProps} /> },
     ],
     [
       { id: "blockquote", label: "引用", content: <QuoteIcon /> },
       { id: "divider", label: "分割线", content: <DividerIcon /> },
-      { id: "image", label: "图片", content: <PictureIcon /> },
+      { id: "image", label: "图片", content: <PictureIcon {...pictureIconProps} /> },
       {
         id: "code-language",
         label: "代码语言",
-        content: <CodeIcon />,
+        content: <CodeIcon {...codeIconProps} />,
         type: "dropdown",
       },
       { id: "link", label: "链接", content: <LinkIcon />, type: "link-picker" },
-      { id: "table", label: "表格", content: <TableIcon />, type: "dropdown" },
+      { id: "table", label: "表格", content: <TableIcon {...tableIconProps} />, type: "dropdown" },
     ],
   ];
 

@@ -1,12 +1,10 @@
-export default function AlignLeftIcon({ style }: { style?: React.CSSProperties }) {
+import type { IconProps } from "./IconProps";
+
+export default function AlignLeftIcon({ className, style, strokeWidth = 2 }: IconProps) {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" style={style}>
+    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" className={className} style={style}>
       <path d="M0 0h24v24H0z" fill="none" />
-      <g fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5">
-        <path d="M2.75 2.75v18.5" />
-        <rect width="6" height="10" rx="2" transform="matrix(0 -1 -1 0 16.25 19.75)" />
-        <rect width="6" height="15" rx="2" transform="matrix(0 -1 -1 0 21.25 10.25)" />
-      </g>
+      <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth={strokeWidth} d="M6 6h8m-8 4h12M6 14h8m-8 4h12" />
     </svg>
   );
 }
