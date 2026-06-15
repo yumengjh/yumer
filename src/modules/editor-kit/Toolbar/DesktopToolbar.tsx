@@ -57,6 +57,7 @@ import {
 import TablePicker from "./TablePicker";
 import LinkPickerPopup from "./LinkPickerPopup";
 import SplitDropdown from "./SplitDropdown";
+import ColorPickerPanel from "./ColorPickerPanel";
 import {
   runEditorCleanupAction,
   type EditorCleanupActionKey,
@@ -73,7 +74,7 @@ type ToolbarItem = {
   id: string;
   label: string;
   content: ReactNode;
-  type?: "dropdown" | "color-picker" | "highlight-block-picker" | "indent-picker" | "table-picker" | "link-picker" | "format-painter" | "code-cleanup-picker";
+  type?: "dropdown" | "color-picker" | "highlight-block-picker" | "indent-picker" | "table-picker" | "link-picker" | "format-painter" | "code-cleanup-picker" | "combined-color-picker";
 };
 
 interface DesktopToolbarProps {
@@ -375,14 +376,19 @@ export default function DesktopToolbar({
   const handleBgColorSelect = useCallback(
     (color: string) => {
       if (!tiptap) return;
-      setSelectedBgColor(color);
       const { view } = tiptap;
       if (savedSelectionRef.current) {
         const sel = savedSelectionRef.current;
         view.dispatch(view.state.tr.setSelection(sel));
       }
       view.focus();
-      tiptap.chain().toggleHighlight({ color }).run();
+      if (!color) {
+        // Empty string = clear background highlight
+        tiptap.chain().unsetHighlight().run();
+      } else {
+        setSelectedBgColor(color);
+        tiptap.chain().toggleHighlight({ color }).run();
+      }
     },
     [tiptap],
   );
@@ -661,23 +667,15 @@ export default function DesktopToolbar({
         id: "text-color",
         label: "文字颜色",
         content: (
-          <span className="color-icon-wrap">
+          <span className="combined-color-icon-wrap">
             <TextColorIcon />
-            <span className="color-icon-indicator" style={{ backgroundColor: selectedColor }} />
+            <span className="color-indicator-row">
+              <span className="color-dot" style={{ backgroundColor: selectedColor }} />
+              <span className="color-dot" style={{ backgroundColor: selectedBgColor }} />
+            </span>
           </span>
         ),
-        type: "color-picker",
-      },
-      {
-        id: "bg-color",
-        label: "背景颜色",
-        content: (
-          <span className="color-icon-wrap">
-            <BgColorIcon />
-            <span className="color-icon-indicator" style={{ backgroundColor: selectedBgColor }} />
-          </span>
-        ),
-        type: "color-picker",
+        type: "combined-color-picker",
       },
     ],
     [
@@ -1175,7 +1173,45 @@ export default function DesktopToolbar({
                   )
                 }
               />
-            ) : item.type === "color-picker" ? (() => {
+            ) : item.type === "combined-color-picker" ? (() => {
+              return (
+                <div className={`split-color-button ${openColorPicker === item.id ? "is-open" : ""}`} key={item.id}>
+                  <Dropdown
+                    placement="bottomLeft"
+                    align={{ offset: [0, 4] }}
+                    classNames={{ root: "toolbar-color-dropdown" }}
+                    onOpenChange={(open) => {
+                      setOpenColorPicker(open ? item.id : null);
+                      if (open && tiptap) {
+                        savedSelectionRef.current = tiptap.state.selection;
+                      }
+                    }}
+                    popupRender={() => (
+                      <ColorPickerPanel
+                        selectedTextColor={selectedColor}
+                        selectedBgColor={selectedBgColor}
+                        onTextColorSelect={handleColorSelect}
+                        onBgColorSelect={handleBgColorSelect}
+                      />
+                    )}
+                    trigger={["click"]}
+                    disabled={!editorReady}
+                  >
+                    <Tooltip title={item.label} trigger="hover" mouseEnterDelay={0.5}>
+                      <button
+                        type="button"
+                        className="toolbar-button"
+                        disabled={!editorReady}
+                        aria-label={item.label}
+                        onMouseDown={(event) => event.preventDefault()}
+                      >
+                        {item.content}
+                      </button>
+                    </Tooltip>
+                  </Dropdown>
+                </div>
+              );
+            })() : item.type === "color-picker" ? (() => {
               const isBgColor = item.id === "bg-color";
               const currentColor = isBgColor ? selectedBgColor : selectedColor;
               const handleSelect = isBgColor ? handleBgColorSelect : handleColorSelect;

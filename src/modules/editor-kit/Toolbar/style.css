@@ -938,3 +938,143 @@
     width: 64px;
   }
 }
+
+/* =====================================================
+   Combined Color Picker Panel (text color + bg color)
+   ===================================================== */
+.combined-color-panel {
+  padding: 10px 12px;
+  background: var(--dropdown-bg, #fff);
+  border: 1px solid var(--app-border, #e8e8e8);
+  border-radius: 8px;
+  box-shadow: 0 6px 16px 0 rgba(0, 0, 0, 0.08), 0 3px 6px -4px rgba(0, 0, 0, 0.12);
+  min-width: 220px;
+}
+
+.combined-color-section {
+  margin-bottom: 2px;
+}
+
+.combined-color-title {
+  font-size: 11px;
+  color: var(--color-text-tertiary, #999);
+  margin-bottom: 6px;
+  user-select: none;
+}
+
+.combined-color-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.combined-color-row {
+  display: flex;
+  gap: 4px;
+}
+
+.combined-color-divider {
+  height: 1px;
+  background: var(--color-border-secondary, #f0f0f0);
+  margin: 8px 0;
+}
+
+/* Text color swatch: white bg + colored "A" letter */
+.text-color-swatch {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--color-border-secondary, #eee);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+  padding: 0;
+}
+
+.text-color-swatch:hover {
+  background: var(--color-bg-hover, #f5f5f5);
+  border-color: var(--color-border, #d9d9d9);
+}
+
+.text-color-swatch.is-active {
+  border-color: var(--color-primary, #00b96b);
+  box-shadow: 0 0 0 1px var(--color-primary, #00b96b);
+}
+
+.text-color-letter {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  user-select: none;
+}
+
+/* Background color swatch: solid fill */
+.bg-color-swatch {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--color-border-secondary, #eee);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: border-color 0.12s, box-shadow 0.12s;
+  padding: 0;
+}
+
+.bg-color-swatch:hover {
+  border-color: var(--color-border, #d9d9d9);
+}
+
+.bg-color-swatch.is-active {
+  border-color: var(--color-primary, #00b96b);
+  box-shadow: 0 0 0 1px var(--color-primary, #00b96b);
+}
+
+.bg-color-swatch.is-clear {
+  background: #fff;
+}
+
+.bg-clear-icon {
+  font-size: 12px;
+  color: #E53935;
+}
+
+/* Shared check mark */
+.swatch-check {
+  position: absolute;
+  bottom: 1px;
+  right: 2px;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--color-primary, #00b96b);
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* Combined color toolbar button icon with dual color indicators */
+.combined-color-icon-wrap {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  line-height: 1;
+}
+
+.combined-color-icon-wrap .color-indicator-row {
+  display: flex;
+  gap: 1px;
+  margin-top: 1px;
+}
+
+.combined-color-icon-wrap .color-dot {
+  width: 6px;
+  height: 3px;
+  border-radius: 1px;
+}

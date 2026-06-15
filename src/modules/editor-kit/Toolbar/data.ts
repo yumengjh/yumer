@@ -130,6 +130,25 @@ export function getTypeByColor(color: string): string {
 
 export const defaultColor = "#000000";
 
+/**
+ * Fixed text color palette — 3 rows × 5 columns (15 colors).
+ * Displayed as colored "A" letter swatches.
+ */
+export const textColorPalette: string[][] = [
+  ["#000000", "#E53935", "#FB8C00", "#43A047", "#1E88E5"],
+  ["#9E9E9E", "#FDD835", "#F4511E", "#00897B", "#8E24AA"],
+  ["#C62828", "#2E7D32", "#1565C0", "#6A1B9A", "#616161"],
+];
+
+/**
+ * Fixed background/highlight color palette — 2 rows × 6 columns (12 slots).
+ * First slot is "no color" (clear highlight), rest are pastel fills.
+ */
+export const bgColorPalette: string[][] = [
+  ["", "#FFF9C4", "#FFE0B2", "#F8BBD0", "#C8E6C9", "#B3E5FC"],
+  ["#D1C4E9", "#FFCCBC", "#E0E0E0", "#B2DFDB", "#F0F4C3", "#CFD8DC"],
+];
+
 export const solidColors = [
   ["#000000", "#434343", "#666666", "#999999", "#B7B7B7", "#CCCCCC", "#D9D9D9", "#EFEFEF", "#F3F3F3", "#FFFFFF"],
   ["#980000", "#FF0000", "#FF9900", "#FFFF00", "#00FF00", "#00FFFF", "#4A86E8", "#0000FF", "#9900FF", "#FF00FF"],
