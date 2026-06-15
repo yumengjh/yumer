@@ -1,12 +1,7 @@
-/* =====================================================
-   MobileToolbar — 顶部吸附工具栏（移动端）
-   ===================================================== */
-
-/* 外层容器：sticky 吸附在 DocumentHeader（48px）正下方 */
 .mobile-toolbar-wrapper {
   position: sticky;
-  top: 48px;             /* 与 DocumentHeader 的 height 保持一致 */
-  z-index: 99;           /* 比 DocumentHeader(100) 低一层 */
+  top: 48px;
+  z-index: 99;
   display: flex;
   align-items: center;
   background: #ffffff;
@@ -16,7 +11,6 @@
   height: 44px;
 }
 
-/* 横向滑动区域 */
 .mobile-toolbar-scroll {
   display: flex;
   flex: 1;
@@ -24,22 +18,26 @@
   align-items: center;
   gap: 2px;
   padding: 0 4px;
-  /* 隐藏滚动条 */
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
 .mobile-toolbar-scroll::-webkit-scrollbar {
   display: none;
 }
 
-/* 分隔 + "更多"按钮区 */
+.mobile-toolbar-insert {
+  flex-shrink: 0;
+  padding: 0 4px 0 2px;
+  border-right: 1px solid var(--color-border, #e8e8e8);
+}
+
 .mobile-toolbar-more {
   flex-shrink: 0;
   padding: 0 4px;
   border-left: 1px solid var(--color-border, #e8e8e8);
 }
 
-/* 工具按钮 */
 .mobile-toolbar-btn {
   flex-shrink: 0;
   display: flex;
@@ -74,7 +72,6 @@
   background: var(--toolbar-active-bg, #f0f0f0);
 }
 
-/* ── 抽屉内样式 ── */
 .drawer-section {
   margin-bottom: 20px;
 }
@@ -92,4 +89,24 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
   gap: 8px;
+}
+
+.mobile-highlight-color-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mobile-insert-action-row {
+  margin-top: 12px;
+}
+
+.mobile-insert-option-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+}
+
+.mobile-insert-option-list--grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
