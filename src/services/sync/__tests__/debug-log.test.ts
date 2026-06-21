@@ -8,12 +8,14 @@ import {
 
 class MemoryStorage {
   private readonly values = new Map<string, string>();
+  setItemCalls = 0;
 
   getItem(key: string): string | null {
     return this.values.get(key) ?? null;
   }
 
   setItem(key: string, value: string): void {
+    this.setItemCalls += 1;
     this.values.set(key, value);
   }
 
@@ -38,12 +40,32 @@ function installBrowserStorage() {
     location: { href: "http://localhost/doc/doc_1" },
     setInterval,
     clearInterval,
+    setTimeout,
+    clearTimeout,
   });
+  return { localStorage, sessionStorage };
 }
 
 describe("sync debug log", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it("keeps trace appends off synchronous sessionStorage writes", () => {
+    vi.useFakeTimers();
+    const { sessionStorage } = installBrowserStorage();
+    SyncDebugLog.setEnabled(true);
+
+    SyncTraceLog.add("flush:dispatch", "doc_1", "session_1", 1, {
+      operationCount: 1,
+    });
+
+    expect(sessionStorage.setItemCalls).toBe(0);
+    expect(SyncTraceLog.getAll()).toHaveLength(1);
+
+    vi.runAllTimers();
+    expect(sessionStorage.setItemCalls).toBe(1);
   });
 
   it("records a resurrection incident when a deleted identity appears in a later manifest trace", () => {

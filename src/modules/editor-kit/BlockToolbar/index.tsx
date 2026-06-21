@@ -7,6 +7,7 @@ import { resolveBlockToolbarTarget, type BlockToolbarTarget, type BlockToolbarTa
 import { computeBlockHandlePosition, type PositionKind } from './blockPosition';
 import { shouldRetainHoveredTarget } from './targetTransition';
 import { planExplicitMoveSortKey, withExplicitMoveSortKeyAttrs } from './sortKeyReorder';
+import { nowEditorPerf, traceEditorPerfSince } from '../perfTrace';
 import './style.css';
 
 interface BlockToolbarProps {
@@ -31,7 +32,6 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
   const [menuState, setMenuState] = useState<'closed' | 'open' | 'closing'>('closed');
   const [ready, setReady] = useState(false);
   const [shouldAnimate, setShouldAnimate] = useState(false);
-  const [updateCount, setUpdateCount] = useState(0);
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const menuAnchorRef = useRef<HTMLDivElement>(null);
   const prevBlockRef = useRef<HTMLElement | null>(null);
@@ -56,6 +56,7 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
   const blockElementsRef = useRef<HTMLElement[]>([]);
   const sourceIndexRef = useRef(-1);
   const animationFrameRef = useRef<number | null>(null);
+  const transactionFrameRef = useRef<number | null>(null);
   const dropTargetIndexRef = useRef(-1);
   const isDraggingActiveRef = useRef(false);
   const justDraggedRef = useRef(false);
@@ -125,7 +126,7 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
         wrapper,
       ),
     );
-  }, [toolbarHovered, hoveredBlock, hoveredAnchor, hoveredTableCell, hoveredTargetKind, updateCount, wrapperRef]);
+  }, [toolbarHovered, hoveredBlock, hoveredAnchor, hoveredTableCell, hoveredTargetKind, wrapperRef]);
 
   const findBlockTarget = useCallback((element: HTMLElement | null, clientY?: number): BlockToolbarTarget | null => {
     if (!element) return null;
@@ -242,69 +243,83 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
     }
   }, [menuVisible]);
 
-  // 编辑器内容变化时重新计算位置（块位置可能已改变）
+  // 编辑器事务后仅修复已从 DOM 脱离的悬停目标。
   useEffect(() => {
     if (!editor) return;
-    const onUpdate = () => {
+    const applyTransactionUpdate = () => {
       const editorDom = editor.view.dom;
       const currentBlock = hoveredBlockRef.current;
       const currentAnchor = hoveredAnchorRef.current;
       if (!currentBlock && !currentAnchor) return;
 
-      if (
+      const targetDetached =
         (currentBlock && !editorDom.contains(currentBlock)) ||
-        (currentAnchor && !editorDom.contains(currentAnchor))
-      ) {
-        const fallback = pendingDeleteFallbackRef.current;
-        pendingDeleteFallbackRef.current = null;
+        (currentAnchor && !editorDom.contains(currentAnchor));
 
-        let fallbackElement = fallback?.element && editorDom.contains(fallback.element)
-          ? fallback.element
-          : fallback
-            ? document.elementFromPoint(fallback.clientX, fallback.clientY)
-            : null;
+      if (!targetDetached) return;
 
-        // If elementFromPoint didn't work, try to find ANY top-level child
-        if (!fallbackElement || !editorDom.contains(fallbackElement)) {
-          fallbackElement = editorDom.firstElementChild as HTMLElement | null;
-        }
+      const fallback = pendingDeleteFallbackRef.current;
+      pendingDeleteFallbackRef.current = null;
 
-        const nextTarget = resolveBlockToolbarTarget(fallbackElement, editorDom, fallback?.clientY);
-        if (nextTarget) {
-          setHoveredBlock(nextTarget.element);
-          setHoveredAnchor(nextTarget.anchorElement);
-          setHoveredTableCell(nextTarget.tableCellElement ?? null);
-          setHoveredTargetKind(nextTarget.kind);
-          updatePosition(nextTarget.anchorElement, nextTarget.kind);
-          setUpdateCount(c => c + 1);
-          return;
-        }
+      let fallbackElement = fallback?.element && editorDom.contains(fallback.element)
+        ? fallback.element
+        : fallback
+          ? document.elementFromPoint(fallback.clientX, fallback.clientY)
+          : null;
 
-        // Absolute last resort: if editor has any child, use it directly
-        const firstChild = editorDom.firstElementChild as HTMLElement | null;
-        if (firstChild) {
-          setHoveredBlock(firstChild);
-          setHoveredAnchor(firstChild);
-          setHoveredTableCell(null);
-          setHoveredTargetKind('block');
-          updatePosition(firstChild, 'block');
-          setUpdateCount(c => c + 1);
-          return;
-        }
+      // If elementFromPoint didn't work, try to find ANY top-level child
+      if (!fallbackElement || !editorDom.contains(fallbackElement)) {
+        fallbackElement = editorDom.firstElementChild as HTMLElement | null;
+      }
 
-        setHoveredBlock(null);
-        setHoveredAnchor(null);
-        setHoveredTableCell(null);
-        setHoveredTargetKind(null);
-        setToolbarHovered(false);
-        setMenuState('closed');
+      const nextTarget = resolveBlockToolbarTarget(fallbackElement, editorDom, fallback?.clientY);
+      if (nextTarget) {
+        setHoveredBlock(nextTarget.element);
+        setHoveredAnchor(nextTarget.anchorElement);
+        setHoveredTableCell(nextTarget.tableCellElement ?? null);
+        setHoveredTargetKind(nextTarget.kind);
+        updatePosition(nextTarget.anchorElement, nextTarget.kind);
         return;
       }
 
-      setUpdateCount(c => c + 1);
+      // Absolute last resort: if editor has any child, use it directly
+      const firstChild = editorDom.firstElementChild as HTMLElement | null;
+      if (firstChild) {
+        setHoveredBlock(firstChild);
+        setHoveredAnchor(firstChild);
+        setHoveredTableCell(null);
+        setHoveredTargetKind('block');
+        updatePosition(firstChild, 'block');
+        return;
+      }
+
+      setHoveredBlock(null);
+      setHoveredAnchor(null);
+      setHoveredTableCell(null);
+      setHoveredTargetKind(null);
+      setToolbarHovered(false);
+      setMenuState('closed');
+    };
+    const onUpdate = () => {
+      if (transactionFrameRef.current !== null) return;
+      transactionFrameRef.current = window.requestAnimationFrame(() => {
+        const startedAt = nowEditorPerf();
+        transactionFrameRef.current = null;
+        applyTransactionUpdate();
+        traceEditorPerfSince("BlockToolbar.transactionFrame", startedAt, {
+          hasHoveredBlock: Boolean(hoveredBlockRef.current),
+          hasHoveredAnchor: Boolean(hoveredAnchorRef.current),
+        });
+      });
     };
     editor.on('transaction', onUpdate);
-    return () => { editor.off('transaction', onUpdate); };
+    return () => {
+      editor.off('transaction', onUpdate);
+      if (transactionFrameRef.current !== null) {
+        window.cancelAnimationFrame(transactionFrameRef.current);
+        transactionFrameRef.current = null;
+      }
+    };
   }, [editor, updatePosition]);
 
   const handleWillDeleteBlock = useCallback((fallbackBlock: HTMLElement | null) => {
@@ -334,7 +349,7 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
       window.removeEventListener('resize', onResize);
       wrapper?.removeEventListener('scroll', onScroll);
     };
-  }, [hoveredAnchor, hoveredTargetKind, updateCount, updatePosition, wrapperRef]);
+  }, [hoveredAnchor, hoveredTargetKind, updatePosition, wrapperRef]);
 
   // 点击外部关闭菜单
   useEffect(() => {

@@ -39,7 +39,7 @@ export default function FindReplaceBar({
     replaceCurrent,
     replaceAll,
     reset: resetSearch,
-  } = useFindReplace({ editor });
+  } = useFindReplace({ editor, active: visible });
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);

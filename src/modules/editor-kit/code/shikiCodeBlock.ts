@@ -1,8 +1,9 @@
 import CodeBlock from "@tiptap/extension-code-block";
-import { ReactNodeViewRenderer } from "@tiptap/react";
+import { ReactNodeView } from "@tiptap/react";
+import { cancelPositionCheck } from "@tiptap/core";
 import { Plugin, PluginKey, type EditorState, type Transaction } from "prosemirror-state";
 import type { Node as ProseMirrorNode } from "prosemirror-model";
-import { Decoration, DecorationSet } from "prosemirror-view";
+import { Decoration, DecorationSet, type NodeView as ProseMirrorNodeView } from "prosemirror-view";
 import type { TokenStyles } from "shiki";
 import {
   DEFAULT_CODE_LANGUAGE,
@@ -19,8 +20,22 @@ import {
   selectAllCodeBlockText,
 } from "./codeBlockSelection";
 import CodeBlockView from "./CodeBlockView";
+import { skipPositionOnlyNodeViewUpdate } from "../nodeViewUpdate";
 
 const CODE_BLOCK_SELECT_ALL_KEY = new PluginKey("code-block-select-all");
+
+class PositionStableReactNodeView extends ReactNodeView {
+  override mount() {
+    super.mount();
+    const internals = this as unknown as {
+      positionCheckCallback: (() => void) | null;
+    };
+    const callback = internals.positionCheckCallback;
+    if (!callback) return;
+    cancelPositionCheck(this.editor, callback);
+    internals.positionCheckCallback = null;
+  }
+}
 
 export const SHIKI_CODE_BLOCK_PLUGIN_KEY = new PluginKey<DecorationSet>(
   "shiki-code-block-highlight",
@@ -175,7 +190,17 @@ export const createShikiCodeBlockExtension = ({
       };
     },
     addNodeView() {
-      return ReactNodeViewRenderer(CodeBlockView);
+      return (props) => {
+        const editorWithContent = props.editor as typeof props.editor & {
+          contentComponent?: unknown;
+        };
+        if (!editorWithContent.contentComponent) {
+          return {} as ProseMirrorNodeView;
+        }
+        return new PositionStableReactNodeView(CodeBlockView, props, {
+          update: skipPositionOnlyNodeViewUpdate,
+        });
+      };
     },
     addKeyboardShortcuts() {
       const parentShortcuts = this.parent?.() ?? {};

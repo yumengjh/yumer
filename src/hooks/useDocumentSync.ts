@@ -42,6 +42,7 @@ import { advanceSyncSnapshotIndexed, repairSnapshotSortKeyOrder, type SyncSnapsh
 import { createSortKeysBetween } from "@/services/sync/order";
 import { SyncTraceLog, buildManifestSummary, type SyncTraceEvent } from "@/services/sync/debug-log";
 import type { SyncBatchResult, SyncDiffHint, SyncEntry, SyncReducerState } from "@/services/sync/types";
+import { nowEditorPerf, traceEditorPerf } from "@/modules/editor-kit/perfTrace";
 
 type SyncSource = "autosync" | "manual-save";
 type SyncSnapshotCaptureSource =
@@ -1084,14 +1085,18 @@ export function useDocumentSync({
             return;
           }
 
+          const prepareStartedAt = nowEditorPerf();
+          const rebaseStartedAt = nowEditorPerf();
           const rebased = rebasePendingCreatesToSnapshotOrder(
             current,
             snapshotRef.current,
           );
+          const rebaseMs = nowEditorPerf() - rebaseStartedAt;
           if (rebased !== current) {
             replaceSyncState(rebased);
           }
 
+          const queueTracePersistStartedAt = nowEditorPerf();
           addSyncTrace("queue:before-select", rebased.docId, rebased.sessionId, rebased.sessionEpoch, () => ({
             dirtyOrderLength: rebased.dirtyOrder.length,
             entryCount: Object.keys(rebased.entries).length,
@@ -1105,7 +1110,13 @@ export function useDocumentSync({
               sortKey: e.sortKey ?? null,
             })),
           }));
+          traceEditorPerf(
+            "documentSync.flushQueueTracePersist",
+            nowEditorPerf() - queueTracePersistStartedAt,
+            { dirtyQueueLength: rebased.dirtyOrder.length },
+          );
 
+          const selectStartedAt = nowEditorPerf();
           const selectableDirtyOrder =
             failedEntryIds.size > 0
               ? rebased.dirtyOrder.filter((id) => !failedEntryIds.has(id))
@@ -1114,6 +1125,7 @@ export function useDocumentSync({
             selectableDirtyOrder,
             rebased.entries,
           );
+          const selectMs = nowEditorPerf() - selectStartedAt;
 
           if (operations.length === 0) {
             if (failedEntryIds.size > 0) {
@@ -1132,6 +1144,7 @@ export function useDocumentSync({
           }
 
           const clientBatchId = createBatchId();
+          const dispatchLogStartedAt = nowEditorPerf();
           logSyncEvent("flush:dispatch", {
             docId: rebased.docId,
             clientBatchId,
@@ -1145,7 +1158,13 @@ export function useDocumentSync({
               .length,
             moveCount: operations.filter((op) => op.opType === "move").length,
           });
+          traceEditorPerf(
+            "documentSync.flushDispatchLog",
+            nowEditorPerf() - dispatchLogStartedAt,
+            { operationCount: operations.length },
+          );
 
+          const tracePersistStartedAt = nowEditorPerf();
           addSyncTrace("flush:dispatch", rebased.docId, rebased.sessionId, rebased.sessionEpoch, () => ({
             clientBatchId,
             baseVersion: rebased.baseVersion,
@@ -1160,17 +1179,47 @@ export function useDocumentSync({
               sortKey: op.sortKey ?? null,
             })),
           }));
-          replaceSyncState(
-            markBatchInflight(
-              rebased,
-              clientBatchId,
-              operations.map((op) => op.clientId),
-              source === "manual-save",
-            ),
+          traceEditorPerf(
+            "documentSync.flushTracePersist",
+            nowEditorPerf() - tracePersistStartedAt,
+            { operationCount: operations.length },
+          );
+          const markInflightStartedAt = nowEditorPerf();
+          const inflightState = markBatchInflight(
+            rebased,
+            clientBatchId,
+            operations.map((op) => op.clientId),
+            source === "manual-save",
+          );
+          const markInflightMs = nowEditorPerf() - markInflightStartedAt;
+          traceEditorPerf(
+            "documentSync.flushMarkInflight",
+            markInflightMs,
+            { operationCount: operations.length },
+          );
+          const replaceStateStartedAt = nowEditorPerf();
+          replaceSyncState(inflightState);
+          const replaceStateMs = nowEditorPerf() - replaceStateStartedAt;
+          traceEditorPerf(
+            "documentSync.flushReplaceState",
+            replaceStateMs,
+            { operationCount: operations.length },
+          );
+          traceEditorPerf(
+            "documentSync.flushPrepare",
+            nowEditorPerf() - prepareStartedAt,
+            {
+              operationCount: operations.length,
+              dirtyQueueLength: rebased.dirtyOrder.length,
+              rebaseMs: Math.round(rebaseMs * 100) / 100,
+              selectMs: Math.round(selectMs * 100) / 100,
+              stateMs: Math.round((markInflightMs + replaceStateMs) * 100) / 100,
+            },
           );
 
           try {
-            const response = await postSyncBatchWithRetry(
+            const requestSetupStartedAt = nowEditorPerf();
+            const responsePromise = postSyncBatchWithRetry(
               {
                 docId: rebased.docId,
                 rootBlockId: rebased.rootBlockId,
@@ -1198,6 +1247,12 @@ export function useDocumentSync({
                 },
               },
             );
+            traceEditorPerf(
+              "documentSync.flushRequestSetup",
+              nowEditorPerf() - requestSetupStartedAt,
+              { operationCount: operations.length },
+            );
+            const response = await responsePromise;
             logSyncEvent("flush:response", {
               docId: rebased.docId,
               clientBatchId,

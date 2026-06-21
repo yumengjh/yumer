@@ -19,8 +19,16 @@ export default function FloatingSelectionToolbar({
   const { editor } = useMarkdownEditorContext();
   const shellRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<number | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const isVisibleRef = useRef(false);
   const [position, setPosition] = useState<FloatingToolbarPosition>({ left: -9999, top: -9999 });
   const [isVisible, setIsVisible] = useState(false);
+
+  const updateVisibility = useCallback((nextVisible: boolean) => {
+    if (isVisibleRef.current === nextVisible) return;
+    isVisibleRef.current = nextVisible;
+    setIsVisible(nextVisible);
+  }, []);
 
   const updatePosition = useCallback(() => {
     if (timerRef.current) {
@@ -29,13 +37,13 @@ export default function FloatingSelectionToolbar({
     }
 
     if (!editor || editor.isDestroyed || !editor.isEditable) {
-      setIsVisible(false);
+      updateVisibility(false);
       return;
     }
 
     const { selection } = editor.state;
     if (selection.empty) {
-      setIsVisible(false);
+      updateVisibility(false);
       return;
     }
 
@@ -55,7 +63,7 @@ export default function FloatingSelectionToolbar({
 
       if (delayMs <= 0) {
         setPosition(nextPosition);
-        setIsVisible(true);
+        updateVisibility(true);
         return;
       }
 
@@ -65,19 +73,23 @@ export default function FloatingSelectionToolbar({
 
       timerRef.current = window.setTimeout(() => {
         setPosition(nextPosition);
-        setIsVisible(true);
+        updateVisibility(true);
         timerRef.current = null;
       }, delayMs);
     } catch {
-      setIsVisible(false);
+      updateVisibility(false);
     }
-  }, [delayMs, editor]);
+  }, [delayMs, editor, updateVisibility]);
 
   useEffect(() => {
     if (!editor) return;
 
     const scheduleUpdate = () => {
-      window.requestAnimationFrame(updatePosition);
+      if (animationFrameRef.current !== null) return;
+      animationFrameRef.current = window.requestAnimationFrame(() => {
+        animationFrameRef.current = null;
+        updatePosition();
+      });
     };
 
     const hideIfOutsideEditor = (event: PointerEvent) => {
@@ -89,7 +101,7 @@ export default function FloatingSelectionToolbar({
         window.clearTimeout(timerRef.current);
         timerRef.current = null;
       }
-      setIsVisible(false);
+      updateVisibility(false);
     };
 
     editor.on("selectionUpdate", scheduleUpdate);
@@ -104,13 +116,17 @@ export default function FloatingSelectionToolbar({
         window.clearTimeout(timerRef.current);
         timerRef.current = null;
       }
+      if (animationFrameRef.current !== null) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
       editor.off("selectionUpdate", scheduleUpdate);
       editor.off("transaction", scheduleUpdate);
       window.removeEventListener("scroll", scheduleUpdate, true);
       window.removeEventListener("resize", scheduleUpdate);
       document.removeEventListener("pointerdown", hideIfOutsideEditor, true);
     };
-  }, [editor, updatePosition]);
+  }, [editor, updatePosition, updateVisibility]);
 
   const reallyVisible = isVisible && Boolean(enabledItemIds) && enabledItemIds!.size > 0;
 

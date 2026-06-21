@@ -2,7 +2,11 @@
 
 import { Schema } from "@tiptap/pm/model";
 import { describe, expect, it } from "vitest";
-import { findListContentFontSize, getListTypographyVars } from "./listTypography";
+import {
+  buildListTypographyDecorations,
+  findListContentFontSize,
+  getListTypographyVars,
+} from "./listTypography";
 
 const schema = new Schema({
   nodes: {
@@ -59,5 +63,24 @@ describe("listTypography", () => {
     ]);
 
     expect(getListTypographyVars(node)).toBeNull();
+  });
+
+  it("skips descendant scans for documents without list nodes", () => {
+    const doc = schema.node("doc", null, Array.from({ length: 20 }, (_, index) =>
+      schema.node("paragraph", null, [schema.text(`纯文本 ${index}`)]),
+    ));
+    const originalDescendants = doc.descendants.bind(doc);
+    let descendantsCallCount = 0;
+    Object.defineProperty(doc, "descendants", {
+      value: ((...args: Parameters<typeof doc.descendants>) => {
+        descendantsCallCount += 1;
+        return originalDescendants(...args);
+      }) as typeof doc.descendants,
+    });
+
+    const decorations = buildListTypographyDecorations(doc);
+
+    expect(descendantsCallCount).toBe(0);
+    expect(decorations.find()).toEqual([]);
   });
 });

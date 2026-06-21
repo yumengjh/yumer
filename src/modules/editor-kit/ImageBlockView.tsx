@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Profiler,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ProfilerOnRenderCallback,
+} from "react";
 import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
 import { Button, Dropdown, Image, Input, InputNumber, Popover, Select, Space, Tooltip, App } from "antd";
 import {
@@ -22,6 +29,11 @@ import {
 import { useMarkdownEditorContext } from "./EditorContext";
 import type { ImageBlockAttrs, ImageCrop, ImageStyleOption } from "./extensions/imageBlock";
 import "./ImageBlockView.css";
+import { recordEditorPerfSample } from "./perfTrace";
+
+const handleRender: ProfilerOnRenderCallback = (_id, _phase, actualDuration) => {
+  recordEditorPerfSample("MarkdownEditor.NodeView.ImageBlock.render", actualDuration);
+};
 
 const HIDE_DELAY = 150;
 const MIN_CROP_SIZE = 8;
@@ -575,7 +587,8 @@ export default function ImageBlockView({ node, updateAttributes, editor, getPos 
   ) : null;
 
   return (
-    <NodeViewWrapper
+    <Profiler id="ImageBlock" onRender={handleRender}>
+      <NodeViewWrapper
       className={wrapperClassName}
       contentEditable={false}
       onMouseEnter={keepToolbar}
@@ -623,6 +636,7 @@ export default function ImageBlockView({ node, updateAttributes, editor, getPos 
           <PictureOutlined />
         </div>
       )}
-    </NodeViewWrapper>
+      </NodeViewWrapper>
+    </Profiler>
   );
 }

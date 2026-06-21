@@ -1,10 +1,21 @@
 "use client";
 
-import { startTransition, useState, useMemo, useCallback, useEffect, useRef, type CSSProperties } from "react";
+import {
+  Profiler,
+  startTransition,
+  useState,
+  useMemo,
+  useCallback,
+  useEffect,
+  useRef,
+  type CSSProperties,
+  type ProfilerOnRenderCallback,
+} from "react";
 import { App } from "antd";
 import { usePathname, useRouter } from "next/navigation";
 import TurndownService from "turndown";
 import { MarkdownEditor, MarkdownEditorRef } from "@/modules/editor-kit";
+import { nowEditorPerf, traceEditorPerf, traceEditorPerfSince } from "@/modules/editor-kit/perfTrace";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import {
   DASH_PATH,
@@ -416,6 +427,7 @@ function EditorContent() {
   } = useDocument();
 
   const [content, setContent] = useState<EditorContent>(BLANK_CONTENT);
+  const [liveContent, setLiveContent] = useState<EditorContent>(BLANK_CONTENT);
   const [contentDirty, setContentDirty] = useState(false);
   const [loadedContentDocId, setLoadedContentDocId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<OutputTab>("markdown");
@@ -460,6 +472,11 @@ function EditorContent() {
     hint: SyncDiffHint;
   } | null>(null);
   const editorRef = useRef<MarkdownEditorRef>(null);
+  const replaceContent = useCallback((nextContent: EditorContent) => {
+    contentRef.current = nextContent;
+    setLiveContent(nextContent);
+    setContent(nextContent);
+  }, []);
   const restoredLastEditDocIdRef = useRef<string | null>(null);
   const [pendingLastEditRestoreBlockId, setPendingLastEditRestoreBlockId] = useState<string | null>(null);
   const lastPersistedEditBlockIdRef = useRef<string | null>(null);
@@ -469,8 +486,8 @@ function EditorContent() {
   const [rememberingPosition, setRememberingPosition] = useState(false);
   const queuedEditBlockIdRef = useRef<string | null>(null);
   const queuedEditAtRef = useRef(0);
-  const tiptapContent = typeof content === "object" && content?.type === "doc"
-    ? (content as TiptapDoc)
+  const tiptapContent = typeof liveContent === "object" && liveContent?.type === "doc"
+    ? (liveContent as TiptapDoc)
     : null;
   const syncContent =
     currentDoc?.docId && loadedContentDocId === currentDoc.docId
@@ -515,8 +532,7 @@ function EditorContent() {
         );
         if (reconciled !== latestEditorContent) {
           editorRef.current?.patchBlockIdentityFromDoc(reconciled);
-          contentRef.current = reconciled;
-          setContent(reconciled);
+          replaceContent(reconciled);
           if (currentDoc && SyncTraceLog.isEnabled()) {
             SyncTraceLog.add(
               "editor:ack-merged",
@@ -535,8 +551,7 @@ function EditorContent() {
     },
     onRemoteContentApplied: (doc) => {
       ignoreNextLocalSnapshotChange();
-      contentRef.current = doc;
-      setContent(doc);
+      replaceContent(doc);
       setContentDirty(false);
       setHasUnsavedChanges(false);
       setSaveStatus("saved");
@@ -547,8 +562,7 @@ function EditorContent() {
       const loaded = await loadContent(currentDoc.docId);
       const loadedContent = loaded.content || BLANK_CONTENT;
       ignoreNextLocalSnapshotChange();
-      contentRef.current = loadedContent;
-      setContent(loadedContent);
+      replaceContent(loadedContent);
       setLoadedContentDocId(currentDoc.docId);
       setContentDirty(false);
       setHasUnsavedChanges(false);
@@ -686,7 +700,7 @@ function EditorContent() {
     const docId = currentDoc?.docId;
     if (!docId) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- document-bound editor state must reset when the active document is cleared
-      setContent(BLANK_CONTENT);
+      replaceContent(BLANK_CONTENT);
       setContentDirty(false);
       setLoadedContentDocId(null);
       setHasUnsavedChanges(false);
@@ -709,7 +723,7 @@ function EditorContent() {
         if (cancelled) return;
         const loadedContent = loaded.content || BLANK_CONTENT;
         loadedDocIdRef.current = docId;
-        setContent(loaded.content || BLANK_CONTENT);
+        replaceContent(loaded.content || BLANK_CONTENT);
         setLoadedContentDocId(docId);
         setContentDirty(false);
         setHasUnsavedChanges(false);
@@ -739,7 +753,7 @@ function EditorContent() {
         }
       } catch {
         if (cancelled) return;
-        setContent(BLANK_CONTENT);
+        replaceContent(BLANK_CONTENT);
         setContentDirty(false);
         setLoadedContentDocId(null);
         loadedDocIdRef.current = null;
@@ -757,6 +771,7 @@ function EditorContent() {
     loadContent,
     localSnapshotStore,
     markSavedAt,
+    replaceContent,
     setHasUnsavedChanges,
     setSaveStatus,
     syncEngineEnabled,
@@ -802,7 +817,7 @@ function EditorContent() {
 
     const recovery = pendingLocalRecovery;
     const timer = window.setTimeout(() => {
-      setContent(recovery.snapshot.content);
+      replaceContent(recovery.snapshot.content);
       setContentDirty(true);
       setHasUnsavedChanges(true);
       setSaveStatus("dirty");
@@ -815,6 +830,7 @@ function EditorContent() {
     currentDoc,
     message,
     pendingLocalRecovery,
+    replaceContent,
     setHasUnsavedChanges,
     setSaveStatus,
     sync.syncState,
@@ -901,14 +917,14 @@ function EditorContent() {
     }
   }, [currentDoc, setSaveStatus]);
 
-  useAutoSave(content, saveLegacyContent, {
+  useAutoSave(liveContent, saveLegacyContent, {
     delay: 1500,
     enabled: shouldEnableLegacyAutoSave({
       syncEngineEnabled,
       loadingDoc,
       hasCurrentDoc: Boolean(currentDoc),
       contentDirty,
-      content,
+      content: liveContent,
     }),
   });
 
@@ -939,6 +955,7 @@ function EditorContent() {
   }, []);
 
   const handleEditorChange = useCallback((nextContent: EditorContent, syncDiffHint?: SyncDiffHint) => {
+    const startedAt = nowEditorPerf();
     if (
       syncDiffHint &&
       nextContent &&
@@ -952,7 +969,7 @@ function EditorContent() {
     }
     contentRef.current = nextContent;
     startTransition(() => {
-      setContent(nextContent);
+      setLiveContent(nextContent);
     });
     if (!contentDirty) {
       setContentDirty(true);
@@ -969,6 +986,16 @@ function EditorContent() {
         void queueEditorPosition("selection", false);
       }
     }
+    traceEditorPerfSince("EditorPage.handleEditorChange", startedAt, {
+      hasSyncDiffHint: Boolean(syncDiffHint),
+      contentDirty,
+      loadingDoc,
+      hasCurrentDoc: Boolean(currentDoc),
+      blockCount:
+        nextContent && typeof nextContent === "object" && Array.isArray((nextContent as TiptapDoc).content)
+          ? (nextContent as TiptapDoc).content.length
+          : null,
+    });
   }, [
     currentDoc,
     contentDirty,
@@ -1050,7 +1077,7 @@ function EditorContent() {
 
   useEffect(() => {
     if (!syncEngineEnabled) return;
-    if (typeof content === "string") return;
+    if (typeof liveContent === "string") return;
     if (loadingDoc) return;
     if (syncUiSaveStatus !== "dirty") return;
     const timer = window.setTimeout(() => {
@@ -1058,7 +1085,7 @@ function EditorContent() {
     }, syncPreferences.documentSyncDelayMs);
     return () => window.clearTimeout(timer);
   }, [
-    content,
+    liveContent,
     loadingDoc,
     syncFlush,
     syncUiSaveStatus,
@@ -1123,7 +1150,7 @@ function EditorContent() {
 
     setManualSaving(true);
     try {
-      const isJsonDocument = typeof content !== "string";
+      const isJsonDocument = typeof liveContent !== "string";
       const skipCommit = shouldSkipManualCommit({
         syncEngineEnabled,
         isJsonDocument,
@@ -1132,12 +1159,12 @@ function EditorContent() {
       });
       let noDraftToSave = skipCommit;
 
-      if (!skipCommit && (!syncEngineEnabled || typeof content === "string")) {
-        await saveLegacyContent(content);
+      if (!skipCommit && (!syncEngineEnabled || typeof liveContent === "string")) {
+        await saveLegacyContent(liveContent);
       } else if (!skipCommit) {
         const latestEditorContent = editorRef.current?.getJSON() as TiptapDoc | undefined;
         if (latestEditorContent?.type === "doc") {
-          setContent(latestEditorContent);
+          replaceContent(latestEditorContent);
         }
         const ok = await sync.flushAndCommitBarrier(
           latestEditorContent?.type === "doc" ? latestEditorContent : tiptapContent,
@@ -1184,7 +1211,7 @@ function EditorContent() {
         const loaded = await loadContent(currentDoc.docId);
         const loadedContent = loaded.content || BLANK_CONTENT;
         ignoreNextLocalSnapshotChange();
-        setContent(loadedContent);
+        replaceContent(loadedContent);
       }
       await clearLocalSnapshot();
       setContentDirty(false);
@@ -1201,7 +1228,7 @@ function EditorContent() {
   }, [
     sync,
     currentDoc,
-    content,
+    liveContent,
     contentDirty,
     manualSaving,
     manualSaveMode,
@@ -1211,6 +1238,7 @@ function EditorContent() {
     syncEngineEnabled,
     saveLegacyContent,
     loadContent,
+    replaceContent,
     applyCommittedVersion,
     discardableDraft,
     currentSyncSession,
@@ -1233,7 +1261,7 @@ function EditorContent() {
       }
       const loaded = await loadContent(currentDoc.docId);
       ignoreNextLocalSnapshotChange();
-      setContent(loaded.content || BLANK_CONTENT);
+      replaceContent(loaded.content || BLANK_CONTENT);
       await clearLocalSnapshot();
       setContentDirty(false);
       setHasUnsavedChanges(false);
@@ -1252,6 +1280,7 @@ function EditorContent() {
     discardingDraft,
     ignoreNextLocalSnapshotChange,
     loadContent,
+    replaceContent,
     markSavedAt,
     message,
     currentSyncSession,
@@ -1265,7 +1294,7 @@ function EditorContent() {
 
     await selectDoc(currentDoc.docId);
     const loaded = await loadContent(currentDoc.docId);
-    setContent(loaded.content || BLANK_CONTENT);
+    replaceContent(loaded.content || BLANK_CONTENT);
     await clearLocalSnapshot();
     setContentDirty(false);
     setHasUnsavedChanges(false);
@@ -1275,6 +1304,7 @@ function EditorContent() {
     currentDoc,
     loadContent,
     markSavedAt,
+    replaceContent,
     selectDoc,
     setHasUnsavedChanges,
     setSaveStatus,
@@ -1294,11 +1324,11 @@ function EditorContent() {
   const outputContent = useMemo(() => {
     if (!outputModalOpen) return "";
     if (activeTab === "json") {
-      return typeof content === "object" ? JSON.stringify(content, null, 2) : "{}";
+      return typeof liveContent === "object" ? JSON.stringify(liveContent, null, 2) : "{}";
     }
-    const previewHtml = contentToHtml(content);
+    const previewHtml = contentToHtml(liveContent);
     return activeTab === "html" ? previewHtml : htmlToMarkdown(previewHtml);
-  }, [activeTab, content, outputModalOpen]);
+  }, [activeTab, liveContent, outputModalOpen]);
   const copyLabel = activeTab === "html" ? "复制 HTML" : activeTab === "json" ? "复制 JSON" : "复制 Markdown";
 
   const setupOpen = shouldShowSetupModal({
@@ -1317,6 +1347,62 @@ function EditorContent() {
   const showFixedToolbar =
     !toolbarPreferences.floatingToolbarEnabled ||
     toolbarPreferences.showFixedToolbarWithFloating;
+  const markdownEditorStyle = useMemo<CSSProperties>(
+    () =>
+      ({
+        "--app-editor-font-size": `${activeSettingsState.effectiveSettings.editor.fontSize}px`,
+        "--app-editor-content-width": `${activeSettingsState.effectiveSettings.editor.contentWidth}px`,
+      }) as CSSProperties,
+    [
+      activeSettingsState.effectiveSettings.editor.contentWidth,
+      activeSettingsState.effectiveSettings.editor.fontSize,
+    ],
+  );
+  const handleEditorProfilerRender = useCallback<ProfilerOnRenderCallback>(
+    (_id, phase, actualDuration, baseDuration) => {
+      traceEditorPerf("EditorPage.MarkdownEditor.render", actualDuration, {
+        phase,
+        baseDuration: Math.round(baseDuration * 100) / 100,
+      });
+    },
+    [],
+  );
+  const markdownEditorElement = useMemo(() => (
+    <MarkdownEditor
+      ref={editorRef}
+      content={content}
+      onChange={handleEditorChange}
+      placeholder="不用完美，先留下痕迹"
+      showToolbar={showFixedToolbar}
+      floatingToolbarEnabled={toolbarPreferences.floatingToolbarEnabled}
+      floatingToolbarItemIds={floatingToolbarItemIds}
+      floatingToolbarDelayMs={toolbarPreferences.floatingToolbarDelayMs}
+      showTOC={showTOC}
+      onTOCToggle={setShowTOC}
+      loading={loadingDoc}
+      defaultFontSize={activeSettingsState.effectiveSettings.editor.fontSize}
+      contentWidth={activeSettingsState.effectiveSettings.editor.contentWidth}
+      title={currentDoc?.title ?? ""}
+      onTitleChange={handleTitleChange}
+      onUploadImage={handleUploadImage}
+      style={markdownEditorStyle}
+    />
+  ), [
+    activeSettingsState.effectiveSettings.editor.contentWidth,
+    activeSettingsState.effectiveSettings.editor.fontSize,
+    content,
+    currentDoc?.title,
+    floatingToolbarItemIds,
+    handleEditorChange,
+    handleTitleChange,
+    handleUploadImage,
+    loadingDoc,
+    markdownEditorStyle,
+    showFixedToolbar,
+    showTOC,
+    toolbarPreferences.floatingToolbarDelayMs,
+    toolbarPreferences.floatingToolbarEnabled,
+  ]);
 
   const handleToolbarPreferencesChange = useCallback((next: EditorToolbarPreferences) => {
     setToolbarPreferences(next);
@@ -1460,30 +1546,9 @@ function EditorContent() {
             onClose={handleCloseFindReplace}
           />
           <div className={`output-card${zenMode ? " output-card--zen" : ""}`}>
-            <MarkdownEditor
-              ref={editorRef}
-              content={content}
-              onChange={handleEditorChange}
-              placeholder="不用完美，先留下痕迹"
-              showToolbar={showFixedToolbar}
-              floatingToolbarEnabled={toolbarPreferences.floatingToolbarEnabled}
-              floatingToolbarItemIds={floatingToolbarItemIds}
-              floatingToolbarDelayMs={toolbarPreferences.floatingToolbarDelayMs}
-              showTOC={showTOC}
-              onTOCToggle={setShowTOC}
-              loading={loadingDoc}
-              defaultFontSize={activeSettingsState.effectiveSettings.editor.fontSize}
-              contentWidth={activeSettingsState.effectiveSettings.editor.contentWidth}
-              title={currentDoc?.title ?? ""}
-              onTitleChange={handleTitleChange}
-              onUploadImage={handleUploadImage}
-              style={
-                {
-                  "--app-editor-font-size": `${activeSettingsState.effectiveSettings.editor.fontSize}px`,
-                  "--app-editor-content-width": `${activeSettingsState.effectiveSettings.editor.contentWidth}px`,
-                } as CSSProperties
-              }
-            />
+            <Profiler id="MarkdownEditor" onRender={handleEditorProfilerRender}>
+              {markdownEditorElement}
+            </Profiler>
           </div>
 
           <button

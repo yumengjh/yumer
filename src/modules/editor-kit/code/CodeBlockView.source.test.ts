@@ -3,6 +3,18 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("CodeBlockView source contract", () => {
+  it("skips position-only React node-view rerenders", () => {
+    const source = fs.readFileSync(
+      path.resolve(process.cwd(), "src/modules/editor-kit/code/shikiCodeBlock.ts"),
+      "utf8",
+    );
+
+    expect(source).toContain("update: skipPositionOnlyNodeViewUpdate");
+    expect(source).toContain("class PositionStableReactNodeView extends ReactNodeView");
+    expect(source).toContain("cancelPositionCheck(this.editor, callback)");
+    expect(source).toContain("new PositionStableReactNodeView");
+  });
+
   it("uses Ant Design controls and moves secondary settings into the more menu", () => {
     const source = fs.readFileSync(
       path.resolve(process.cwd(), "src/modules/editor-kit/code/CodeBlockView.tsx"),

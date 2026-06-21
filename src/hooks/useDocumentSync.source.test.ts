@@ -276,4 +276,46 @@ describe("useDocumentSync source guards", () => {
     expect(indexPassAt).toBeGreaterThan(indexedAdvanceAt);
     expect(indexUpdateAt).toBeGreaterThan(indexPassAt);
   });
+
+  it("captures editor-effect snapshots immediately so autosync cannot flush stale diff state", () => {
+    const hookSource = fs.readFileSync(
+      path.resolve(process.cwd(), "src/hooks/useDocumentSync.ts"),
+      "utf8",
+    );
+
+    expect(hookSource).not.toContain("EDITOR_EFFECT_CAPTURE_DELAY_MS");
+
+    const effectAt = hookSource.indexOf('captureContentSnapshot(content, "editor-effect")');
+    const effectEndAt = hookSource.indexOf("}, [captureContentSnapshot, content]);", effectAt);
+    const effectBody = hookSource.slice(effectAt, effectEndAt);
+
+    expect(effectAt).toBeGreaterThanOrEqual(0);
+    expect(effectBody).not.toContain("window.setTimeout");
+    expect(effectBody).not.toContain("window.clearTimeout");
+  });
+
+  it("profiles synchronous autosync preparation and request setup separately", () => {
+    const hookSource = fs.readFileSync(
+      path.resolve(process.cwd(), "src/hooks/useDocumentSync.ts"),
+      "utf8",
+    );
+
+    expect(hookSource).toContain('"documentSync.flushPrepare"');
+    expect(hookSource).toContain('"documentSync.flushRequestSetup"');
+    expect(hookSource).toContain("const responsePromise = postSyncBatchWithRetry(");
+    expect(hookSource).toContain("const response = await responsePromise;");
+  });
+
+  it("profiles each synchronous flush dispatch boundary separately", () => {
+    const hookSource = fs.readFileSync(
+      path.resolve(process.cwd(), "src/hooks/useDocumentSync.ts"),
+      "utf8",
+    );
+
+    expect(hookSource).toContain('"documentSync.flushQueueTracePersist"');
+    expect(hookSource).toContain('"documentSync.flushDispatchLog"');
+    expect(hookSource).toContain('"documentSync.flushTracePersist"');
+    expect(hookSource).toContain('"documentSync.flushMarkInflight"');
+    expect(hookSource).toContain('"documentSync.flushReplaceState"');
+  });
 });

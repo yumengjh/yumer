@@ -16,10 +16,15 @@ export interface FindMatch {
 /** hook 选项 */
 interface UseFindReplaceOptions {
   editor: Editor | null;
+  active?: boolean;
   /** 普通匹配高亮色 */
   highlightColor?: string;
   /** 当前激活匹配高亮色 */
   activeHighlightColor?: string;
+}
+
+export function shouldScheduleFindReplaceRefresh(active: boolean, query: string): boolean {
+  return active && query.length > 0;
 }
 
 /** 转义正则特殊字符 */
@@ -167,6 +172,7 @@ function hasFindReplacePlugin(editor: Editor): boolean {
 
 export function useFindReplace({
   editor,
+  active = true,
   highlightColor = "#fff3a8",
   activeHighlightColor = "#ff9833",
 }: UseFindReplaceOptions) {
@@ -238,22 +244,27 @@ export function useFindReplace({
 
   // ── query / caseSensitive 变化时重新搜索 ──
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- query changes must update both React match state and ProseMirror decorations
     doSearch(query, caseSensitive);
-  }, [query, caseSensitive, editor]);
+  }, [query, caseSensitive, editor, doSearch]);
 
   // ── 文档内容变化时重新搜索（保持 currentIndex） ──
   useEffect(() => {
-    if (!editor) return;
+    if (!editor || !shouldScheduleFindReplaceRefresh(active, query)) return;
+    let frameId: number | null = null;
     const handler = () => {
-      requestAnimationFrame(() => {
+      if (frameId !== null) return;
+      frameId = requestAnimationFrame(() => {
+        frameId = null;
         doSearch(query, caseSensitive, currentIndex);
       });
     };
     editor.on("update", handler);
     return () => {
       editor.off("update", handler);
+      if (frameId !== null) cancelAnimationFrame(frameId);
     };
-  }, [editor, query, caseSensitive, currentIndex, doSearch]);
+  }, [active, editor, query, caseSensitive, currentIndex, doSearch]);
 
   // ── 滚动到当前匹配 ──
   const scrollToMatch = useCallback(

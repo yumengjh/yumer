@@ -7,6 +7,7 @@ const MAX_RECORDS = 200;
 const TRACE_STORAGE_KEY = "sync-trace-log";
 const TRACE_MAX_RECORDS = 800;
 const TRACE_SCHEMA_VERSION = 2;
+const TRACE_PERSIST_DELAY_MS = 3_000;
 
 const DELETED_IDENTITY_STORAGE_KEY = "sync-deleted-identity-watch";
 const INCIDENT_STORAGE_KEY = "sync-debug-incidents";
@@ -112,23 +113,62 @@ export type SyncAiDebugBundleOptions = {
   incidentLimit?: number;
 };
 
-function loadTraceRecords(): SyncTraceRecord[] {
-  if (typeof window === "undefined") return [];
+let traceStorageCache: Storage | null = null;
+let traceRecordsCache: SyncTraceRecord[] | null = null;
+let tracePersistTimer: number | null = null;
+
+function getTraceStorage(): Storage | null {
+  if (typeof window === "undefined") return null;
   try {
-    const raw = sessionStorage.getItem(TRACE_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    return window.sessionStorage;
   } catch {
+    return null;
+  }
+}
+
+function cancelPendingTracePersist(): void {
+  if (tracePersistTimer == null || typeof window === "undefined") return;
+  window.clearTimeout(tracePersistTimer);
+  tracePersistTimer = null;
+}
+
+function loadTraceRecords(): SyncTraceRecord[] {
+  const storage = getTraceStorage();
+  if (!storage) return [];
+  if (traceStorageCache === storage && traceRecordsCache) {
+    return traceRecordsCache;
+  }
+
+  cancelPendingTracePersist();
+  try {
+    const raw = storage.getItem(TRACE_STORAGE_KEY);
+    const records = raw ? JSON.parse(raw) : [];
+    traceStorageCache = storage;
+    traceRecordsCache = records;
+    return records;
+  } catch {
+    traceStorageCache = storage;
+    traceRecordsCache = [];
     return [];
   }
 }
 
-function saveTraceRecords(records: SyncTraceRecord[]): void {
-  if (typeof window === "undefined") return;
-  try {
-    sessionStorage.setItem(TRACE_STORAGE_KEY, JSON.stringify(records));
-  } catch {
-    // sessionStorage 可能已满，忽略
-  }
+function scheduleTraceRecordsPersist(records: SyncTraceRecord[]): void {
+  const storage = getTraceStorage();
+  if (!storage) return;
+
+  traceStorageCache = storage;
+  traceRecordsCache = records;
+  cancelPendingTracePersist();
+  tracePersistTimer = window.setTimeout(() => {
+    tracePersistTimer = null;
+    if (traceStorageCache !== storage || !traceRecordsCache) return;
+    try {
+      storage.setItem(TRACE_STORAGE_KEY, JSON.stringify(traceRecordsCache));
+    } catch {
+      // sessionStorage 可能已满，忽略
+    }
+  }, TRACE_PERSIST_DELAY_MS);
 }
 
 function loadDeletedIdentityRecords(): DeletedIdentityWatchRecord[] {
@@ -743,16 +783,19 @@ export const SyncTraceLog = {
     if (records.length > TRACE_MAX_RECORDS) {
       records.splice(0, records.length - TRACE_MAX_RECORDS);
     }
-    saveTraceRecords(records);
+    scheduleTraceRecordsPersist(records);
   },
 
   getAll(): SyncTraceRecord[] {
-    return loadTraceRecords();
+    return [...loadTraceRecords()];
   },
 
   clear(): void {
-    if (typeof window === "undefined") return;
-    sessionStorage.removeItem(TRACE_STORAGE_KEY);
+    const storage = getTraceStorage();
+    cancelPendingTracePersist();
+    traceStorageCache = storage;
+    traceRecordsCache = [];
+    storage?.removeItem(TRACE_STORAGE_KEY);
     SyncIdentityWatch.clear();
   },
 

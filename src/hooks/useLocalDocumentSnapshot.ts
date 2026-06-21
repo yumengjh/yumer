@@ -10,6 +10,7 @@ import {
 } from "@/services/local-snapshot";
 import { hashEditorDoc } from "@/services/sync/hash";
 import { shouldCaptureLocalSnapshotChange } from "@/services/local-snapshot-policy";
+import { nowEditorPerf, traceEditorPerfSince } from "@/modules/editor-kit/perfTrace";
 
 export type LocalSnapshotStatus =
   | "idle"
@@ -49,6 +50,19 @@ const EMPTY_STATE: LocalSnapshotState = {
 
 function snapshotWriteKey(snapshot: LocalDocSnapshot): string {
   return `${snapshot.docId}:${snapshot.savedAt}:${snapshot.hash}`;
+}
+
+function blockCountOf(content: TiptapDoc | null): number | null {
+  return Array.isArray(content?.content) ? content.content.length : null;
+}
+
+function hashEditorDocWithTrace(content: TiptapDoc): string {
+  const startedAt = nowEditorPerf();
+  const hash = hashEditorDoc(content);
+  traceEditorPerfSince("localSnapshot.hash", startedAt, {
+    blockCount: blockCountOf(content),
+  });
+  return hash;
 }
 
 export function useLocalDocumentSnapshot({
@@ -96,7 +110,12 @@ export function useLocalDocumentSnapshot({
       }
 
       try {
+        const writeStartedAt = nowEditorPerf();
         await store.write(snapshot);
+        traceEditorPerfSince("localSnapshot.write", writeStartedAt, {
+          docId: snapshot.docId,
+          blockCount: blockCountOf(snapshot.content),
+        });
         if (!isCurrentSnapshot()) return;
         setState({
           status: "saved",
@@ -126,7 +145,12 @@ export function useLocalDocumentSnapshot({
   const scheduleSnapshotWrite = useCallback(
     (nextDocId: string, nextContent: TiptapDoc) => {
       snapshotWriter.schedule(() => {
+        const buildStartedAt = nowEditorPerf();
         const snapshot = buildLocalDocSnapshot(nextDocId, nextContent);
+        traceEditorPerfSince("localSnapshot.build", buildStartedAt, {
+          docId: nextDocId,
+          blockCount: blockCountOf(nextContent),
+        });
         latestSnapshotWriteKeyRef.current = snapshotWriteKey(snapshot);
         lastObservedHashRef.current = snapshot.hash;
         return snapshot;
@@ -165,7 +189,7 @@ export function useLocalDocumentSnapshot({
     docIdRef.current = docId;
 
     if (isNewDoc) {
-      const currentHash = hashEditorDoc(content);
+      const currentHash = hashEditorDocWithTrace(content);
       // New document load: read existing snapshot metadata only; do not write or compare.
       lastObservedHashRef.current = currentHash;
       lastObservedContentRef.current = content;
@@ -230,7 +254,7 @@ export function useLocalDocumentSnapshot({
     suppressNextCaptureRef.current = false;
 
     if (suppressCapture) {
-      const currentHash = hashEditorDoc(content);
+      const currentHash = hashEditorDocWithTrace(content);
       lastObservedHashRef.current = currentHash;
       setState((current) => ({
         ...current,
@@ -268,7 +292,7 @@ export function useLocalDocumentSnapshot({
 
   const refreshSnapshot = useCallback(async () => {
     if (!docId || !content) return;
-    const currentHash = hashEditorDoc(content);
+    const currentHash = hashEditorDocWithTrace(content);
     setState((current) => ({
       ...current,
       status: "checking",

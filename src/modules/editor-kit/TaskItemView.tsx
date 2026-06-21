@@ -1,6 +1,11 @@
-import type { CSSProperties } from "react";
+import { Profiler, type CSSProperties, type ProfilerOnRenderCallback } from "react";
 import { NodeViewWrapper, NodeViewContent, type NodeViewProps } from "@tiptap/react";
 import { getListTypographyVars } from "./extensions/listTypography";
+import { recordEditorPerfSample } from "./perfTrace";
+
+const handleRender: ProfilerOnRenderCallback = (_id, _phase, actualDuration) => {
+  recordEditorPerfSample("MarkdownEditor.NodeView.TaskItem.render", actualDuration);
+};
 
 export default function TaskItemView({ node, updateAttributes }: NodeViewProps) {
   const typographyVars = getListTypographyVars(node);
@@ -10,7 +15,8 @@ export default function TaskItemView({ node, updateAttributes }: NodeViewProps) 
   const inputId = `task-item-${node.attrs.clientId ?? node.attrs.blockId ?? "local"}`;
 
   return (
-    <NodeViewWrapper
+    <Profiler id="TaskItem" onRender={handleRender}>
+      <NodeViewWrapper
       as="li"
       className="task-list-item"
       data-list-font-size={typographyVars?.["--list-font-size"]}
@@ -42,6 +48,7 @@ export default function TaskItemView({ node, updateAttributes }: NodeViewProps) 
         </label>
       </div>
       <NodeViewContent as="div" className="task-item-content" />
-    </NodeViewWrapper>
+      </NodeViewWrapper>
+    </Profiler>
   );
 }

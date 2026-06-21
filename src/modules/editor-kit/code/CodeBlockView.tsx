@@ -1,10 +1,12 @@
 import {
+  Profiler,
   useEffect,
   useRef,
   useState,
   useSyncExternalStore,
   type CSSProperties,
   type MouseEvent,
+  type ProfilerOnRenderCallback,
 } from "react";
 import { Button, Dropdown, Input, Select, Space, Switch } from "antd";
 import type { InputRef } from "antd/es/input";
@@ -26,6 +28,11 @@ import {
   normalizeCodeBlockAttrs,
   type CodeBlockAttrs,
 } from "./codeBlockOptions";
+import { recordEditorPerfSample } from "../perfTrace";
+
+const handleRender: ProfilerOnRenderCallback = (_id, _phase, actualDuration) => {
+  recordEditorPerfSample("MarkdownEditor.NodeView.CodeBlock.render", actualDuration);
+};
 
 const languageSelectOptions = codeLanguageItems.map((item) => ({
   value: item.key,
@@ -200,7 +207,8 @@ export default function CodeBlockView({
   );
 
   return (
-    <NodeViewWrapper
+    <Profiler id="CodeBlock" onRender={handleRender}>
+      <NodeViewWrapper
       className={[
         "code-block-view",
         selected ? "is-selected" : "",
@@ -333,6 +341,7 @@ export default function CodeBlockView({
           </div>
         </div>
       ) : null}
-    </NodeViewWrapper>
+      </NodeViewWrapper>
+    </Profiler>
   );
 }

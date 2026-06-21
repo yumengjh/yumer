@@ -1,7 +1,12 @@
-import { useState, useEffect, useCallback } from "react";
+import { Profiler, useState, useEffect, useCallback, type ProfilerOnRenderCallback } from "react";
 import { NodeViewWrapper, NodeViewContent } from "@tiptap/react";
 import type { NodeViewProps } from "@tiptap/react";
 import { highlightBlockColors } from "./Toolbar/data";
+import { recordEditorPerfSample } from "./perfTrace";
+
+const handleRender: ProfilerOnRenderCallback = (_id, _phase, actualDuration) => {
+  recordEditorPerfSample("MarkdownEditor.NodeView.HighlightBlock.render", actualDuration);
+};
 
 export default function HighlightBlockView({
   node,
@@ -33,7 +38,8 @@ export default function HighlightBlockView({
   }, [editor, checkFocus]);
 
   return (
-    <NodeViewWrapper
+    <Profiler id="HighlightBlock" onRender={handleRender}>
+      <NodeViewWrapper
       className="highlight-block-view"
       style={{ backgroundColor: bgColor }}
     >
@@ -58,6 +64,7 @@ export default function HighlightBlockView({
         </div>
       )}
       <NodeViewContent />
-    </NodeViewWrapper>
+      </NodeViewWrapper>
+    </Profiler>
   );
 }

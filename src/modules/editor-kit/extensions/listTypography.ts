@@ -1,9 +1,12 @@
 import { Extension } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
-import { Plugin } from "@tiptap/pm/state";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 
 const DEFAULT_LIST_FONT_SIZE_PX = 15;
+const listTypographyPluginKey = new PluginKey<DecorationSet>("listTypography");
+const LIST_ITEM_NODE_TYPES = new Set(["listItem", "taskItem"]);
+const LIST_CONTAINER_NODE_TYPES = new Set(["bulletList", "orderedList", "taskList"]);
 
 function normalizeFontSize(value: unknown): string | null {
   if (typeof value !== "string" && typeof value !== "number") {
@@ -79,38 +82,62 @@ function serializeVars(vars: Record<string, string>): string {
     .join(";");
 }
 
+function collectListTypographyDecorations(
+  node: ProseMirrorNode,
+  pos: number,
+  decorations: Decoration[],
+): void {
+  if (LIST_ITEM_NODE_TYPES.has(node.type.name)) {
+    const vars = getListTypographyVars(node);
+    if (vars) {
+      decorations.push(
+        Decoration.node(pos, pos + node.nodeSize, {
+          "data-list-font-size": vars["--list-font-size"],
+          style: serializeVars(vars),
+        }),
+      );
+    }
+  }
+
+  node.forEach((child, offset) => {
+    if (!LIST_ITEM_NODE_TYPES.has(child.type.name) && !LIST_CONTAINER_NODE_TYPES.has(child.type.name)) {
+      return;
+    }
+    collectListTypographyDecorations(child, pos + offset + 1, decorations);
+  });
+}
+
+export function buildListTypographyDecorations(doc: ProseMirrorNode): DecorationSet {
+  const decorations: Decoration[] = [];
+
+  doc.forEach((node, offset) => {
+    if (!LIST_ITEM_NODE_TYPES.has(node.type.name) && !LIST_CONTAINER_NODE_TYPES.has(node.type.name)) {
+      return;
+    }
+    collectListTypographyDecorations(node, offset, decorations);
+  });
+
+  return decorations.length > 0
+    ? DecorationSet.create(doc, decorations)
+    : DecorationSet.empty;
+}
+
 export const ListTypography = Extension.create({
   name: "listTypography",
 
   addProseMirrorPlugins() {
     return [
-      new Plugin({
-        props: {
-          decorations: (state) => {
-            const decorations: Decoration[] = [];
-
-            state.doc.descendants((node, pos) => {
-              if (node.type.name !== "listItem" && node.type.name !== "taskItem") {
-                return true;
-              }
-
-              const vars = getListTypographyVars(node);
-              if (!vars) return true;
-
-              decorations.push(
-                Decoration.node(pos, pos + node.nodeSize, {
-                  "data-list-font-size": vars["--list-font-size"],
-                  style: serializeVars(vars),
-                }),
-              );
-
-              return true;
-            });
-
-            return decorations.length > 0
-              ? DecorationSet.create(state.doc, decorations)
-              : null;
+      new Plugin<DecorationSet>({
+        key: listTypographyPluginKey,
+        state: {
+          init: (_, state) => buildListTypographyDecorations(state.doc),
+          apply: (tr, old) => {
+            if (!tr.docChanged) return old.map(tr.mapping, tr.doc);
+            return buildListTypographyDecorations(tr.doc);
           },
+        },
+        props: {
+          decorations: (state) => listTypographyPluginKey.getState(state) ?? null,
         },
       }),
     ];

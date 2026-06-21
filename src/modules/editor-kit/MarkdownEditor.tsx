@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState, forwardRef, useImperativeHandle } from "react";
+import {
+  Profiler,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  forwardRef,
+  useImperativeHandle,
+} from "react";
 import { useEditor, EditorContent, ReactNodeViewRenderer } from "@tiptap/react";
 import type { Editor } from "@tiptap/react";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
@@ -65,6 +74,7 @@ import {
 } from "./utils/identity";
 import { stripUnsupportedSyncAttrs } from "./editorContentNormalization";
 import { resolveEditorScrollContainer, resolveEditorViewportTop } from "./scrollContainer";
+import { nowEditorPerf, traceEditorPerf, traceEditorPerfSince } from "./perfTrace";
 import type { EditorContent as EditorContentType, EditorImageUploadHandler, TiptapDoc } from "./types";
 import type { SyncDiffHint } from "@/services/sync/types";
 import "./styles/editor.css";
@@ -322,21 +332,28 @@ function collectTopLevelSyncIdentitiesInRange(
   const blockIds = new Set<string>();
   let touchedCount = 0;
   const rangeFrom = Math.max(0, Math.min(from, to));
-  const rangeTo = Math.max(rangeFrom, Math.max(from, to));
-
-  doc.forEach((node, offset) => {
+  const rangeTo = Math.min(doc.content.size, Math.max(rangeFrom, Math.max(from, to)));
+  const addTopLevelNode = (node: ProseMirrorNode) => {
     if (!IDENTITY_NODE_TYPES.has(node.type.name)) return;
-
-    const nodeStart = offset;
-    const nodeEnd = offset + node.nodeSize;
-    const overlaps =
-      rangeFrom === rangeTo
-        ? nodeStart <= rangeFrom && nodeEnd >= rangeFrom
-        : nodeStart < rangeTo && nodeEnd > rangeFrom;
-    if (!overlaps) return;
-
     touchedCount += 1;
     addNodeIdentityToSets(node, clientIds, blockIds);
+  };
+
+  if (rangeFrom === rangeTo) {
+    const pos = Math.min(rangeFrom, doc.content.size);
+    const resolved = doc.resolve(pos);
+    const node =
+      resolved.depth >= 1
+        ? resolved.node(1)
+        : doc.childAfter(pos).node ?? doc.childBefore(pos).node;
+    if (node) addTopLevelNode(node);
+    return { clientIds, blockIds, touchedCount };
+  }
+
+  doc.nodesBetween(rangeFrom, rangeTo, (node, _pos, parent) => {
+    if (parent !== doc) return false;
+    addTopLevelNode(node);
+    return false;
   });
 
   return { clientIds, blockIds, touchedCount };
@@ -513,11 +530,11 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
   }, [onChange]);
 
   const flushPendingChange = useCallback(() => {
+    const startedAt = nowEditorPerf();
     if (changeEmitTimerRef.current) {
       clearTimeout(changeEmitTimerRef.current);
       changeEmitTimerRef.current = null;
     }
-
     const ed = pendingChangeEditorRef.current;
     pendingChangeEditorRef.current = null;
     const syncDiffHint = pendingSyncDiffHintRef.current;
@@ -532,12 +549,22 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
     const emitChange = onChangeRef.current;
     if (!emitChange) return;
 
+    const getJsonStartedAt = nowEditorPerf();
     const nextContent = ed.getJSON() as EditorContentType;
+    const getJsonMs = nowEditorPerf() - getJsonStartedAt;
     lastEmittedContentRef.current = nextContent;
     if (nextContent && typeof nextContent === "object") {
       emittedContentRefs.current.add(nextContent);
     }
     emitChange(nextContent, syncDiffHint ?? undefined);
+    traceEditorPerfSince("MarkdownEditor.flushPendingChange", startedAt, {
+      getJsonMs: Math.round(getJsonMs * 100) / 100,
+      hasSyncDiffHint: Boolean(syncDiffHint),
+      blockCount:
+        nextContent && typeof nextContent === "object" && Array.isArray((nextContent as TiptapDoc).content)
+          ? (nextContent as TiptapDoc).content.length
+          : null,
+    });
   }, []);
 
   const schedulePendingChange = useCallback((ed: Editor) => {
@@ -625,6 +652,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
       editor: import("@tiptap/core").Editor;
       transaction: import("@tiptap/pm/state").Transaction;
     }) => {
+      const startedAt = nowEditorPerf();
       if (!onChangeRef.current || transaction.getMeta(BLOCK_IDENTITY_PATCH_META)) return;
 
       const needsIdentityPatch = transactionMayNeedIdentityPatch(
@@ -639,6 +667,11 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
         deriveTransactionSyncDiffHint(ed as Editor, transaction, needsIdentityPatch),
       );
       schedulePendingChange(ed as Editor);
+      traceEditorPerfSince("MarkdownEditor.handleUpdate", startedAt, {
+        docChanged: transaction.docChanged,
+        stepCount: transaction.steps.length,
+        needsIdentityPatch,
+      });
     },
     [schedulePendingChange],
   );
@@ -865,6 +898,16 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
     },
   }), [editor]);
 
+  const handleSubtreeRender = useCallback<React.ProfilerOnRenderCallback>(
+    (id, phase, actualDuration, baseDuration) => {
+      traceEditorPerf(`MarkdownEditor.${id}.render`, actualDuration, {
+        phase,
+        baseDuration: Math.round(baseDuration * 100) / 100,
+      });
+    },
+    [],
+  );
+
   if (!editor || !shikiReady) {
     return (
       <div className="tiptap-shell" style={style}>
@@ -885,12 +928,18 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
             uploadImage: onUploadImage ?? null,
           }}
         >
-          {showToolbar && <Toolbar enabledItemIds={toolbarItemSet} />}
+          {showToolbar && (
+            <Profiler id="Toolbar" onRender={handleSubtreeRender}>
+              <Toolbar enabledItemIds={toolbarItemSet} />
+            </Profiler>
+          )}
           {editable && floatingToolbarEnabled && (
-            <FloatingSelectionToolbar
-              enabledItemIds={floatingToolbarItemSet}
-              delayMs={floatingToolbarDelayMs}
-            />
+            <Profiler id="FloatingSelectionToolbar" onRender={handleSubtreeRender}>
+              <FloatingSelectionToolbar
+                enabledItemIds={floatingToolbarItemSet}
+                delayMs={floatingToolbarDelayMs}
+              />
+            </Profiler>
           )}
           <div
             ref={wrapperRef}
@@ -916,14 +965,32 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
               <EditorSkeleton />
             ) : (
               <>
-              <EditorContent editor={editor} />
-              {editable && <TableInteractions wrapperRef={wrapperRef} />}
-              {editable && <BlockToolbar wrapperRef={wrapperRef} />}
-              {editable && <LinkToolbar editor={editor} />}
-            </>
-          )}
+                <Profiler id="EditorContent" onRender={handleSubtreeRender}>
+                  <EditorContent editor={editor} />
+                </Profiler>
+                {editable && (
+                  <Profiler id="TableInteractions" onRender={handleSubtreeRender}>
+                    <TableInteractions wrapperRef={wrapperRef} />
+                  </Profiler>
+                )}
+                {editable && (
+                  <Profiler id="BlockToolbar" onRender={handleSubtreeRender}>
+                    <BlockToolbar wrapperRef={wrapperRef} />
+                  </Profiler>
+                )}
+                {editable && (
+                  <Profiler id="LinkToolbar" onRender={handleSubtreeRender}>
+                    <LinkToolbar editor={editor} />
+                  </Profiler>
+                )}
+              </>
+            )}
           </div>
-          {showTOC && <TableOfContents onClose={() => onTOCToggle?.(false)} />}
+          {showTOC && (
+            <Profiler id="TableOfContents" onRender={handleSubtreeRender}>
+              <TableOfContents onClose={() => onTOCToggle?.(false)} />
+            </Profiler>
+          )}
         </EditorContextProvider>
       </div>
     </div>
