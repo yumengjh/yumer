@@ -32,6 +32,7 @@ import {
 } from "@/components/editorLastEditPosition";
 import { DocumentHeader } from "@/components/DocumentHeader";
 import FindReplaceBar from "@/components/FindReplaceBar";
+import AiChatFloatingPanel from "@/components/AiChatFloatingPanel";
 import { useAutoSave } from "@/hooks/useAutoSave";
 import { useLocalDocumentSnapshot } from "@/hooks/useLocalDocumentSnapshot";
 import { useZenMode } from "@/hooks/useZenMode";
@@ -435,6 +436,7 @@ function EditorContent() {
   const [outputModalOpen, setOutputModalOpen] = useState(false);
   const [showTOC, setShowTOC] = useState(false);
   const [findReplaceOpen, setFindReplaceOpen] = useState(false);
+  const [aiChatOpen, setAiChatOpen] = useState(false);
   const [findReplaceEditor, setFindReplaceEditor] = useState<ReturnType<MarkdownEditorRef["getEditor"]>>(null);
   const { zenMode } = useZenMode();
   const [manualSaving, setManualSaving] = useState(false);
@@ -1321,6 +1323,10 @@ function EditorContent() {
     [pathname, router, setWorkspace],
   );
 
+  const handleAiChatToggle = useCallback(() => {
+    setAiChatOpen((open) => !open);
+  }, []);
+
   const outputContent = useMemo(() => {
     if (!outputModalOpen) return "";
     if (activeTab === "json") {
@@ -1385,6 +1391,7 @@ function EditorContent() {
       title={currentDoc?.title ?? ""}
       onTitleChange={handleTitleChange}
       onUploadImage={handleUploadImage}
+      onAiChatToggle={handleAiChatToggle}
       style={markdownEditorStyle}
     />
   ), [
@@ -1396,6 +1403,7 @@ function EditorContent() {
     handleEditorChange,
     handleTitleChange,
     handleUploadImage,
+    handleAiChatToggle,
     loadingDoc,
     markdownEditorStyle,
     showFixedToolbar,
@@ -1550,6 +1558,12 @@ function EditorContent() {
               {markdownEditorElement}
             </Profiler>
           </div>
+
+          <AiChatFloatingPanel
+            open={aiChatOpen}
+            workspaceId={workspaceId}
+            onClose={() => setAiChatOpen(false)}
+          />
 
           <button
             className="output-trigger-btn"

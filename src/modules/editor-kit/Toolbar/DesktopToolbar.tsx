@@ -80,6 +80,7 @@ type ToolbarItem = {
 interface DesktopToolbarProps {
   variant?: "fixed" | "floating";
   enabledItemIds?: ReadonlySet<string>;
+  onAiChatToggle?: () => void;
 }
 
 function isCodeCleanupActionItem(
@@ -91,6 +92,7 @@ function isCodeCleanupActionItem(
 export default function DesktopToolbar({
   variant = "fixed",
   enabledItemIds,
+  onAiChatToggle,
 }: DesktopToolbarProps = {}) {
   const { message } = App.useApp();
   const { editor, defaultFontSize, uploadImage } = useMarkdownEditorContext();
@@ -201,6 +203,10 @@ export default function DesktopToolbar({
   };
 
   const handleClick = (id: string) => () => {
+    if (id === "ai-chat") {
+      onAiChatToggle?.();
+      return;
+    }
     if (!tiptap) return;
     switch (id) {
       case "undo":
@@ -629,6 +635,9 @@ export default function DesktopToolbar({
   );
 
   const toolbarGroups: ToolbarItem[][] = [
+    ...(onAiChatToggle
+      ? [[{ id: "ai-chat", label: "AI 助手", content: <span className="toolbar-ai-mark">AI</span> }]]
+      : []),
     [
       { id: "undo", label: "撤销", content: <UndoIcon /> },
       { id: "redo", label: "重做", content: <RedoIcon /> },
@@ -751,7 +760,10 @@ export default function DesktopToolbar({
   const hiddenToolbarItemIds = new Set(["highlight-block", "image", "code-language", "table"]);
   const visibleToolbarGroups = toolbarGroups
     .map((group) =>
-      group.filter((item) => !hiddenToolbarItemIds.has(item.id) && (!enabledItemIds || enabledItemIds.has(item.id))),
+      group.filter((item) =>
+        !hiddenToolbarItemIds.has(item.id) &&
+        (!enabledItemIds || enabledItemIds.has(item.id) || item.id === "ai-chat"),
+      ),
     )
     .filter((group) => group.length > 0);
 

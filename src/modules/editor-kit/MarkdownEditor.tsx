@@ -152,6 +152,7 @@ export interface MarkdownEditorProps {
   /** 标题变化回调（失焦时触发） */
   onTitleChange?: (title: string) => void;
   onUploadImage?: EditorImageUploadHandler;
+  onAiChatToggle?: () => void;
 }
 
 function EditorSkeleton() {
@@ -491,6 +492,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
   showTitle = true,
   onTitleChange,
   onUploadImage,
+  onAiChatToggle,
 }, ref) {
   const [systemThemeMode, setSystemThemeMode] = useState<CodeThemeMode>("light");
   const themeMode = themeProp ?? systemThemeMode;
@@ -930,7 +932,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
         >
           {showToolbar && (
             <Profiler id="Toolbar" onRender={handleSubtreeRender}>
-              <Toolbar enabledItemIds={toolbarItemSet} />
+              <Toolbar enabledItemIds={toolbarItemSet} onAiChatToggle={onAiChatToggle} />
             </Profiler>
           )}
           {editable && floatingToolbarEnabled && (

@@ -35,6 +35,7 @@ import "./MobileToolbar.css";
 
 interface MobileToolbarProps {
   enabledItemIds?: ReadonlySet<string>;
+  onAiChatToggle?: () => void;
 }
 
 const INSERT_ITEM_IDS = [
@@ -45,7 +46,7 @@ const INSERT_ITEM_IDS = [
   "image",
 ] as const;
 
-export default function MobileToolbar({ enabledItemIds }: MobileToolbarProps = {}) {
+export default function MobileToolbar({ enabledItemIds, onAiChatToggle }: MobileToolbarProps = {}) {
   const actions = useToolbarActions();
   const { uploadImage } = useMarkdownEditorContext();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -73,6 +74,9 @@ export default function MobileToolbar({ enabledItemIds }: MobileToolbarProps = {
   };
 
   const quickActions = [
+    ...(onAiChatToggle
+      ? [{ id: "ai-chat", icon: <span className="mobile-toolbar-ai-mark">AI</span>, label: "AI 助手" }]
+      : []),
     { id: "undo", icon: <UndoIcon />, label: "撤销" },
     { id: "redo", icon: <RedoIcon />, label: "重做" },
     { id: "bold", icon: <BoldIcon />, label: "加粗" },
@@ -87,7 +91,7 @@ export default function MobileToolbar({ enabledItemIds }: MobileToolbarProps = {
   ];
 
   const visibleQuickActions = enabledItemIds
-    ? quickActions.filter((action) => enabledItemIds.has(action.id))
+    ? quickActions.filter((action) => action.id === "ai-chat" || enabledItemIds.has(action.id))
     : quickActions;
   const visibleInsertItems = INSERT_ITEM_IDS.filter((id) => !enabledItemIds || enabledItemIds.has(id));
   const showInsertButton = visibleInsertItems.length > 0;
@@ -218,7 +222,11 @@ export default function MobileToolbar({ enabledItemIds }: MobileToolbarProps = {
                 event.preventDefault();
                 event.stopPropagation();
                 setPressedAction(action.id);
-                actions.handleClick(action.id);
+                if (action.id === "ai-chat") {
+                  onAiChatToggle?.();
+                } else {
+                  actions.handleClick(action.id);
+                }
                 clearPressedAction();
               }}
               onPointerCancel={clearPressedAction}
