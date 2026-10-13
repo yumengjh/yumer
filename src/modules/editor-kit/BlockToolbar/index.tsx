@@ -19,6 +19,8 @@ const AUTO_SCROLL_ZONE = 40;
 const AUTO_SCROLL_MAX_SPEED = 12;
 const GHOST_OFFSET_X = 12;
 const GHOST_OFFSET_Y = 6;
+/** 「+」与拖拽手柄并排后的总宽度，用于计算手柄位置 */
+const HANDLE_GROUP_WIDTH = 44;
 
 export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
   const editor = useMarkdownEditor();
@@ -30,6 +32,8 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
   const [toolbarHovered, setToolbarHovered] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const [menuState, setMenuState] = useState<'closed' | 'open' | 'closing'>('closed');
+  // menu：块操作菜单；insert：点击「+」打开的插入面板
+  const [menuMode, setMenuMode] = useState<'menu' | 'insert'>('menu');
   const [ready, setReady] = useState(false);
   const [shouldAnimate, setShouldAnimate] = useState(false);
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -138,7 +142,7 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
   const updatePosition = useCallback((block: HTMLElement, kind?: PositionKind) => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
-    setPosition(computeBlockHandlePosition(block, wrapper, { kind }));
+    setPosition(computeBlockHandlePosition(block, wrapper, { kind, handleWidth: HANDLE_GROUP_WIDTH }));
   }, [wrapperRef]);
 
   useEffect(() => {
@@ -261,35 +265,23 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
       const fallback = pendingDeleteFallbackRef.current;
       pendingDeleteFallbackRef.current = null;
 
-      let fallbackElement = fallback?.element && editorDom.contains(fallback.element)
+      // 只在删除块等明确场景下，按原位置附近重新定位；找不到就隐藏，
+      // 不再兜底跳到文档第一个块（之前编辑后手柄会突然跳到文档顶部）
+      const fallbackElement = fallback?.element && editorDom.contains(fallback.element)
         ? fallback.element
         : fallback
           ? document.elementFromPoint(fallback.clientX, fallback.clientY)
           : null;
 
-      // If elementFromPoint didn't work, try to find ANY top-level child
-      if (!fallbackElement || !editorDom.contains(fallbackElement)) {
-        fallbackElement = editorDom.firstElementChild as HTMLElement | null;
-      }
-
-      const nextTarget = resolveBlockToolbarTarget(fallbackElement, editorDom, fallback?.clientY);
+      const nextTarget = fallbackElement && editorDom.contains(fallbackElement)
+        ? resolveBlockToolbarTarget(fallbackElement as HTMLElement, editorDom, fallback?.clientY)
+        : null;
       if (nextTarget) {
         setHoveredBlock(nextTarget.element);
         setHoveredAnchor(nextTarget.anchorElement);
         setHoveredTableCell(nextTarget.tableCellElement ?? null);
         setHoveredTargetKind(nextTarget.kind);
         updatePosition(nextTarget.anchorElement, nextTarget.kind);
-        return;
-      }
-
-      // Absolute last resort: if editor has any child, use it directly
-      const firstChild = editorDom.firstElementChild as HTMLElement | null;
-      if (firstChild) {
-        setHoveredBlock(firstChild);
-        setHoveredAnchor(firstChild);
-        setHoveredTableCell(null);
-        setHoveredTargetKind('block');
-        updatePosition(firstChild, 'block');
         return;
       }
 
@@ -321,6 +313,28 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
       }
     };
   }, [editor, updatePosition]);
+
+  // 输入时隐藏手柄（与语雀一致），鼠标再次移动时重新出现
+  useEffect(() => {
+    if (!editor || !ready) return;
+    const editorDom = editor.view.dom;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (menuVisible || isDraggingActiveRef.current) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (!hoveredBlockRef.current) return;
+      if (hideTimeoutRef.current) {
+        clearTimeout(hideTimeoutRef.current);
+        hideTimeoutRef.current = null;
+      }
+      setHoveredBlock(null);
+      setHoveredAnchor(null);
+      setHoveredTableCell(null);
+      setHoveredTargetKind(null);
+      setToolbarHovered(false);
+    };
+    editorDom.addEventListener('keydown', onKeyDown);
+    return () => editorDom.removeEventListener('keydown', onKeyDown);
+  }, [editor, ready, menuVisible]);
 
   const handleWillDeleteBlock = useCallback((fallbackBlock: HTMLElement | null) => {
     if (!fallbackBlock) {
@@ -356,7 +370,7 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
     if (!menuVisible) return;
     const handler = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      if (!target.closest('.block-menu-popover') && !target.closest('.block-handle__btn')) {
+      if (!target.closest('.block-menu-popover') && !target.closest('.block-handle__group') && !target.closest('.ant-popover')) {
         closeMenu();
       }
     };
@@ -554,7 +568,14 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
     if (!hoveredBlock || !editor) return;
 
     dragStartRef.current = { x: e.clientX, y: e.clientY };
-    dragSourceRef.current = hoveredBlock;
+    // 拖拽以顶层块为单位：悬停在列表项等嵌套块上时取其顶层祖先，
+    // 否则在顶层块列表中找不到源块，拖拽会静默失效
+    let dragSource: HTMLElement = hoveredBlock;
+    const editorDom = editor.view.dom;
+    while (dragSource.parentElement && dragSource.parentElement !== editorDom) {
+      dragSource = dragSource.parentElement;
+    }
+    dragSourceRef.current = dragSource;
 
     const onMouseMove = (me: MouseEvent) => {
       const start = dragStartRef.current;
@@ -621,12 +642,22 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
       justDraggedRef.current = false;
       return;
     }
-    if (menuState === 'open') {
+    if (menuState === 'open' && menuMode === 'menu') {
       closeMenu();
     } else {
+      setMenuMode('menu');
       openMenu();
     }
-  }, [menuState, closeMenu, openMenu]);
+  }, [menuState, menuMode, closeMenu, openMenu]);
+
+  const handleInsertClick = useCallback(() => {
+    if (menuState === 'open' && menuMode === 'insert') {
+      closeMenu();
+    } else {
+      setMenuMode('insert');
+      openMenu();
+    }
+  }, [menuState, menuMode, closeMenu, openMenu]);
 
   useEffect(() => {
     return () => {
@@ -658,7 +689,12 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
         onMouseEnter={handleToolbarMouseEnter}
         onMouseLeave={handleToolbarMouseLeave}
       >
-        <BlockHandle onClick={handleHandleClick} onMouseDown={handleHandleMouseDown} />
+        <BlockHandle
+          onClick={handleHandleClick}
+          onMouseDown={handleHandleMouseDown}
+          onInsertClick={hoveredTargetKind === 'table' ? undefined : handleInsertClick}
+          active={menuVisible}
+        />
         {menuVisible && (
           <div
             ref={menuAnchorRef}
@@ -668,6 +704,7 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
             }}
           >
             <BlockMenu
+              mode={menuMode}
               onClose={closeMenu}
               hoveredBlock={hoveredBlock}
               hoveredTableCell={hoveredTableCell}

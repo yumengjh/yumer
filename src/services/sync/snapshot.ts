@@ -377,11 +377,15 @@ export type SyncSnapshotCaptureOptions = {
 export function filterRedundantAckRescanEntries(
   entries: SyncEntry[],
   ackSyncedPayloadByBlockId?: ReadonlyMap<string, string>,
+  pendingEntries?: Record<string, SyncEntry>,
 ): SyncEntry[] {
   if (!ackSyncedPayloadByBlockId?.size) return entries;
 
   return entries.filter((entry) => {
     if (entry.opType !== "update" || !entry.blockId || !entry.payload) return true;
+    // 该块还有待发送的 entry（可能携带更早的过期 payload）：必须让本次 update 覆盖它，
+    // 否则过期 payload 会在下一批发出，把服务端已确认的最新内容改回旧值。
+    if (pendingEntries?.[entry.clientId]) return true;
     const syncedCanonical = ackSyncedPayloadByBlockId.get(entry.blockId);
     if (!syncedCanonical) return true;
     const nextCanonical = canonicalStringify(stripPayloadForSync(entry.payload));
@@ -488,6 +492,7 @@ export function advanceSyncSnapshotIndexed(
   const entries = filterRedundantAckRescanEntries(
     derived.entries,
     captureOptions?.ackSyncedPayloadByBlockId,
+    state.entries,
   );
   let nextState = state;
   for (const entry of entries) {

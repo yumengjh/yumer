@@ -57,4 +57,27 @@ describe("filterRedundantAckRescanEntries", () => {
       ),
     ).toEqual(entries);
   });
+
+  it("keeps the update when an older payload for the same block is still queued", () => {
+    const payload = {
+      type: "paragraph",
+      content: [{ type: "text", text: "latest" }],
+    };
+    const canonical = canonicalStringify(stripPayloadForSync(payload));
+    const entries: SyncEntry[] = [
+      { clientId: "client_p", blockId: "block_p", opType: "update", payload },
+    ];
+    const pending: Record<string, SyncEntry> = {
+      client_p: {
+        clientId: "client_p",
+        blockId: "block_p",
+        opType: "update",
+        payload: { type: "paragraph", content: [{ type: "text", text: "stale" }] },
+      },
+    };
+
+    expect(
+      filterRedundantAckRescanEntries(entries, new Map([["block_p", canonical]]), pending),
+    ).toEqual(entries);
+  });
 });

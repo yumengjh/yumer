@@ -76,15 +76,15 @@
   /* ========== Component Specific ========== */
   /* Toolbar */
   --toolbar-bg: #ffffff;
-  --toolbar-border: #f0f0f0;
+  --toolbar-border: #ebebeb;
   --toolbar-text: rgba(0, 0, 0, 0.88);
   --toolbar-text-muted: rgba(0, 0, 0, 0.45);
-  --toolbar-icon: rgba(0, 0, 0, 0.65);
-  --toolbar-icon-hover: rgba(0, 0, 0, 0.88);
-  --toolbar-hover-bg: rgba(0, 0, 0, 0.04);
-  --toolbar-active-bg: rgba(0, 0, 0, 0.06);
-  --toolbar-active-text: rgba(0, 0, 0, 0.88);
-  --toolbar-divider: #f0f0f0;
+  --toolbar-icon: #585a5a;
+  --toolbar-icon-hover: #262626;
+  --toolbar-hover-bg: rgba(0, 0, 0, 0.05);
+  --toolbar-active-bg: rgba(15, 118, 110, 0.1);
+  --toolbar-active-text: #0f766e;
+  --toolbar-divider: #e3e5e4;
 
   /* Editor */
   --editor-bg: #ffffff;

@@ -80,9 +80,9 @@
   --toolbar-icon: rgba(255, 255, 255, 0.65);
   --toolbar-icon-hover: rgba(255, 255, 255, 0.88);
   --toolbar-hover-bg: rgba(255, 255, 255, 0.08);
-  --toolbar-active-bg: rgba(255, 255, 255, 0.12);
-  --toolbar-active-text: rgba(255, 255, 255, 0.88);
-  --toolbar-divider: #303030;
+  --toolbar-active-bg: rgba(45, 212, 191, 0.14);
+  --toolbar-active-text: #5eead4;
+  --toolbar-divider: #3a3a3a;
 
   /* Editor */
   --editor-bg: #141414;

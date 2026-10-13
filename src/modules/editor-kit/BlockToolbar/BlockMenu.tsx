@@ -13,6 +13,8 @@ import type { BlockInsertType } from './blockInsertMenuItems';
 import BlockInsertPanel from './BlockInsertPanel';
 
 interface BlockMenuProps {
+  /** menu：块操作菜单（默认）；insert：「+」按钮打开的插入面板（插入到下方） */
+  mode?: 'menu' | 'insert';
   onClose: () => void;
   hoveredBlock: HTMLElement | null;
   hoveredTableCell?: HTMLTableCellElement | null;
@@ -59,7 +61,47 @@ function getTopLevelAncestor(
   return cur;
 }
 
-export function BlockMenu({ onClose, hoveredBlock, hoveredTableCell, onWillDeleteBlock }: BlockMenuProps) {
+type ConvertTarget =
+  | 'paragraph'
+  | 'heading1'
+  | 'heading2'
+  | 'heading3'
+  | 'bulletList'
+  | 'orderedList'
+  | 'taskList'
+  | 'blockquote'
+  | 'codeBlock';
+
+const CONVERT_ITEMS: Array<{ key: ConvertTarget; label: string; symbol: string }> = [
+  { key: 'paragraph', label: '正文', symbol: 'T' },
+  { key: 'heading1', label: '一级标题', symbol: 'H1' },
+  { key: 'heading2', label: '二级标题', symbol: 'H2' },
+  { key: 'heading3', label: '三级标题', symbol: 'H3' },
+  { key: 'bulletList', label: '无序列表', symbol: '•' },
+  { key: 'orderedList', label: '有序列表', symbol: '1.' },
+  { key: 'taskList', label: '待办列表', symbol: '☐' },
+  { key: 'blockquote', label: '引用', symbol: '❝' },
+  { key: 'codeBlock', label: '代码块', symbol: '</>' },
+];
+
+/** 当前块对应的「转换为」类型，用于高亮 */
+function detectConvertTarget(block: HTMLElement | null): ConvertTarget | null {
+  if (!block) return null;
+  const tag = block.tagName;
+  if (tag === 'P') return 'paragraph';
+  if (tag === 'H1') return 'heading1';
+  if (tag === 'H2') return 'heading2';
+  if (tag === 'H3') return 'heading3';
+  if (tag === 'OL') return 'orderedList';
+  if (tag === 'UL') return block.dataset.type === 'taskList' ? 'taskList' : 'bulletList';
+  if (tag === 'BLOCKQUOTE') return 'blockquote';
+  if (tag === 'PRE' || block.dataset.type === 'codeBlock' || block.querySelector(':scope > pre')) return 'codeBlock';
+  return null;
+}
+
+const CONVERTIBLE_TAGS = new Set(['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'UL', 'OL', 'BLOCKQUOTE']);
+
+export function BlockMenu({ mode = 'menu', onClose, hoveredBlock, hoveredTableCell, onWillDeleteBlock }: BlockMenuProps) {
   const editor = useMarkdownEditor();
   const { uploadImage } = useMarkdownEditorContext();
   const menuRootRef = useRef<HTMLDivElement>(null);
@@ -133,7 +175,6 @@ export function BlockMenu({ onClose, hoveredBlock, hoveredTableCell, onWillDelet
     const { doc } = view.state;
     const range = getBlockRange(hoveredBlock, view);
     if (!range) return;
-    const blockId = hoveredBlock.dataset.blockId;
 
     // Remember the block's viewport position BEFORE delete for fallback resolution
     const blockRect = hoveredBlock.getBoundingClientRect();
@@ -189,10 +230,6 @@ export function BlockMenu({ onClose, hoveredBlock, hoveredTableCell, onWillDelet
     }
 
     onWillDeleteBlock?.(fallbackEl);
-
-    if (blockId) {
-      message.success('块已删除，等待自动同步');
-    }
   }, [editor, hoveredBlock, onWillDeleteBlock]);
 
   const copyBlock = useCallback(async () => {
@@ -225,17 +262,58 @@ export function BlockMenu({ onClose, hoveredBlock, hoveredTableCell, onWillDelet
     }
   }, [headingAnchorId]);
 
+  // 清除格式：移除块内全部行内样式，标题转为正文；保留列表/引用等结构和块身份。
+  // （之前把整个块替换成纯文本段落，列表/引用会被压成一段文字，且丢失块身份）
   const clearFormat = useCallback(() => {
     if (!editor || !hoveredBlock || isTableTarget) return;
     const { view } = editor;
     const range = getBlockRange(hoveredBlock, view);
     if (!range) return;
-    const text = hoveredBlock.textContent || '';
-    const paragraph = view.state.schema.nodes.paragraph.create(
-      null, text ? view.state.schema.text(text) : undefined
-    );
-    view.dispatch(view.state.tr.replaceWith(range.from, range.to, paragraph));
+    const tr = view.state.tr.removeMark(range.from, range.to, null);
+    const node = tr.doc.nodeAt(range.from);
+    const paragraphType = view.state.schema.nodes.paragraph;
+    if (node && node.isTextblock && node.type !== paragraphType && node.type.name === 'heading') {
+      // 未在 paragraph 上定义的 attrs 会被 ProseMirror 忽略
+      tr.setNodeMarkup(range.from, paragraphType, {
+        clientId: node.attrs.clientId,
+        blockId: node.attrs.blockId,
+        sortKey: node.attrs.sortKey,
+      });
+    }
+    if (tr.docChanged) view.dispatch(tr);
   }, [editor, hoveredBlock, isTableTarget]);
+
+  const canConvert = Boolean(hoveredBlock && CONVERTIBLE_TAGS.has(hoveredBlock.tagName) && !isTableTarget);
+  const currentConvertTarget = useMemo(() => detectConvertTarget(hoveredBlock), [hoveredBlock]);
+
+  // 转换为：先把列表/引用拆回段落，再应用目标类型
+  const convertBlock = useCallback((target: ConvertTarget) => {
+    if (!editor || !hoveredBlock || !canConvert) return;
+    const range = getBlockRange(hoveredBlock, editor.view);
+    if (!range) return;
+    const from = Math.min(range.from + 1, editor.state.doc.content.size);
+    const to = Math.max(from, range.to - 1);
+    const tag = hoveredBlock.tagName;
+    const chain = editor.chain().focus().setTextSelection({ from, to });
+    if (tag === 'UL' && hoveredBlock.dataset.type === 'taskList') chain.toggleTaskList();
+    else if (tag === 'UL') chain.toggleBulletList();
+    else if (tag === 'OL') chain.toggleOrderedList();
+    else if (tag === 'BLOCKQUOTE') chain.lift('blockquote');
+
+    switch (target) {
+      case 'paragraph': chain.setParagraph(); break;
+      case 'heading1': chain.setNode('heading', { level: 1 }); break;
+      case 'heading2': chain.setNode('heading', { level: 2 }); break;
+      case 'heading3': chain.setNode('heading', { level: 3 }); break;
+      case 'bulletList': chain.setParagraph().toggleBulletList(); break;
+      case 'orderedList': chain.setParagraph().toggleOrderedList(); break;
+      case 'taskList': chain.setParagraph().toggleTaskList(); break;
+      case 'blockquote': chain.setParagraph().wrapIn('blockquote'); break;
+      case 'codeBlock': chain.setNode('codeBlock'); break;
+      default: break;
+    }
+    chain.run();
+  }, [editor, hoveredBlock, canConvert]);
 
   const insertBlock = useCallback((where: 'above' | 'below', type: BlockInsertType = 'paragraph') => {
     if (!editor || !hoveredBlock || isTableTarget) return;
@@ -474,8 +552,68 @@ export function BlockMenu({ onClose, hoveredBlock, hoveredTableCell, onWillDelet
     onClose();
   }, [isTableTarget, runTableCommand, onClose, insertBlock, deleteBlock, copyBlock, copyAnchorLink, clearFormat, swapBlocks]);
 
+  if (mode === 'insert' && !isTableTarget) {
+    return (
+      <div ref={menuRootRef} className="block-menu-popover block-menu-popover--insert">
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          hidden
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = '';
+            if (file) void handleImageFile(file);
+          }}
+        />
+        <BlockInsertPanel
+          onInsertBlock={(type) => {
+            insertBlock('below', type);
+            onClose();
+          }}
+          onInsertTable={(rows, cols) => {
+            insertTable('below', rows, cols);
+            onClose();
+          }}
+          onInsertImage={() => {
+            if (!uploadImage) {
+              message.error('未选择工作空间');
+              return;
+            }
+            setPendingImageSide('below');
+            imageInputRef.current?.click();
+          }}
+          onClose={onClose}
+        />
+      </div>
+    );
+  }
+
   return (
     <div ref={menuRootRef} className={`block-menu-popover${isTableTarget ? ' block-menu-popover--table' : ''}`}>
+      {canConvert && (
+        <div className="block-menu-convert">
+          <div className="block-menu-convert__title">转换为</div>
+          <div className="block-menu-convert__grid">
+            {CONVERT_ITEMS.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                className={`block-menu-convert__item${currentConvertTarget === item.key ? ' is-active' : ''}`}
+                title={item.label}
+                aria-label={item.label}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  convertBlock(item.key);
+                  onClose();
+                }}
+              >
+                {item.symbol}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <input
         ref={imageInputRef}
         type="file"

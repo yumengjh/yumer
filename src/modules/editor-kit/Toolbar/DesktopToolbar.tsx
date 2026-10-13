@@ -898,7 +898,7 @@ export default function DesktopToolbar({
             <Tooltip title="插入块" placement="bottom" trigger="hover" mouseEnterDelay={0.5}>
               <button
                 type="button"
-                className="toolbar-button"
+                className={`toolbar-button toolbar-insert-button${variant === "fixed" ? " has-label" : ""}`}
                 disabled={!editorReady}
                 aria-label="插入块"
                 onMouseDown={(event) => {
@@ -910,6 +910,7 @@ export default function DesktopToolbar({
                 }}
               >
                 <PlusOutlined />
+                {variant === "fixed" && <span className="toolbar-insert-button__label">插入</span>}
               </button>
             </Tooltip>
           </Dropdown>

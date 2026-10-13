@@ -313,6 +313,17 @@ function contentToHtml(content: EditorContent): string {
   return "";
 }
 
+function mergePendingSyncDiffHints(left: SyncDiffHint, right: SyncDiffHint): SyncDiffHint {
+  return {
+    source: right.source,
+    changedClientIds: [...new Set([...left.changedClientIds, ...right.changedClientIds])],
+    changedBlockIds: [...new Set([...left.changedBlockIds, ...right.changedBlockIds])],
+    structureChanged: left.structureChanged || right.structureChanged,
+    identityChanged: left.identityChanged || right.identityChanged,
+    reason: [left.reason, right.reason].filter(Boolean).join("+"),
+  };
+}
+
 function mergeAckAttrsIntoCurrentEditorDoc(current: TiptapDoc, ackDoc: TiptapDoc): TiptapDoc {
   if (!Array.isArray(current.content) || !Array.isArray(ackDoc.content)) return current;
 
@@ -466,6 +477,16 @@ function EditorContent() {
     setLiveContent(nextContent);
     setContent(nextContent);
   }, []);
+  /**
+   * 只同步 React 侧的实时内容，不回灌编辑器。
+   * 用于内容本身就来自编辑器（ACK 身份合并、手动保存前取快照）的场景：
+   * 若走 replaceContent，编辑器会在下一次渲染后用这份「旧」内容 setContent，
+   * 期间用户新输入的字符会被覆盖丢失。
+   */
+  const syncLiveContentFromEditor = useCallback((nextContent: EditorContent) => {
+    contentRef.current = nextContent;
+    setLiveContent(nextContent);
+  }, []);
   const restoredLastEditDocIdRef = useRef<string | null>(null);
   const [pendingLastEditRestoreBlockId, setPendingLastEditRestoreBlockId] = useState<string | null>(null);
   const lastPersistedEditBlockIdRef = useRef<string | null>(null);
@@ -521,7 +542,7 @@ function EditorContent() {
         );
         if (reconciled !== latestEditorContent) {
           editorRef.current?.patchBlockIdentityFromDoc(reconciled);
-          replaceContent(reconciled);
+          syncLiveContentFromEditor(reconciled);
           if (currentDoc && SyncTraceLog.isEnabled()) {
             SyncTraceLog.add(
               "editor:ack-merged",
@@ -956,15 +977,19 @@ function EditorContent() {
   const handleEditorChange = useCallback((nextContent: EditorContent, syncDiffHint?: SyncDiffHint) => {
     const startedAt = nowEditorPerf();
     if (
-      syncDiffHint &&
       nextContent &&
       typeof nextContent === "object" &&
       (nextContent as TiptapDoc).type === "doc"
     ) {
-      syncDiffHintRef.current = {
-        content: nextContent,
-        hint: syncDiffHint,
-      };
+      // React transition 可能跳过中间内容只渲染最新一份，因此未被消费的 hint
+      // 必须与新 hint 合并，而不是覆盖；缺少 hint 时清空，强制同步走全量对比。
+      const pending = syncDiffHintRef.current;
+      syncDiffHintRef.current = syncDiffHint
+        ? {
+            content: nextContent,
+            hint: pending ? mergePendingSyncDiffHints(pending.hint, syncDiffHint) : syncDiffHint,
+          }
+        : null;
     }
     contentRef.current = nextContent;
     startTransition(() => {
@@ -1163,7 +1188,7 @@ function EditorContent() {
       } else if (!skipCommit) {
         const latestEditorContent = editorRef.current?.getJSON() as TiptapDoc | undefined;
         if (latestEditorContent?.type === "doc") {
-          replaceContent(latestEditorContent);
+          syncLiveContentFromEditor(latestEditorContent);
         }
         const ok = await sync.flushAndCommitBarrier(
           latestEditorContent?.type === "doc" ? latestEditorContent : tiptapContent,
@@ -1238,6 +1263,7 @@ function EditorContent() {
     saveLegacyContent,
     loadContent,
     replaceContent,
+    syncLiveContentFromEditor,
     applyCommittedVersion,
     discardableDraft,
     currentSyncSession,

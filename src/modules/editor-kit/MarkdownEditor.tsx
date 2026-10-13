@@ -420,17 +420,23 @@ function deriveTransactionSyncDiffHint(
   let touchedBefore = 0;
   let touchedAfter = 0;
 
-  transaction.mapping.maps.forEach((map) => {
+  const maps = transaction.mapping.maps;
+  maps.forEach((map, stepIndex) => {
+    // 每个 step 的范围相对于该 step 自己的输入/输出文档：
+    // 旧范围需逆映射回事务开始前的文档，新范围需正向映射到最终文档，
+    // 否则多 step 事务（粘贴、拖拽、替换选区等）会定位到错误的块。
+    const toBefore = transaction.mapping.slice(0, stepIndex).invert();
+    const toAfter = transaction.mapping.slice(stepIndex + 1);
     map.forEach((oldStart, oldEnd, newStart, newEnd) => {
       const before = collectTopLevelSyncIdentitiesInRange(
         transaction.before,
-        oldStart,
-        oldEnd,
+        toBefore.map(oldStart, -1),
+        toBefore.map(oldEnd, 1),
       );
       const after = collectTopLevelSyncIdentitiesInRange(
         editor.state.doc,
-        newStart,
-        newEnd,
+        toAfter.map(newStart, -1),
+        toAfter.map(newEnd, 1),
       );
 
       touchedBefore += before.touchedCount;

@@ -111,9 +111,11 @@ export function computeBlockHandlePosition(
   const blockRect = block.getBoundingClientRect();
   const extra = getExtraLeftOffset(block);
 
-  // Horizontal: always to the left of the block, accounting for extra offset
+  // Horizontal: always to the left of the block, accounting for extra offset.
+  // 编辑区左内边距可能不足以放下手柄组，允许伸到编辑区外（wrapper 不裁剪溢出），
+  // 但不能超出视口左边缘。
   const left = Math.max(
-    0,
+    -wrapperRect.left + 4,
     blockRect.left - wrapperRect.left + wrapper.scrollLeft - handleWidth - minGap - extra,
   );
 
