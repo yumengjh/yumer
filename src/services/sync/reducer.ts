@@ -1,6 +1,9 @@
 import type { SyncSessionMeta } from "@/services/document";
 import type { SyncEntry, SyncReducerState, SyncBatchResult } from "./types";
 
+/** 独立 delete entry key 的分隔符：`${clientId}::del::${blockId}`（与 engine.ts 保持一致） */
+const DELETE_ENTRY_KEY_SEPARATOR = "::del::";
+
 function normalizeCreatePayload(entry: SyncEntry): SyncEntry {
   if (entry.opType !== "create" || !entry.payload) return entry;
 
@@ -79,6 +82,16 @@ export function enqueueChange(
     current?.opType === "delete" &&
     (incoming.opType === "update" || incoming.opType === "move")
   ) {
+    const sameBlock =
+      Boolean(incoming.blockId) && incoming.blockId === current.blockId;
+    if (sameBlock && !state.inflightEntryIds.includes(incoming.clientId)) {
+      // 待发送的 delete 尚未发出，块又在编辑器中出现（undo 恢复）：撤销删除，
+      // 改为更新/移动。delete 已在途时仍保留 delete，ACK 后由身份登记表把节点按新块重建。
+      return upsertEntry(state, {
+        ...incoming,
+        syncCreateId: undefined,
+      });
+    }
     return upsertEntry(state, {
       ...current,
       blockId: incoming.blockId ?? current.blockId,
@@ -96,6 +109,18 @@ export function enqueueChange(
   }
 
   if (current?.opType === "create" && incoming.opType === "delete") {
+    if (incoming.blockId) {
+      // delete 指向一个真实存在的服务端块：必须删除该块，不能与 create 抵消。
+      // create 在途时 delete 用独立 key 入队，避免 create ACK 把 delete 改写到新块上。
+      const inflight = state.inflightEntryIds.includes(incoming.clientId);
+      return upsertEntry(state, {
+        clientId: inflight
+          ? `${incoming.clientId}${DELETE_ENTRY_KEY_SEPARATOR}${incoming.blockId}`
+          : incoming.clientId,
+        blockId: incoming.blockId,
+        opType: "delete",
+      });
+    }
     if (state.inflightEntryIds.includes(incoming.clientId)) {
       return upsertEntry(state, {
         clientId: incoming.clientId,

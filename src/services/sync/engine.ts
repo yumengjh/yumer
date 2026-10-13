@@ -438,6 +438,9 @@ function sortKeyForPosition(nextNodes: IndexedSyncNode[], index: number): string
   );
 }
 
+/** 独立 delete entry key 的分隔符：`${clientId}::del::${blockId}` */
+export const DELETE_ENTRY_KEY_SEPARATOR = "::del::";
+
 function createSyncCreateId(clientId: string): string {
   return `sync-create:${clientId}`;
 }
@@ -837,6 +840,25 @@ export function deriveSyncEntriesWithMetrics(
       if (mode === "content-hint" && !dirtyMatchKeys.has(nextNode.matchKey)) {
         continue;
       }
+      if (nextNode.blockId) {
+        // 节点自带服务端 blockId 但上个快照中没有（undo 恢复、剪切后粘贴）：
+        // 按 update + sortKey 复活原块，避免另建新块导致服务端出现重复块。
+        entries.push({
+          clientId: nextNode.clientId,
+          blockId: nextNode.blockId,
+          opType: "update",
+          payload: nextNode.node as unknown as Record<string, unknown>,
+          sortKey:
+            createSortKeys.get(nextNode.clientId) ??
+            desiredSortKeys.get(nextNode.clientId) ??
+            sortKeyForPosition(orderedNextNodes, nextNode.index),
+        });
+        nextFingerprints.set(
+          nextNode.matchKey,
+          computePayloadFingerprint(nextNode.node, metrics),
+        );
+        continue;
+      }
       const syncCreateId = createSyncCreateId(nextNode.clientId);
       entries.push({
         clientId: nextNode.clientId,
@@ -915,13 +937,27 @@ export function deriveSyncEntriesWithMetrics(
 
   if (mode !== "content-hint") {
     for (const prevNode of Object.values(prevIndexed)) {
-      if (!nextIndexed[prevNode.matchKey]) {
+      if (nextIndexed[prevNode.matchKey]) continue;
+      const clientIdStillLive = nextPreviewIndex.byClientId.has(prevNode.clientId);
+      if (!prevNode.blockId) {
+        // 同一 clientId 的节点仍在（只是获得了 blockId）：同一个块，不能删
+        if (clientIdStillLive) continue;
         entries.push({
           clientId: prevNode.clientId,
-          blockId: prevNode.blockId,
+          blockId: null,
           opType: "delete",
         });
+        continue;
       }
+      entries.push({
+        // 同一 clientId 已对应另一个身份（如被剥离 blockId 后重建）：
+        // 用独立 key 入队，避免与该 clientId 的 create/update 在 reducer 中互相覆盖
+        clientId: clientIdStillLive
+          ? `${prevNode.clientId}${DELETE_ENTRY_KEY_SEPARATOR}${prevNode.blockId}`
+          : prevNode.clientId,
+        blockId: prevNode.blockId,
+        opType: "delete",
+      });
     }
   }
 

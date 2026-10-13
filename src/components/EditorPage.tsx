@@ -57,7 +57,6 @@ import {
 import { uploadImage } from "@/services/images";
 import { useDocumentSync } from "@/hooks/useDocumentSync";
 import { SyncTraceLog, buildManifestSummary } from "@/services/sync/debug-log";
-import { alignDocToSortKeyOrder } from "@/services/sync/engine";
 import { readIdentityFromAttrs } from "@/services/sync/identity";
 import type { SyncDiffHint } from "@/services/sync/types";
 import {
@@ -359,28 +358,16 @@ function mergeAckAttrsIntoCurrentEditorDoc(current: TiptapDoc, ackDoc: TiptapDoc
   return changed ? { ...current, content } : current;
 }
 
-/** 合并 ACK 身份，并剔除服务端已确认删除、但编辑器仍残留的块。 */
+/**
+ * 合并 ACK 身份（blockId / sortKey）到当前编辑器文档。
+ * 注意：不能按 ACK 剔除编辑器里的块——编辑器是用户内容的唯一事实来源，
+ * 服务端只会删除客户端要求删除的块；编辑器仍存在的块（如 undo 恢复）必须保留。
+ */
 function reconcileEditorWithAckBaseline(
   current: TiptapDoc,
   ackBaseline: TiptapDoc,
 ): TiptapDoc {
-  const ackClientIds = new Set<string>();
-  for (const node of ackBaseline.content ?? []) {
-    const identity = readIdentityFromAttrs(node.attrs);
-    if (identity.clientId) ackClientIds.add(identity.clientId);
-  }
-
-  let reconciled = mergeAckAttrsIntoCurrentEditorDoc(current, ackBaseline);
-  const content = (reconciled.content ?? []).filter((node) => {
-    const identity = readIdentityFromAttrs(node.attrs);
-    return !identity.clientId || ackClientIds.has(identity.clientId);
-  });
-
-  if (content.length !== (reconciled.content?.length ?? 0)) {
-    reconciled = { ...reconciled, content };
-  }
-
-  return alignDocToSortKeyOrder(reconciled);
+  return mergeAckAttrsIntoCurrentEditorDoc(current, ackBaseline);
 }
 
 type OutputTab = "html" | "markdown" | "json";
@@ -432,6 +419,8 @@ function EditorContent() {
   const [loadedContentDocId, setLoadedContentDocId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<OutputTab>("markdown");
   const [loadingDoc, setLoadingDoc] = useState(false);
+  // 大文档分页加载中：已渲染前几页，剩余分页仍在后台拉取；期间只读且不启用同步
+  const [streamingDoc, setStreamingDoc] = useState(false);
   const [outputModalOpen, setOutputModalOpen] = useState(false);
   const [showTOC, setShowTOC] = useState(false);
   const [findReplaceOpen, setFindReplaceOpen] = useState(false);
@@ -714,12 +703,21 @@ function EditorContent() {
 
     let cancelled = false;
     setLoadingDoc(true);
+    setStreamingDoc(false);
     setContentDirty(false);
     setLoadedContentDocId(null);
     setPendingLocalRecovery(null);
     void (async () => {
       try {
-        const loaded = await loadContent(docId);
+        const loaded = await loadContent(docId, {
+          // 懒加载：首屏分页到达后立即渲染，后续分页逐步追加
+          onPartialContent: (partial) => {
+            if (cancelled) return;
+            replaceContent(partial || BLANK_CONTENT);
+            setStreamingDoc(true);
+            setLoadingDoc(false);
+          },
+        });
         if (cancelled) return;
         const loadedContent = loaded.content || BLANK_CONTENT;
         loadedDocIdRef.current = docId;
@@ -760,6 +758,7 @@ function EditorContent() {
       } finally {
         if (!cancelled) {
           setLoadingDoc(false);
+          setStreamingDoc(false);
         }
       }
     })();
@@ -1380,6 +1379,7 @@ function EditorContent() {
       showTOC={showTOC}
       onTOCToggle={setShowTOC}
       loading={loadingDoc}
+      readOnly={streamingDoc}
       defaultFontSize={activeSettingsState.effectiveSettings.editor.fontSize}
       contentWidth={activeSettingsState.effectiveSettings.editor.contentWidth}
       title={currentDoc?.title ?? ""}
@@ -1399,6 +1399,7 @@ function EditorContent() {
     loadingDoc,
     markdownEditorStyle,
     showFixedToolbar,
+    streamingDoc,
     showTOC,
     toolbarPreferences.floatingToolbarDelayMs,
     toolbarPreferences.floatingToolbarEnabled,

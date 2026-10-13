@@ -37,8 +37,17 @@ import {
   resolveBatchSuccess,
   shouldSuppressBatchPartialFailureReload,
 } from "@/services/sync/reducer";
-import { computeRootManifestDigest } from "@/services/sync/manifest-digest";
-import { advanceSyncSnapshotIndexed, repairSnapshotSortKeyOrder, type SyncSnapshotCaptureOptions } from "@/services/sync/snapshot";
+import { planVerifyRepairs, type VerifyRepairPlan } from "@/services/sync/verify";
+import {
+  advanceSyncSnapshotIndexed,
+  createSyncIdentityRegistry,
+  hydrateTopLevelSyncIdentity,
+  registerCreateAck,
+  registerDeleteAck,
+  registerDocIdentities,
+  repairSnapshotSortKeyOrder,
+  type SyncSnapshotCaptureOptions,
+} from "@/services/sync/snapshot";
 import { createSortKeysBetween } from "@/services/sync/order";
 import { SyncTraceLog, buildManifestSummary, type SyncTraceEvent } from "@/services/sync/debug-log";
 import type { SyncBatchResult, SyncDiffHint, SyncEntry, SyncReducerState } from "@/services/sync/types";
@@ -443,10 +452,21 @@ export function useDocumentSync({
   const batchFailureCountRef = useRef(0);
   const errorRetryAttemptRef = useRef(0);
   const suppressedMoveSortKeysRef = useRef<Map<string, Set<string>>>(new Map());
+  // clientId → blockId / 已删除 blockId 登记表，用于在 diff 前修正节点身份
+  const identityRegistryRef = useRef(createSyncIdentityRegistry());
+  const flushRef = useRef<((source?: SyncSource) => Promise<void>) | null>(null);
+  // clientId → create 代数：未确认的 create 被删除（服务端可能留下墓碑）后，
+  // 同一 clientId 再次创建时换用新的 syncCreateId，避免被墓碑吞掉
+  const createGenerationRef = useRef<Map<string, number>>(new Map());
   const remoteReloadRunningRef = useRef(false);
   const onRemoteContentAppliedRef = useRef(onRemoteContentApplied);
   const onRemoteReloadRequiredRef = useRef(onRemoteReloadRequired);
   const MAX_BATCH_FAILURES_BEFORE_CHECKPOINT = 2;
+  const MAX_VERIFY_REPAIR_ROUNDS = 3;
+  const verifyRepairRoundsRef = useRef(0);
+  const applyVerifyRepairPlanRef = useRef<((plan: VerifyRepairPlan) => void) | null>(null);
+  const runDraftCheckpointRef = useRef<((content?: TiptapDoc | null) => Promise<boolean>) | null>(null);
+  const getLiveContentRef = useRef(getLiveContent);
 
   const replaceSyncState = useCallback((next: SyncReducerState | null) => {
     stateRef.current = next;
@@ -563,6 +583,7 @@ export function useDocumentSync({
           computePayloadFingerprints: true,
         });
         latestContentRef.current = patched;
+        registerDocIdentities(identityRegistryRef.current, patched);
         updateSyncState((prev) =>
           prev
             ? applyRemoteBatchSuccess(prev, {
@@ -635,11 +656,15 @@ export function useDocumentSync({
 
       const prevSnapshot = snapshotRef.current;
       const diffHint = consumeDiffHint?.(nextContent) ?? null;
+      const hydratedContent = hydrateTopLevelSyncIdentity(
+        nextContent,
+        identityRegistryRef.current,
+      );
       const advanced = advanceSyncSnapshotIndexed(
         current,
         prevSnapshot,
         snapshotIndexRef.current,
-        nextContent,
+        hydratedContent,
         diffHint,
         {
           suppressedMoveSortKeys: suppressedMoveSortKeysRef.current,
@@ -694,6 +719,86 @@ export function useDocumentSync({
   }, [content]);
 
   useEffect(() => {
+    getLiveContentRef.current = getLiveContent;
+  }, [getLiveContent]);
+
+  /** 应用 idle 校验得到的增量修复计划。 */
+  const applyVerifyRepairPlan = useCallback(
+    (plan: VerifyRepairPlan) => {
+      const current = stateRef.current;
+      let snapshot = snapshotRef.current;
+      if (!current || !snapshot) return;
+
+      // 1) 顺序一致但 sortKey 不同：本地采纳服务端 sortKey；顺序不一致：入队 move
+      const sortKeyByClientId = new Map<string, string>();
+      for (const item of plan.sortKeyAdoptions) sortKeyByClientId.set(item.clientId, item.sortKey);
+      for (const move of plan.moves) {
+        if (move.sortKey) sortKeyByClientId.set(move.clientId, move.sortKey);
+      }
+      if (sortKeyByClientId.size > 0) {
+        snapshot = {
+          ...snapshot,
+          content: snapshot.content.map((node) => {
+            const clientId = readClientId(node);
+            const sortKey = clientId ? sortKeyByClientId.get(clientId) : undefined;
+            if (!sortKey || readSortKey(node) === sortKey) return node;
+            return {
+              ...node,
+              attrs: { ...(node.attrs ?? {}), sortKey, "data-sort-key": sortKey },
+            };
+          }),
+        };
+      }
+
+      // 2) 本地有 blockId 但服务端不存在、或既无 blockId 又无待同步 entry：
+      //    从快照中移除这些节点，让下一次 diff 把它们当作新块重新创建
+      for (const blockId of plan.missingBlockIds) {
+        registerDeleteAck(identityRegistryRef.current, blockId);
+      }
+      const recreateClientIds = new Set(plan.creates.map((entry) => entry.clientId));
+      const missingBlockIds = new Set(plan.missingBlockIds);
+      if (recreateClientIds.size > 0 || missingBlockIds.size > 0) {
+        snapshot = {
+          ...snapshot,
+          content: snapshot.content.filter((node) => {
+            const clientId = readClientId(node);
+            const blockId = readBlockId(node);
+            if (clientId && recreateClientIds.has(clientId)) return false;
+            if (blockId && missingBlockIds.has(blockId)) return false;
+            return true;
+          }),
+        };
+      }
+
+      let nextState = current;
+      const baseStore = getSyncBaseStore(current.docId);
+      for (const entry of plan.updates) {
+        if (entry.blockId) baseStore.forceFullResync(entry.blockId);
+        nextState = enqueueChange(nextState, entry);
+      }
+      for (const entry of [...plan.moves, ...plan.deletes]) {
+        nextState = enqueueChange(nextState, entry);
+      }
+
+      snapshotRef.current = snapshot;
+      snapshotIndexRef.current = createSyncSnapshotIndex(snapshot, {
+        computePayloadFingerprints: true,
+      });
+      if (nextState !== current) replaceSyncState(nextState);
+
+      if (recreateClientIds.size > 0 || missingBlockIds.size > 0) {
+        const live = getLiveContentRef.current?.() ?? latestContentRef.current;
+        captureContentSnapshot(live, "editor-effect");
+      }
+    },
+    [captureContentSnapshot, replaceSyncState],
+  );
+
+  useEffect(() => {
+    applyVerifyRepairPlanRef.current = applyVerifyRepairPlan;
+  }, [applyVerifyRepairPlan]);
+
+  useEffect(() => {
     if (!docId || !rootBlockId || baseVersion == null) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- sync state must reset when the document binding changes
       replaceSyncState(null);
@@ -702,6 +807,7 @@ export function useDocumentSync({
       lastReconciledManifestKeyRef.current = null;
       lastServerManifestDigestRef.current = null;
       suppressedMoveSortKeysRef.current.clear();
+      identityRegistryRef.current = createSyncIdentityRegistry();
       return;
     }
 
@@ -723,6 +829,8 @@ export function useDocumentSync({
     lastReconciledManifestKeyRef.current = null;
     lastServerManifestDigestRef.current = null;
     suppressedMoveSortKeysRef.current.clear();
+    identityRegistryRef.current = createSyncIdentityRegistry();
+    registerDocIdentities(identityRegistryRef.current, latestContentRef.current);
   }, [baseVersion, docId, draftRevision, replaceSyncState, rootBlockId, syncSession]);
 
   useEffect(() => {
@@ -814,31 +922,8 @@ export function useDocumentSync({
       const manifestKey = buildReconcileKey(current, manifest);
       if (lastReconciledManifestKeyRef.current === manifestKey) return;
 
-      const localDigest = await computeRootManifestDigest(snapshot);
-      const serverDigest = lastServerManifestDigestRef.current;
-      const pendingMoves = Object.values(stateRef.current?.entries ?? {}).some(
-        (entry) => entry.opType === "move",
-      );
-      if (pendingMoves) {
-        addSyncTrace("idle:manifest", current.docId, current.sessionId, current.sessionEpoch, () => ({
-          manifest: buildManifestSummary(snapshot),
-          digestMatch: false,
-          pendingMoves: true,
-        }));
-        return;
-      }
-
-      if (serverDigest && localDigest === serverDigest && manifest.length > 0) {
-        lastReconciledManifestKeyRef.current = manifestKey;
-        addSyncTrace("idle:manifest", current.docId, current.sessionId, current.sessionEpoch, () => ({
-          manifest: buildManifestSummary(snapshot),
-          digestMatch: true,
-          localDigest,
-          serverDigest,
-        }));
-        return;
-      }
-
+      // 注意：manifest digest 只覆盖 blockId/sortKey，不能证明内容一致，
+      // 因此每个新的草稿版本 idle 时都做一次带内容摘要的校验（verify）。
       const clientBatchId = createReconcileId();
       lastReconciledManifestKeyRef.current = manifestKey;
       reconcileRunningRef.current = true;
@@ -856,7 +941,13 @@ export function useDocumentSync({
           sessionId: current.sessionId,
           sessionEpoch: current.sessionEpoch,
           manifest,
+          verify: true,
         });
+        for (const tombstone of response.tombstoned ?? []) {
+          if (tombstone.blockId) {
+            registerDeleteAck(identityRegistryRef.current, tombstone.blockId);
+          }
+        }
         addSyncTrace("manifest:reconcile-response", current.docId, current.sessionId, current.sessionEpoch, () => ({
           clientBatchId,
           draftRevision: response.draftRevision,
@@ -891,6 +982,45 @@ export function useDocumentSync({
               }
             : prev,
         );
+
+        const latest = stateRef.current;
+        const latestSnapshot = snapshotRef.current;
+        if (
+          response.blocks &&
+          latest &&
+          latestSnapshot &&
+          // 校验期间若有其它批次写入，服务端摘要已过期，等下一轮再校验
+          latest.draftRevision === response.draftRevision &&
+          !latest.inflightBatchId
+        ) {
+          const plan = await planVerifyRepairs({
+            snapshot: latestSnapshot,
+            serverBlocks: response.blocks,
+            pendingEntries: latest.entries,
+          });
+          addSyncTrace("verify:result", current.docId, current.sessionId, current.sessionEpoch, () => ({
+            clientBatchId,
+            serverBlockCount: response.blocks?.length ?? 0,
+            mismatchCount: plan.mismatchCount,
+            updates: plan.updates.map((entry) => entry.blockId),
+            missing: plan.missingBlockIds,
+            creates: plan.creates.map((entry) => entry.clientId),
+            deletes: plan.deletes.map((entry) => entry.blockId),
+            moves: plan.moves.map((entry) => [entry.blockId, entry.sortKey]),
+            sortKeyAdoptions: plan.sortKeyAdoptions.length,
+          }));
+          applyVerifyRepairPlanRef.current?.(plan);
+          if (plan.mismatchCount > 0) {
+            verifyRepairRoundsRef.current += 1;
+            // 多轮修复仍不一致：退回全量 checkpoint 兜底
+            if (verifyRepairRoundsRef.current > MAX_VERIFY_REPAIR_ROUNDS) {
+              verifyRepairRoundsRef.current = 0;
+              await runDraftCheckpointRef.current?.(getLiveContentRef.current?.() ?? latestContentRef.current);
+            }
+          } else {
+            verifyRepairRoundsRef.current = 0;
+          }
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : "最终态同步校验失败";
         updateSyncState((prev) =>
@@ -911,23 +1041,6 @@ export function useDocumentSync({
     [replaceSyncState, updateSyncState],
   );
 
-  const markCurrentManifestReconciledIfDigestMatches = useCallback(async () => {
-    const current = stateRef.current;
-    const snapshot = snapshotRef.current;
-    const serverDigest = lastServerManifestDigestRef.current;
-    if (!current || !snapshot || !serverDigest) return;
-
-    const manifest = toReconcileManifest(snapshot);
-    if (manifest.length === 0) return;
-
-    const localDigest = await computeRootManifestDigest(snapshot);
-    if (localDigest !== serverDigest) return;
-
-    lastReconciledManifestKeyRef.current = buildReconcileKey(
-      current,
-      manifest,
-    );
-  }, []);
 
   const runDraftCheckpoint = useCallback(
     async (latestContent?: TiptapDoc | null): Promise<boolean> => {
@@ -994,6 +1107,14 @@ export function useDocumentSync({
           contentForCheckpoint,
           response.mappings,
         );
+        for (const tombstone of response.tombstoned ?? []) {
+          if (tombstone.blockId) {
+            registerDeleteAck(identityRegistryRef.current, tombstone.blockId);
+          }
+        }
+        for (const mapping of response.mappings) {
+          registerCreateAck(identityRegistryRef.current, mapping.clientId, mapping.blockId);
+        }
         snapshotRef.current = patched;
         snapshotIndexRef.current = createSyncSnapshotIndex(patched, {
           computePayloadFingerprints: true,
@@ -1027,6 +1148,10 @@ export function useDocumentSync({
     [onContentPatched, updateSyncState],
   );
 
+  useEffect(() => {
+    runDraftCheckpointRef.current = runDraftCheckpoint;
+  }, [runDraftCheckpoint]);
+
   const flush = useCallback(
     async (source: SyncSource = "autosync") => {
       if (source === "autosync" && autosyncPausedRef.current) return;
@@ -1042,6 +1167,10 @@ export function useDocumentSync({
           entryCount: Object.keys(initial.entries).length,
         }));
         await reconcileIdleManifest(initial);
+        if ((stateRef.current?.dirtyOrder.length ?? 0) > 0) {
+          window.setTimeout(() => void flushRef.current?.(source), 0);
+          return;
+        }
         const emptyManifest = toReconcileManifest(snapshotRef.current).length === 0;
         if (emptyManifest) {
           lastReconciledManifestKeyRef.current = null;
@@ -1050,6 +1179,9 @@ export function useDocumentSync({
           const latest = stateRef.current;
           if (latest && latest.dirtyOrder.length === 0 && !latest.inflightBatchId) {
             await reconcileIdleManifest(latest);
+          }
+          if ((stateRef.current?.dirtyOrder.length ?? 0) > 0) {
+            window.setTimeout(() => void flushRef.current?.(source), 0);
           }
         }
         return;
@@ -1071,6 +1203,8 @@ export function useDocumentSync({
               entryCount: Object.keys(current.entries).length,
             }));
             await reconcileIdleManifest(current);
+            // 对账期间可能产生新的修复操作或用户新编辑：继续排空队列
+            if ((stateRef.current?.dirtyOrder.length ?? 0) > 0) continue;
             const emptyManifest = toReconcileManifest(snapshotRef.current).length === 0;
             if (emptyManifest) {
               // 弱网/分批 ACK 时，首轮 idle 对账后服务端仍可能有残留 create
@@ -1078,8 +1212,10 @@ export function useDocumentSync({
               lastServerManifestDigestRef.current = null;
               await new Promise((resolve) => window.setTimeout(resolve, 5000));
               const latest = stateRef.current;
+              if (latest && latest.dirtyOrder.length > 0) continue;
               if (latest && latest.dirtyOrder.length === 0 && !latest.inflightBatchId) {
                 await reconcileIdleManifest(latest);
+                if ((stateRef.current?.dirtyOrder.length ?? 0) > 0) continue;
               }
             }
             return;
@@ -1217,6 +1353,22 @@ export function useDocumentSync({
             },
           );
 
+          const dispatchOperations = operations.map((op) => {
+            if (op.opType !== "create") return op;
+            const generation = createGenerationRef.current.get(op.clientId) ?? 0;
+            if (generation === 0) return op;
+            const baseSyncCreateId = op.syncCreateId ?? `sync-create:${op.clientId}`;
+            return { ...op, syncCreateId: `${baseSyncCreateId}#g${generation}` };
+          });
+          for (const op of operations) {
+            if (op.opType === "delete" && !op.blockId) {
+              createGenerationRef.current.set(
+                op.clientId,
+                (createGenerationRef.current.get(op.clientId) ?? 0) + 1,
+              );
+            }
+          }
+
           try {
             const requestSetupStartedAt = nowEditorPerf();
             const responsePromise = postSyncBatchWithRetry(
@@ -1229,7 +1381,7 @@ export function useDocumentSync({
                 source,
                 sessionId: rebased.sessionId ?? undefined,
                 sessionEpoch: rebased.sessionEpoch ?? undefined,
-                operations,
+                operations: dispatchOperations,
               },
               {
                 onRetry: (attempt, error) => {
@@ -1430,11 +1582,39 @@ export function useDocumentSync({
                 clientId: result.clientId,
               }));
 
-            const applyBatchAckToDoc = (doc: TiptapDoc | null): TiptapDoc | null => {
+            for (const mapping of createMappings) {
+              registerCreateAck(
+                identityRegistryRef.current,
+                mapping.clientId,
+                mapping.blockId,
+              );
+            }
+            for (const result of response.results) {
+              if (
+                result.operation === "delete" &&
+                result.success &&
+                result.blockId &&
+                result.matchBy !== "not_found" &&
+                !result.tombstoned
+              ) {
+                registerDeleteAck(identityRegistryRef.current, result.blockId);
+              }
+            }
+
+            // includeDeletes=false 用于实时编辑器内容：服务端只会删除客户端要求删除的块，
+            // 若编辑器里仍有该块（如用户 undo 恢复），必须保留并按新块重新同步，不能再删掉。
+            const applyBatchAckToDoc = (
+              doc: TiptapDoc | null,
+              includeDeletes = true,
+            ): TiptapDoc | null => {
               if (!doc) return doc;
               let nextDoc = doc;
               if (serverAckMappings.length > 0) {
                 nextDoc = applyServerAck(nextDoc, serverAckMappings);
+              }
+              if (!includeDeletes) {
+                // 实时内容的视觉顺序是权威，不能按服务端 sortKey 重排用户文档
+                return nextDoc;
               }
               if (deleteAckMappings.length > 0) {
                 nextDoc = applyServerDeleteAck(nextDoc, deleteAckMappings);
@@ -1461,6 +1641,7 @@ export function useDocumentSync({
 
             const ackBaseline = applyBatchAckToDoc(
               getLiveContent?.() ?? latestContentRef.current,
+              false,
             );
             captureContentSnapshot(ackBaseline, "batch-ack-rescan", ackRescanOptions);
 
@@ -1538,9 +1719,6 @@ export function useDocumentSync({
                 }
               }
             }
-            if (!batchFailure) {
-              await markCurrentManifestReconciledIfDigestMatches();
-            }
             if (batchFailure) {
               const failedIds = collectFailedClientIds(
                 response.results,
@@ -1591,10 +1769,28 @@ export function useDocumentSync({
         }
       } finally {
         flushRunningRef.current = false;
+        // flush 运行期间到达的 dirty 触发会被 flushRunningRef 吞掉；若结束时仍有
+        // 待同步且非 error/冲突态，补一次调度，避免队列卡在 dirty 无人处理。
+        const after = stateRef.current;
+        if (
+          after &&
+          after.syncState === "dirty" &&
+          after.dirtyOrder.length > 0 &&
+          !after.inflightBatchId &&
+          !(source === "autosync" && autosyncPausedRef.current)
+        ) {
+          window.setTimeout(() => {
+            void flushRef.current?.("autosync");
+          }, 50);
+        }
       }
     },
-    [captureContentSnapshot, getLiveContent, markCurrentManifestReconciledIfDigestMatches, onContentPatched, reconcileIdleManifest, replaceSyncState, runDraftCheckpoint, updateSyncState],
+    [captureContentSnapshot, getLiveContent, onContentPatched, reconcileIdleManifest, replaceSyncState, runDraftCheckpoint, updateSyncState],
   );
+
+  useEffect(() => {
+    flushRef.current = flush;
+  }, [flush]);
 
   // error 态自动重试：指数退避（2s 起，封顶 30s），网络恢复后队列自动排空，
   // 不再依赖用户继续编辑触发 dirty 才恢复同步

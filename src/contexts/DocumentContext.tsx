@@ -60,6 +60,7 @@ interface DocumentContextValue {
   selectDocAndScroll: (docId: string, blockId: string) => Promise<void>;
   loadContent: (
     docId: string,
+    options?: { onPartialContent?: (content: EditorContent) => void },
   ) => Promise<{
     content: EditorContent;
     docVer: number;
@@ -216,14 +217,21 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     pushWindowPath(doc.docId);
   }, [setCurrentDocument, workspaceId]);
 
-  const loadContent = useCallback(async (docId: string): Promise<{
+  const loadContent = useCallback(async (
+    docId: string,
+    options: { onPartialContent?: (content: EditorContent) => void } = {},
+  ): Promise<{
     content: EditorContent;
     docVer: number;
     source: "draft" | "head";
     draft: EditDraftMeta;
     syncSession: SyncSessionMeta | null;
   }> => {
-    const { content, blockIds, docVer, source, draft, lastEditPosition, syncSession } = await loadDocumentContentV2(docId);
+    const { content, blockIds, docVer, source, draft, lastEditPosition, syncSession } = await loadDocumentContentV2(docId, {
+      onPartialContent: options.onPartialContent
+        ? (partial) => options.onPartialContent?.(partial.content)
+        : undefined,
+    });
     blockIdsRef.current = blockIds;
     setCurrentBlockIds(blockIds);
     setCurrentDocVersion(docVer);

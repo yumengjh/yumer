@@ -72,6 +72,12 @@ export interface SyncManifestReconcileResponse {
     clientId: string | null;
     syncCreateId: string | null;
   }>;
+  /** verify=true 时返回：服务端草稿中根块直属、未删除块的 canonical 内容摘要 */
+  blocks?: Array<{
+    blockId: string;
+    sortKey: string;
+    hash: string;
+  }>;
 }
 
 export interface DraftCheckpointResponse {
@@ -484,12 +490,14 @@ export async function postSyncManifestReconcile(input: {
   sessionId?: string;
   sessionEpoch?: number;
   manifest: SyncManifestIdentity[];
+  verify?: boolean;
 }): Promise<SyncManifestReconcileResponse> {
   const response = await apiPost<SyncManifestReconcileResponse>(`/documents/${input.docId}/sync-reconcile`, {
     draftRevision: input.draftRevision,
     clientBatchId: input.clientBatchId,
     ...(input.sessionId ? { sessionId: input.sessionId } : {}),
     ...(typeof input.sessionEpoch === "number" ? { sessionEpoch: input.sessionEpoch } : {}),
+    ...(input.verify ? { verify: true } : {}),
     manifest: input.manifest.map((item) => ({
       blockId: item.blockId ?? null,
       clientId: item.clientId ?? null,

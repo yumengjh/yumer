@@ -112,6 +112,8 @@ export interface MarkdownEditorProps {
   onChange?: (content: EditorContentType, syncDiffHint?: SyncDiffHint) => void;
   /** 是否可编辑，默认 true */
   editable?: boolean;
+  /** 只读但保留界面（如大文档分页加载期间）：仅禁止编辑，不隐藏标题/工具栏 */
+  readOnly?: boolean;
   /** 占位文字 */
   placeholder?: string;
   /** 代码块主题，默认跟随系统 */
@@ -471,6 +473,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
   content = "",
   onChange,
   editable = true,
+  readOnly = false,
   placeholder = "开始记录你的知识吧…",
   theme: themeProp,
   showToolbar = true,
@@ -833,9 +836,9 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
   // 同步 editable
   useEffect(() => {
     if (editor) {
-      editor.setEditable(editable);
+      editor.setEditable(editable && !readOnly);
     }
-  }, [editor, editable]);
+  }, [editor, editable, readOnly]);
 
   // 同步外部 content 变化
   useEffect(() => {

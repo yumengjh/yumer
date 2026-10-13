@@ -162,6 +162,9 @@ function resolvePublicFetchOptions(slug: string, latest: boolean): RequestInit {
   return latest ? ({ cache: "no-store" } satisfies RequestInit) : publicFetchOptions(slug);
 }
 
+/** 服务端 /content 单页块数上限 */
+const FULL_CONTENT_LIMIT = 10000;
+
 async function readPublicDocSnapshot(
   slug: string,
   latest: boolean,
@@ -174,8 +177,9 @@ async function readPublicDocSnapshot(
   }
 
   const fetchOptions = resolvePublicFetchOptions(slug, latest);
-  const contentUrl = `${API_BASE}/documents/${docId}/content?mode=html`;
-  const fallbackContentUrl = `${API_BASE}/documents/${docId}/content`;
+  // 服务端默认单页 1000 块，公开页需要完整文档：请求单页上限
+  const contentUrl = `${API_BASE}/documents/${docId}/content?mode=html&limit=${FULL_CONTENT_LIMIT}`;
+  const fallbackContentUrl = `${API_BASE}/documents/${docId}/content?limit=${FULL_CONTENT_LIMIT}`;
 
   let contentRes: Response;
   let docRes: Response;

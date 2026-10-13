@@ -156,7 +156,7 @@ describe("useDocumentSync source guards", () => {
     expect(continueAt).toBeGreaterThan(mismatchAt);
   });
 
-  it("repairs sort keys before idle manifest digest comparison", () => {
+  it("repairs sort keys before the idle verify reconcile request", () => {
     const hookSource = fs.readFileSync(
       path.resolve(process.cwd(), "src/hooks/useDocumentSync.ts"),
       "utf8",
@@ -164,11 +164,11 @@ describe("useDocumentSync source guards", () => {
 
     const reconcileAt = hookSource.indexOf("const reconcileIdleManifest = useCallback");
     const repairAt = hookSource.indexOf("repairSnapshotSortKeyOrder(stateForRepair, snapshot)", reconcileAt);
-    const digestAt = hookSource.indexOf("computeRootManifestDigest(snapshot)", repairAt);
+    const verifyAt = hookSource.indexOf("verify: true", repairAt);
 
     expect(reconcileAt).toBeGreaterThanOrEqual(0);
     expect(repairAt).toBeGreaterThan(reconcileAt);
-    expect(digestAt).toBeGreaterThan(repairAt);
+    expect(verifyAt).toBeGreaterThan(repairAt);
   });
 
   it("turns sync session conflicts from reconcile or batch into lease-lost state", () => {
@@ -222,38 +222,15 @@ describe("useDocumentSync source guards", () => {
     expect(editorPatchAt).toBeGreaterThan(rescanAt);
   });
 
-  it("marks batch manifest digest as reconciled before idle reconcile can post", () => {
+  it("does not skip the idle content verify just because the manifest digest matches", () => {
     const hookSource = fs.readFileSync(
       path.resolve(process.cwd(), "src/hooks/useDocumentSync.ts"),
       "utf8",
     );
 
-    const helperAt = hookSource.indexOf(
-      "const markCurrentManifestReconciledIfDigestMatches",
-    );
-    const digestCompareAt = hookSource.indexOf(
-      "localDigest !== serverDigest",
-      helperAt,
-    );
-    const markKeyAt = hookSource.indexOf(
-      "lastReconciledManifestKeyRef.current = buildReconcileKey",
-      digestCompareAt,
-    );
-    const ackRescanAt = hookSource.indexOf(
-      'captureContentSnapshot(ackBaseline, "batch-ack-rescan"',
-    );
-    const markCallAt = hookSource.indexOf(
-      "await markCurrentManifestReconciledIfDigestMatches()",
-      ackRescanAt,
-    );
-    const batchFailureAt = hookSource.indexOf("if (batchFailure)", ackRescanAt);
-
-    expect(helperAt).toBeGreaterThanOrEqual(0);
-    expect(digestCompareAt).toBeGreaterThan(helperAt);
-    expect(markKeyAt).toBeGreaterThan(digestCompareAt);
-    expect(ackRescanAt).toBeGreaterThanOrEqual(0);
-    expect(markCallAt).toBeGreaterThan(ackRescanAt);
-    expect(markCallAt).toBeLessThan(batchFailureAt);
+    // manifest digest 只覆盖 blockId/sortKey，不能证明内容一致
+    expect(hookSource).not.toContain("markCurrentManifestReconciledIfDigestMatches");
+    expect(hookSource).toContain("planVerifyRepairs(");
   });
 
   it("keeps indexed diff metadata outside React state and consumes hints during snapshot capture", () => {

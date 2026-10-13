@@ -172,6 +172,121 @@ export function repairSnapshotSortKeyOrder(
   };
 }
 
+/**
+ * 同步身份登记表（仅存在于当前编辑会话内存中）：
+ * - blockIdByClientId：服务端已确认的 clientId → blockId 映射
+ * - deadBlockIds：服务端已确认删除的 blockId
+ */
+export type SyncIdentityRegistry = {
+  blockIdByClientId: Map<string, string>;
+  deadBlockIds: Set<string>;
+};
+
+export function createSyncIdentityRegistry(): SyncIdentityRegistry {
+  return { blockIdByClientId: new Map(), deadBlockIds: new Set() };
+}
+
+/** 从文档登记 clientId → blockId（只登记未被删除的 blockId）。 */
+export function registerDocIdentities(
+  registry: SyncIdentityRegistry,
+  doc: TiptapDoc | null,
+): void {
+  for (const node of doc?.content ?? []) {
+    const identity = readIdentityFromAttrs(node.attrs);
+    if (!identity.clientId || !identity.blockId) continue;
+    if (registry.deadBlockIds.has(identity.blockId)) continue;
+    registry.blockIdByClientId.set(identity.clientId, identity.blockId);
+  }
+}
+
+export function registerCreateAck(
+  registry: SyncIdentityRegistry,
+  clientId: string,
+  blockId: string,
+): void {
+  registry.deadBlockIds.delete(blockId);
+  registry.blockIdByClientId.set(clientId, blockId);
+}
+
+export function registerDeleteAck(
+  registry: SyncIdentityRegistry,
+  blockId: string,
+): void {
+  registry.deadBlockIds.add(blockId);
+  for (const [clientId, mapped] of registry.blockIdByClientId) {
+    if (mapped === blockId) registry.blockIdByClientId.delete(clientId);
+  }
+}
+
+function withoutBlockIdentity(node: TiptapNode): TiptapNode {
+  const attrs = { ...(node.attrs ?? {}) };
+  attrs.blockId = null;
+  delete attrs["data-block-id"];
+  delete attrs.syncCreateId;
+  delete attrs["data-sync-create-id"];
+  return { ...node, attrs };
+}
+
+/**
+ * 在 diff 前补齐/修正顶层块的服务端身份。
+ *
+ * 编辑器的 undo/redo、过期的 React state 等都可能让同一个 clientId 的节点
+ * 暂时丢失已 ACK 的 blockId；若直接 diff，会被当成「删旧建新」而导致服务端
+ * 残留旧块或重复块。这里按 clientId 补回 blockId。
+ *
+ * 反之，undo 恢复出的节点可能携带服务端已删除的 blockId，此时剥离 blockId，
+ * 让它作为新块重新创建，而不是向已删除的块发 update。
+ */
+export function hydrateTopLevelSyncIdentity(
+  doc: TiptapDoc,
+  registry: SyncIdentityRegistry | null | undefined,
+): TiptapDoc {
+  if (!registry || !Array.isArray(doc.content)) return doc;
+  if (registry.blockIdByClientId.size === 0 && registry.deadBlockIds.size === 0) {
+    return doc;
+  }
+
+  const usedBlockIds = new Set<string>();
+  for (const node of doc.content) {
+    const identity = readIdentityFromAttrs(node.attrs);
+    if (identity.blockId && !registry.deadBlockIds.has(identity.blockId)) {
+      usedBlockIds.add(identity.blockId);
+    }
+  }
+
+  let changed = false;
+  const content = doc.content.map((node) => {
+    const identity = readIdentityFromAttrs(node.attrs);
+    if (identity.blockId) {
+      if (!registry.deadBlockIds.has(identity.blockId)) return node;
+      changed = true;
+      const stripped = withoutBlockIdentity(node);
+      const known = identity.clientId
+        ? registry.blockIdByClientId.get(identity.clientId)
+        : undefined;
+      if (known && !usedBlockIds.has(known)) {
+        usedBlockIds.add(known);
+        return {
+          ...stripped,
+          attrs: { ...stripped.attrs, blockId: known, "data-block-id": known },
+        };
+      }
+      return stripped;
+    }
+    if (!identity.clientId) return node;
+    const known = registry.blockIdByClientId.get(identity.clientId);
+    if (!known || usedBlockIds.has(known)) return node;
+    usedBlockIds.add(known);
+    changed = true;
+    return {
+      ...node,
+      attrs: { ...(node.attrs ?? {}), blockId: known, "data-block-id": known },
+    };
+  });
+
+  return changed ? { ...doc, content } : doc;
+}
+
 function createIdleMetrics(input: {
   topLevelCount: number;
   fingerprintCount: number;
@@ -216,15 +331,32 @@ function collectTopLevelSyncNodes(doc: TiptapDoc): Map<string, TiptapNode> {
   return nodes;
 }
 
-/** 按 blockId/clientId 对比各块 canonical payload，忽略仅 sync attrs 的差异。 */
+function readNodeSortKey(node: TiptapNode): string | null {
+  const value = node.attrs?.sortKey ?? node.attrs?.["data-sort-key"];
+  return typeof value === "string" && value.trim() !== "" ? value : null;
+}
+
+/**
+ * 按 blockId/clientId 对比各块 canonical payload，忽略仅 sync attrs 的差异。
+ * 注意：canonical payload 会剥离 sortKey，因此还必须比较顶层顺序和 sortKey，
+ * 否则纯拖拽换位（只改顺序/sortKey）会被误判为「无变化」而丢失 move。
+ */
 export function docSyncPayloadsEqual(left: TiptapDoc, right: TiptapDoc): boolean {
   const leftNodes = collectTopLevelSyncNodes(left);
   const rightNodes = collectTopLevelSyncNodes(right);
   if (leftNodes.size !== rightNodes.size) return false;
+  if ((left.content ?? []).length !== (right.content ?? []).length) return false;
+
+  const leftOrder = [...leftNodes.keys()];
+  const rightOrder = [...rightNodes.keys()];
+  for (let index = 0; index < leftOrder.length; index += 1) {
+    if (leftOrder[index] !== rightOrder[index]) return false;
+  }
 
   for (const [key, leftNode] of leftNodes) {
     const rightNode = rightNodes.get(key);
     if (!rightNode) return false;
+    if (readNodeSortKey(leftNode) !== readNodeSortKey(rightNode)) return false;
     if (canonicalStringify(leftNode) !== canonicalStringify(rightNode)) {
       return false;
     }

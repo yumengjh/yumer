@@ -35,6 +35,7 @@ export type SyncTraceEvent =
   | "editor:ack-merged"
   | "manifest:reconcile"
   | "manifest:reconcile-response"
+  | "verify:result"
   | "realtime:connected"
   | "realtime:event"
   | "realtime:error"

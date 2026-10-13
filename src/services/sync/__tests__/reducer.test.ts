@@ -69,7 +69,7 @@ describe("sync reducer", () => {
     expect(state.entries.client_b).toBeUndefined();
   });
 
-  it("keeps delete terminal when a later update arrives for the same block", () => {
+  it("turns a pending (not yet sent) delete back into an update when the block reappears (undo)", () => {
     let state = createInitialSyncState("doc_1", "root_1", 3);
     state = enqueueChange(state, {
       clientId: "client_restore",
@@ -96,8 +96,50 @@ describe("sync reducer", () => {
     });
 
     expect(state.dirtyOrder).toEqual(["client_restore"]);
-    expect(state.entries.client_restore.opType).toBe("delete");
+    expect(state.entries.client_restore.opType).toBe("update");
     expect(state.entries.client_restore.blockId).toBe("b_restore");
+    expect(state.entries.client_restore.payload).toEqual({
+      type: "paragraph",
+      content: [{ type: "text", text: "first line recovered" }],
+    });
+  });
+
+  it("keeps an inflight delete when the block reappears before the delete ack", () => {
+    let state = createInitialSyncState("doc_1", "root_1", 3);
+    state = enqueueChange(state, {
+      clientId: "client_restore",
+      blockId: "b_restore",
+      opType: "delete",
+    });
+    state = markBatchInflight(state, "batch_1", ["client_restore"]);
+    state = enqueueChange(state, {
+      clientId: "client_restore",
+      blockId: "b_restore",
+      opType: "update",
+      payload: { type: "paragraph", content: [{ type: "text", text: "back" }] },
+    });
+
+    expect(state.entries.client_restore.opType).toBe("delete");
+  });
+
+  it("never cancels a delete of a real server block against a pending create of the same clientId", () => {
+    let state = createInitialSyncState("doc_1", "root_1", 3);
+    state = enqueueChange(state, {
+      clientId: "client_x",
+      blockId: null,
+      opType: "create",
+      blockType: "paragraph",
+      payload: { type: "paragraph" },
+      sortKey: "a0",
+    });
+    state = enqueueChange(state, {
+      clientId: "client_x",
+      blockId: "b_server",
+      opType: "delete",
+    });
+
+    expect(state.entries.client_x.opType).toBe("delete");
+    expect(state.entries.client_x.blockId).toBe("b_server");
   });
 
   it("seeds sync session metadata into the initial reducer state", () => {
@@ -615,7 +657,7 @@ describe("sync reducer", () => {
       (state.entries.client_fix.payload as { attrs?: Record<string, unknown> }).attrs?.syncCreateId,
     ).toBeUndefined();
   });
-  it("keeps delete when a later update arrives for the same client", () => {
+  it("revives a not-yet-sent delete when a later update arrives for the same block", () => {
     let state = createInitialSyncState("doc_1", "root_1", 3);
     state = enqueueChange(state, {
       clientId: "client_deleted_existing",
@@ -637,16 +679,16 @@ describe("sync reducer", () => {
       opType: "update",
       payload: {
         type: "paragraph",
-        content: [{ type: "text", text: "should not revive" }],
+        content: [{ type: "text", text: "restored by undo" }],
       },
     });
 
     expect(state.dirtyOrder).toEqual(["client_deleted_existing"]);
-    expect(state.entries.client_deleted_existing.opType).toBe("delete");
+    expect(state.entries.client_deleted_existing.opType).toBe("update");
     expect(state.entries.client_deleted_existing.blockId).toBe("block_deleted_existing");
   });
 
-  it("keeps delete when a later move arrives for the same client", () => {
+  it("revives a not-yet-sent delete when a later move arrives for the same block", () => {
     let state = createInitialSyncState("doc_1", "root_1", 3);
     state = enqueueChange(state, {
       clientId: "client_deleted_moved",
@@ -670,7 +712,7 @@ describe("sync reducer", () => {
     });
 
     expect(state.dirtyOrder).toEqual(["client_deleted_moved"]);
-    expect(state.entries.client_deleted_moved.opType).toBe("delete");
+    expect(state.entries.client_deleted_moved.opType).toBe("move");
     expect(state.entries.client_deleted_moved.blockId).toBe("block_deleted_moved");
   });
 

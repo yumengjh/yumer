@@ -230,11 +230,95 @@ export async function getDocument(docId: string): Promise<Document> {
 export async function getDocumentContent(
   docId: string,
 ): Promise<DocumentContentResponse> {
-  return apiGet<DocumentContentResponse>(`/documents/${docId}/content`);
+  return apiGet<DocumentContentResponse>(`/documents/${docId}/content?limit=10000`);
 }
 
-export async function getEditContent(docId: string): Promise<EditContentResponse> {
-  return apiGet<EditContentResponse>(`/documents/${docId}/edit-content`);
+export async function getEditContent(
+  docId: string,
+  params: { startBlockId?: string; limit?: number } = {},
+): Promise<EditContentResponse> {
+  const query = new URLSearchParams();
+  if (params.startBlockId) query.set("startBlockId", params.startBlockId);
+  if (params.limit) query.set("limit", String(params.limit));
+  const suffix = query.toString();
+  return apiGet<EditContentResponse>(
+    `/documents/${docId}/edit-content${suffix ? `?${suffix}` : ""}`,
+  );
+}
+
+/** 编辑态内容分页大小（服务端单页上限 10000，默认 1000） */
+export const EDIT_CONTENT_PAGE_SIZE = 1000;
+/** 防御：最多拉取的分页数，避免服务端游标异常导致死循环 */
+const EDIT_CONTENT_MAX_PAGES = 200;
+
+/**
+ * 拉取编辑态内容的全部分页，并把各页根块直属子块合并到第一页的树中。
+ *
+ * 服务端按块数分页（hasMore + nextStartBlockId）；之前前端只读取第一页，
+ * 超过 1000 块的文档会被截断，且同步引擎会把未加载的块当作已删除。
+ * onPage 在每页合并后回调，用于渐进式渲染（懒加载）。
+ */
+export async function getAllEditContentPages(
+  docId: string,
+  onPage?: (merged: EditContentResponse, done: boolean) => void,
+): Promise<EditContentResponse> {
+  const first = await getEditContent(docId, { limit: EDIT_CONTENT_PAGE_SIZE });
+  if (!first.tree || !first.pagination?.hasMore || !first.pagination.nextStartBlockId) {
+    return first;
+  }
+
+  const rootBlockId = first.tree.blockId;
+  const children: Block[] = [...(first.tree.children ?? [])];
+  const seen = new Set(children.map((child) => child.blockId));
+  let merged: EditContentResponse = {
+    ...first,
+    tree: { ...first.tree, children: [...children] },
+  };
+  onPage?.(merged, false);
+
+  let nextStartBlockId: string | undefined = first.pagination.nextStartBlockId;
+  let latest = first;
+  for (let page = 1; nextStartBlockId && page < EDIT_CONTENT_MAX_PAGES; page += 1) {
+    const response = await getEditContent(docId, {
+      startBlockId: nextStartBlockId,
+      limit: EDIT_CONTENT_PAGE_SIZE,
+    });
+    latest = response;
+    const pageChildren =
+      response.tree?.blockId === rootBlockId
+        ? (response.tree.children ?? [])
+        : response.tree
+          ? [response.tree]
+          : [];
+    let added = 0;
+    for (const child of pageChildren) {
+      if (seen.has(child.blockId)) continue;
+      seen.add(child.blockId);
+      children.push(child);
+      added += 1;
+    }
+    const hasMore = Boolean(response.pagination?.hasMore && response.pagination.nextStartBlockId);
+    // 游标没有前进（没有新增块）时停止，防止死循环
+    nextStartBlockId =
+      hasMore && added > 0 ? response.pagination?.nextStartBlockId : undefined;
+    merged = {
+      ...first,
+      // 会话信息以最后一次响应为准（每次请求都会续租）
+      syncSession: response.syncSession ?? merged.syncSession,
+      tree: { ...first.tree, children: [...children] },
+      pagination: {
+        totalBlocks: response.pagination?.totalBlocks ?? children.length + 1,
+        returnedBlocks: children.length + 1,
+        hasMore: Boolean(nextStartBlockId),
+      },
+    };
+    if (nextStartBlockId) onPage?.(merged, false);
+  }
+
+  return {
+    ...merged,
+    syncSession: latest.syncSession ?? merged.syncSession,
+  };
 }
 
 export async function deleteDocument(docId: string): Promise<void> {
@@ -554,9 +638,7 @@ function createBlankTiptapDoc(): TiptapDoc {
  * - 旧格式（payload.html）→ 返回 HTML 字符串
  * - 新格式（结构化 JSON）→ 返回 TiptapDoc
  */
-export async function loadDocumentContentV2(
-  docId: string,
-): Promise<{
+export type LoadedDocumentContent = {
   content: EditorContent;
   blockIds: string[];
   docVer: number;
@@ -564,44 +646,25 @@ export async function loadDocumentContentV2(
   draft: EditDraftMeta;
   lastEditPosition: LastEditPosition | null;
   syncSession: SyncSessionMeta | null;
-}> {
-  const resp = await getEditContent(docId);
+};
+
+function editContentToLoadedDocument(resp: EditContentResponse): LoadedDocumentContent {
   const lastEditPosition = readLastEditPositionFromEditorState(resp.editorState);
+  const base = {
+    docVer: resp.head,
+    source: resp.source,
+    draft: resp.draft,
+    lastEditPosition,
+    syncSession: resp.syncSession ?? null,
+  };
   if (!resp.tree) {
-    return {
-      content: createBlankTiptapDoc(),
-      blockIds: [],
-      docVer: resp.head,
-      source: resp.source,
-      draft: resp.draft,
-      lastEditPosition,
-      syncSession: resp.syncSession ?? null,
-    };
+    return { ...base, content: createBlankTiptapDoc(), blockIds: [] };
   }
 
   const flatBlocks = flattenBlockTreeInDocumentOrder(resp.tree);
   const contentBlocks = flatBlocks.filter((b) => b.type !== "root");
-  await seedSyncBaseStoreFromBlocks(
-    docId,
-    contentBlocks.map((block) => ({
-      blockId: block.blockId,
-      type: block.type,
-      ver: block.ver,
-      hash: block.hash,
-      payload: block.payload,
-    })),
-  );
-
   if (contentBlocks.length === 0) {
-    return {
-      content: createBlankTiptapDoc(),
-      blockIds: [],
-      docVer: resp.head,
-      source: resp.source,
-      draft: resp.draft,
-      lastEditPosition,
-      syncSession: resp.syncSession ?? null,
-    };
+    return { ...base, content: createBlankTiptapDoc(), blockIds: [] };
   }
 
   const blockIds = contentBlocks.map((b) => b.blockId);
@@ -611,28 +674,46 @@ export async function loadDocumentContentV2(
     const blockIdMap = new Map<number, string>();
     contentBlocks.forEach((b, i) => blockIdMap.set(i, b.blockId));
     const html = blocksToHtml(contentBlocks, blockIdMap);
-    return {
-      content: html,
-      blockIds,
-      docVer: resp.head,
-      source: resp.source,
-      draft: resp.draft,
-      lastEditPosition,
-      syncSession: resp.syncSession ?? null,
-    };
+    return { ...base, content: html, blockIds };
   }
 
   // 新格式：重组为 Tiptap JSON
-  const tiptapDoc = blocksToTiptapJson(contentBlocks);
-  return {
-    content: tiptapDoc,
-    blockIds,
-    docVer: resp.head,
-    source: resp.source,
-    draft: resp.draft,
-    lastEditPosition,
-    syncSession: resp.syncSession ?? null,
-  };
+  return { ...base, content: blocksToTiptapJson(contentBlocks), blockIds };
+}
+
+/**
+ * 加载编辑态内容（自动拉取全部分页）。
+ * onPartialContent：大文档分页加载时，每到一页就回调一次已合并的部分内容，用于渐进式渲染。
+ * 返回值始终是完整文档。
+ */
+export async function loadDocumentContentV2(
+  docId: string,
+  options: { onPartialContent?: (partial: LoadedDocumentContent) => void } = {},
+): Promise<LoadedDocumentContent> {
+  const resp = await getAllEditContentPages(
+    docId,
+    options.onPartialContent
+      ? (merged) => options.onPartialContent?.(editContentToLoadedDocument(merged))
+      : undefined,
+  );
+
+  if (resp.tree) {
+    const contentBlocks = flattenBlockTreeInDocumentOrder(resp.tree).filter(
+      (b) => b.type !== "root",
+    );
+    await seedSyncBaseStoreFromBlocks(
+      docId,
+      contentBlocks.map((block) => ({
+        blockId: block.blockId,
+        type: block.type,
+        ver: block.ver,
+        hash: block.hash,
+        payload: block.payload,
+      })),
+    );
+  }
+
+  return editContentToLoadedDocument(resp);
 }
 
 function readLastEditPositionFromEditorState(editorState: unknown): LastEditPosition | null {
@@ -882,7 +963,7 @@ export async function getVersionContent(
   version: number,
 ): Promise<DocumentContentResponse> {
   return apiGet<DocumentContentResponse>(
-    `/documents/${docId}/content?version=${version}`,
+    `/documents/${docId}/content?version=${version}&limit=10000`,
   );
 }
 

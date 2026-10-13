@@ -13,7 +13,7 @@ describe("docSyncPayloadsEqual", () => {
       content: [
         {
           type: "codeBlock",
-          attrs: { blockId: "b1", clientId: "c1", language: "typescript" },
+          attrs: { blockId: "b1", clientId: "c1", sortKey: "a0", language: "typescript" },
           content: [{ type: "text", text: "hello" }],
         },
       ],
@@ -36,6 +36,23 @@ describe("docSyncPayloadsEqual", () => {
     };
 
     expect(docSyncPayloadsEqual(left, right)).toBe(true);
+  });
+
+  it("treats a pure reorder or sortKey change as different (drag move must not be skipped)", () => {
+    const first = { type: "paragraph", attrs: { blockId: "b1", clientId: "c1", sortKey: "a0" }, content: [{ type: "text", text: "one" }] };
+    const second = { type: "paragraph", attrs: { blockId: "b2", clientId: "c2", sortKey: "a1" }, content: [{ type: "text", text: "two" }] };
+    const before: TiptapDoc = { type: "doc", content: [first, second] };
+    const reordered: TiptapDoc = {
+      type: "doc",
+      content: [{ ...second, attrs: { ...second.attrs, sortKey: "Zz" } }, first],
+    };
+    const sortKeyOnly: TiptapDoc = {
+      type: "doc",
+      content: [first, { ...second, attrs: { ...second.attrs, sortKey: "a2" } }],
+    };
+
+    expect(docSyncPayloadsEqual(before, reordered)).toBe(false);
+    expect(docSyncPayloadsEqual(before, sortKeyOnly)).toBe(false);
   });
 });
 

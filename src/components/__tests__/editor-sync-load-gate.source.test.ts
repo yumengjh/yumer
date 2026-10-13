@@ -17,7 +17,7 @@ describe("editor sync load gate source", () => {
 
     const startLoadAt = pageSource.indexOf("setLoadingDoc(true);");
     const resetReadyAt = pageSource.indexOf("setLoadedContentDocId(null);", startLoadAt);
-    const loadContentAt = pageSource.indexOf("const loaded = await loadContent(docId);", resetReadyAt);
+    const loadContentAt = pageSource.indexOf("const loaded = await loadContent(docId, {", resetReadyAt);
     const markLoadedAt = pageSource.indexOf("loadedDocIdRef.current = docId;", loadContentAt);
     const markReadyAt = pageSource.indexOf("setLoadedContentDocId(docId);", loadContentAt);
 
@@ -26,5 +26,10 @@ describe("editor sync load gate source", () => {
     expect(loadContentAt).toBeGreaterThan(resetReadyAt);
     expect(markLoadedAt).toBeGreaterThan(loadContentAt);
     expect(markReadyAt).toBeGreaterThan(loadContentAt);
+    // 分页懒加载期间（onPartialContent）只能渲染、不能启用同步
+    const partialAt = pageSource.indexOf("onPartialContent: (partial) => {", loadContentAt);
+    const partialEnd = pageSource.indexOf("},\n        });", partialAt);
+    expect(partialAt).toBeGreaterThan(loadContentAt);
+    expect(pageSource.slice(partialAt, partialEnd)).not.toContain("setLoadedContentDocId");
   });
 });
