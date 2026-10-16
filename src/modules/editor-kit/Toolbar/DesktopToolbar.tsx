@@ -1,87 +1,140 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Dropdown, Tooltip, App, ColorPicker, Divider, Popover } from "antd";
+import { App, Dropdown, Popover, Tooltip } from "antd";
 import type { Editor } from "@tiptap/react";
-import type { Selection } from "prosemirror-state";
-import {
-  PlusOutlined,
-  DeleteOutlined,
-  CheckOutlined,
-} from "@ant-design/icons";
-import {
-  UndoIcon,
-  RedoIcon,
-  ClearFormatIcon,
-  CodeCleanupIcon,
-  FormatPainterIcon,
-  CursorIcon,
-  BoldIcon,
-  ItalicIcon,
-  StrikethroughIcon,
-  UnderlineIcon,
-  TextColorIcon,
-  BgColorIcon,
-  AlignLeftIcon,
-  AlignCenterIcon,
-  AlignRightIcon,
-  UnorderedListIcon,
-  OrderedListIcon,
-  CheckListIcon,
-  LinkIcon,
-  CodeIcon,
-  ChevronIcon,
-  TableIcon,
-  PictureIcon,
-  DividerIcon,
-  QuoteIcon,
-  LineHeightIcon,
-  HighlightBlockIcon,
-  IndentIcon,
-  OutdentIcon,
-  YuqueIcon,
-} from "./icons";
+import type { Mark } from "@tiptap/pm/model";
+import type { Selection } from "@tiptap/pm/state";
+import { CodeCleanupIcon, YuqueIcon } from "./icons";
+import type { YuqueIconName } from "./icons";
 import { useMarkdownEditorContext } from "../EditorContext";
-import {
-  titleLevelItems,
-  fontSizeItems,
-  codeLanguageItems,
-  codeCleanupItems,
-  type CodeCleanupMenuItem,
-  orderedListTypeItems,
-  lineHeightItems,
-  highlightBlockColors,
-  defaultHighlightBlockColor,
-  defaultColor,
-  solidColors,
-  gradientColors,
-} from "./data";
-import TablePicker from "./TablePicker";
+import { codeCleanupItems, type CodeCleanupMenuItem } from "./data";
 import LinkPickerPopup from "./LinkPickerPopup";
-import SplitDropdown from "./SplitDropdown";
-import ColorPickerPanel from "./ColorPickerPanel";
-import {
-  runEditorCleanupAction,
-  type EditorCleanupActionKey,
-} from "../code/editorCleanup";
+import ColorBoard from "./ColorBoard";
+import BlockInsertPanel, { type InsertCardId, type InsertCardOptions } from "../BlockToolbar/BlockInsertPanel";
+import { runInsertCard } from "../BlockToolbar/blockInsertContent";
+import { runEditorCleanupAction, type EditorCleanupActionKey } from "../code/editorCleanup";
 import {
   getToolbarState,
   getToolbarStateSignature,
-  isToolbarItemActive,
   runInlineMarkCommand,
+  selectionContainsMark,
 } from "./toolbarState";
 import "./style.css";
 
-type ToolbarItem = {
-  id: string;
-  label: string;
-  content: ReactNode;
-  type?: "dropdown" | "color-picker" | "highlight-block-picker" | "indent-picker" | "table-picker" | "link-picker" | "format-painter" | "code-cleanup-picker" | "combined-color-picker";
-};
+/**
+ * 顶部工具栏：1:1 复刻语雀（Lake 编辑器 ne-ui-toolbar）。
+ * 尺寸、间距、图标、下拉面板均取自语雀编辑页实测（按钮 26px / 下拉按钮 42px / 选择器 71px，
+ * 控件间距 8px，带箭头控件相邻 4px、与分隔线相邻 10px）。宽度不足时末尾控件收进「更多」浮层。
+ */
 
 interface DesktopToolbarProps {
   variant?: "fixed" | "floating";
   enabledItemIds?: ReadonlySet<string>;
 }
+
+type WidgetKind = "insert" | "button" | "select" | "arrow" | "split" | "color" | "divider";
+
+interface Widget {
+  id: string;
+  kind: WidgetKind;
+  render: () => ReactNode;
+}
+
+const WIDGET_WIDTH: Record<WidgetKind, number> = {
+  insert: 26,
+  button: 26,
+  select: 71,
+  arrow: 42,
+  split: 42,
+  color: 42,
+  divider: 1,
+};
+/** 「更多」按钮占位：左边线 10px 外边距 + 1px 边线 + 8px + 26px 按钮 */
+const MORE_WIDTH = 45;
+
+const ARROW_KINDS = new Set<WidgetKind>(["select", "arrow", "split", "color"]);
+
+/** 语雀的控件间距规则（.ne-toolbar-widget / [data-ne-button-arrow] 相邻选择器） */
+function widgetMargin(prev: WidgetKind | null, current: WidgetKind): number {
+  if (!prev) return 8;
+  if (current === "color") return 8;
+  if (current === "split") return prev === "divider" ? 10 : 2;
+  const prevArrow = ARROW_KINDS.has(prev);
+  const currentArrow = ARROW_KINDS.has(current);
+  if (prevArrow && currentArrow) return 4;
+  if ((prevArrow && current === "divider") || (prev === "divider" && currentArrow)) return 10;
+  return 8;
+}
+
+/** 去掉首尾与连续的分隔线 */
+function normalizeDividers(widgets: Widget[]): Widget[] {
+  const result: Widget[] = [];
+  for (const widget of widgets) {
+    if (widget.kind === "divider" && (result.length === 0 || result[result.length - 1].kind === "divider")) continue;
+    result.push(widget);
+  }
+  while (result.length && result[result.length - 1].kind === "divider") result.pop();
+  return result;
+}
+
+const IS_MAC =
+  typeof navigator !== "undefined" && /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent);
+
+/** 快捷键展示：mac 用 ⌥ ⌘ ⇧ 符号（与语雀一致），其它平台用 Ctrl/Alt/Shift */
+function kbd(...keys: string[]): string {
+  const mac: Record<string, string> = { Mod: "⌘", Alt: "⌥", Shift: "⇧" };
+  const win: Record<string, string> = { Mod: "Ctrl", Alt: "Alt", Shift: "Shift" };
+  return keys.map((key) => (IS_MAC ? mac[key] : win[key]) ?? key).join(IS_MAC ? " " : "+");
+}
+
+const HEADING_ITEMS = [
+  { level: 0, label: "正文", className: "yq-select-item__content" },
+  { level: 1, label: "标题1", className: "yq-select-item__h1" },
+  { level: 2, label: "标题2", className: "yq-select-item__h2" },
+  { level: 3, label: "标题3", className: "yq-select-item__h3" },
+  { level: 4, label: "标题4", className: "yq-select-item__h4" },
+  { level: 5, label: "标题5", className: "yq-select-item__h5" },
+  { level: 6, label: "标题6", className: "yq-select-item__h5" },
+] as const;
+
+const FONT_SIZES = ["12px", "13px", "14px", "15px", "16px", "19px", "22px", "24px", "29px", "32px", "40px", "48px"];
+
+const LINE_HEIGHTS = [
+  { key: "", label: "默认" },
+  { key: "1", label: "1" },
+  { key: "1.15", label: "1.15" },
+  { key: "1.5", label: "1.5" },
+  { key: "2", label: "2" },
+  { key: "2.5", label: "2.5" },
+  { key: "3", label: "3" },
+];
+
+const ALIGN_ITEMS = [
+  { key: "left", label: "左对齐", icon: "t-alignment-left" },
+  { key: "center", label: "居中对齐", icon: "t-alignment-center" },
+  { key: "right", label: "右对齐", icon: "t-alignment-right" },
+  { key: "justify", label: "两端对齐", icon: "t-alignment-justify" },
+] as const;
+
+// 语雀有序列表样式卡片：预览为 [层级, 序号] 列表
+const LIST_STYLE_CARDS: Array<{ key: string; label: string; preview: Array<[number, string]> }> = [
+  { key: "decimal", label: "1. a. i.", preview: [[0, "1."], [1, "a."], [1, "b."], [2, "ⅰ."], [0, "2."]] },
+  { key: "cjk-ideographic", label: "一、(一) 1.", preview: [[0, "一、"], [1, "(一)"], [1, "(二)"], [2, "1."], [0, "二、"]] },
+  { key: "decimal-nested", label: "1. 1.1. 1.2.1.", preview: [[0, "1."], [1, "1.1."], [1, "1.2."], [2, "1.2.1."], [0, "2."]] },
+];
+
+const DEFAULT_TEXT_COLOR = "#DF2A3F";
+const DEFAULT_BG_COLOR = "#FBDE28";
+
+const CLEANUP_MESSAGES: Record<EditorCleanupActionKey, { success: (count: number) => string; unchanged: string }> = {
+  removeTrailingBlankLines: { success: (n) => `已清理 ${n} 个代码块的行尾空行`, unchanged: "没有需要清理的行尾空行" },
+  removeEmptyCodeBlocks: { success: (n) => `已删除 ${n} 个空代码块`, unchanged: "没有空代码块" },
+  convertSelectedListsToInline: { success: (n) => `已将 ${n} 个列表转为横排文本`, unchanged: "选区中没有可转换的列表" },
+  collapseStatusBars: { success: (n) => `已折叠 ${n} 个代码块状态栏`, unchanged: "没有可折叠的状态栏" },
+  expandStatusBars: { success: (n) => `已展开 ${n} 个代码块状态栏`, unchanged: "没有可展开的状态栏" },
+  enableLineNumbers: { success: (n) => `已为 ${n} 个代码块启用行号`, unchanged: "代码块已全部启用行号" },
+  disableLineNumbers: { success: (n) => `已为 ${n} 个代码块关闭行号`, unchanged: "代码块已全部关闭行号" },
+};
 
 function isCodeCleanupActionItem(
   item: CodeCleanupMenuItem,
@@ -89,182 +142,216 @@ function isCodeCleanupActionItem(
   return "label" in item;
 }
 
-export default function DesktopToolbar({
-  variant = "fixed",
-  enabledItemIds,
-}: DesktopToolbarProps = {}) {
+// 格式刷可复制的行内格式
+const PAINTABLE_MARKS = ["bold", "italic", "strike", "underline", "code", "superscript", "subscript", "textStyle", "highlight"];
+
+/* ------------------------------------------------------------------ */
+/* 基础控件                                                             */
+/* ------------------------------------------------------------------ */
+
+function TbTooltip({ title, shortcut, hidden, children }: { title: string; shortcut?: string; hidden?: boolean; children: React.ReactElement }) {
+  return (
+    <Tooltip
+      title={
+        <div className="yq-tooltip__content">
+          <div>{title}</div>
+          {shortcut && <div>{shortcut}</div>}
+        </div>
+      }
+      placement="bottom"
+      arrow={false}
+      mouseEnterDelay={0.25}
+      classNames={{ root: "yq-tooltip" }}
+      {...(hidden ? { open: false } : {})}
+    >
+      {children}
+    </Tooltip>
+  );
+}
+
+const preventMouseDown = (event: React.MouseEvent) => event.preventDefault();
+
+/** 编辑器未挂载 / 已销毁时 commandManager 为空，can() 会抛错 */
+function safeCan(editor: Editor | null, command: "undo" | "redo"): boolean {
+  if (!editor || editor.isDestroyed) return false;
+  try {
+    return editor.can()[command]();
+  } catch {
+    return false;
+  }
+}
+
+function ArrowDown() {
+  return <YuqueIcon name="ToolbarArrowDown" className="yq-tb-arrow-down" />;
+}
+
+/* ------------------------------------------------------------------ */
+/* 工具栏                                                               */
+/* ------------------------------------------------------------------ */
+
+export default function DesktopToolbar({ variant = "fixed", enabledItemIds }: DesktopToolbarProps = {}) {
   const { message } = App.useApp();
   const { editor, defaultFontSize, uploadImage } = useMarkdownEditorContext();
-  const [linkPopupOpen, setLinkPopupOpen] = useState(false);
-  const [linkTextValue, setLinkTextValue] = useState("");
-  const [linkUrlValue, setLinkUrlValue] = useState("");
-  const [linkPopupPos, setLinkPopupPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [selectedColor, setSelectedColor] = useState(defaultColor);
-  const [selectedBgColor, setSelectedBgColor] = useState("#FFFF00");
-  const [lastTableSize, setLastTableSize] = useState({ rows: 3, cols: 3 });
   const tiptap = editor as Editor | null;
-  const toolbarState = getToolbarState(tiptap, { defaultFontSize });
   const editorReady = Boolean(tiptap);
+  const toolbarState = getToolbarState(tiptap, { defaultFontSize });
+
   const [, forceUpdate] = useState(0);
+  const signatureRef = useRef("");
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [textColor, setTextColor] = useState(DEFAULT_TEXT_COLOR);
+  const [bgColor, setBgColor] = useState(DEFAULT_BG_COLOR);
+  const [cleanupAction, setCleanupAction] = useState<EditorCleanupActionKey>("removeTrailingBlankLines");
+  const [painter, setPainter] = useState<{ marks: readonly Mark[]; sticky: boolean } | null>(null);
+  const [linkPopup, setLinkPopup] = useState<{ x: number; y: number; text: string; url: string } | null>(null);
   const savedSelectionRef = useRef<Selection | null>(null);
-  const toolbarStateSignatureRef = useRef(getToolbarStateSignature(toolbarState));
   const imageInputRef = useRef<HTMLInputElement>(null);
-  const [tooltipOpen, setTooltipOpen] = useState<Record<string, boolean>>({});
-  const [copiedMarks, setCopiedMarks] = useState<Array<{ type: string; attrs?: Record<string, any> }>>([]);
-  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
-  const [openColorPicker, setOpenColorPicker] = useState<string | null>(null);
-  const [lastHighlightColor, setLastHighlightColor] = useState(defaultHighlightBlockColor);
-  const [lastIndentAction, setLastIndentAction] = useState<"indent" | "outdent">("indent");
-  const [defaultCodeCleanupAction, setDefaultCodeCleanupAction] = useState<EditorCleanupActionKey>(
-    "removeTrailingBlankLines",
-  );
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [availableWidth, setAvailableWidth] = useState<number | null>(null);
+
+  // 只在工具栏相关状态变化时重渲染
+  const readSignature = useCallback(() => {
+    if (!tiptap) return "";
+    const state = getToolbarState(tiptap, { defaultFontSize });
+    const extra = [
+      safeCan(tiptap, "undo"),
+      safeCan(tiptap, "redo"),
+      selectionContainsMark(tiptap, "superscript"),
+      selectionContainsMark(tiptap, "subscript"),
+      tiptap.getAttributes("textStyle").color ?? "",
+      tiptap.getAttributes("highlight").color ?? "",
+    ].join("|");
+    return `${getToolbarStateSignature(state)}|${extra}`;
+  }, [defaultFontSize, tiptap]);
 
   useEffect(() => {
     if (!tiptap) return;
-    toolbarStateSignatureRef.current = getToolbarStateSignature(getToolbarState(tiptap, { defaultFontSize }));
-
+    signatureRef.current = readSignature();
     const rerender = () => {
-      const nextSignature = getToolbarStateSignature(getToolbarState(tiptap, { defaultFontSize }));
-      if (nextSignature === toolbarStateSignatureRef.current) return;
-      toolbarStateSignatureRef.current = nextSignature;
-      forceUpdate((v) => v + 1);
+      const next = readSignature();
+      if (next === signatureRef.current) return;
+      signatureRef.current = next;
+      forceUpdate((value) => value + 1);
     };
-
     tiptap.on("transaction", rerender);
     tiptap.on("selectionUpdate", rerender);
-
     return () => {
       tiptap.off("transaction", rerender);
       tiptap.off("selectionUpdate", rerender);
     };
-  }, [defaultFontSize, tiptap]);
+  }, [readSignature, tiptap]);
 
-  const openLinkPopup = () => {
+  // 宽度监听：用于收起放不下的控件
+  useLayoutEffect(() => {
+    if (variant !== "fixed") return;
+    const root = rootRef.current;
+    if (!root) return;
+    const measure = () => {
+      const style = getComputedStyle(root);
+      setAvailableWidth(root.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, [variant]);
+
+  /* ---------------- 格式刷：单击刷一次，双击连续刷，Esc 退出 ---------------- */
+  useEffect(() => {
+    if (!tiptap || !painter) return;
+    const dom = tiptap.view.dom as HTMLElement;
+    dom.classList.add("yq-format-painting");
+    const apply = () => {
+      window.setTimeout(() => {
+        const { state } = tiptap;
+        const { from, to, empty } = state.selection;
+        if (empty) return;
+        const tr = state.tr;
+        for (const name of PAINTABLE_MARKS) {
+          const type = state.schema.marks[name];
+          if (type) tr.removeMark(from, to, type);
+        }
+        for (const mark of painter.marks) tr.addMark(from, to, mark);
+        tiptap.view.dispatch(tr);
+        if (!painter.sticky) setPainter(null);
+      }, 0);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPainter(null);
+    };
+    dom.addEventListener("mouseup", apply);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      dom.classList.remove("yq-format-painting");
+      dom.removeEventListener("mouseup", apply);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [painter, tiptap]);
+
+  const startPainter = (sticky: boolean) => {
     if (!tiptap) return;
-
-    // 保存选区
-    savedSelectionRef.current = tiptap.state.selection;
-
-    const { from, to } = tiptap.state.selection;
-    const selectedText = tiptap.state.doc.textBetween(from, to);
-    const existingLink = tiptap.getAttributes("link");
-
-    // 获取光标位置
-    const { view } = tiptap;
-    const coords = view.coordsAtPos(from);
-
-    setLinkTextValue(selectedText || "");
-    setLinkUrlValue(existingLink.href || "");
-    setLinkPopupPos({ x: coords.left, y: coords.bottom + 8 });
-    setLinkPopupOpen(true);
+    if (painter && !sticky) {
+      setPainter(null);
+      return;
+    }
+    const { state } = tiptap;
+    const { $from, from, to, empty } = state.selection;
+    let marks: readonly Mark[] = $from.marks();
+    if (!empty) {
+      state.doc.nodesBetween(from, to, (node) => {
+        if (node.isText) {
+          marks = node.marks;
+          return false;
+        }
+        return true;
+      });
+    }
+    setPainter({ marks: marks.filter((mark) => PAINTABLE_MARKS.includes(mark.type.name)), sticky });
   };
 
-  const applyLinkFromPopup = () => {
+  /* ---------------- 链接 ---------------- */
+  const openLinkPopup = () => {
     if (!tiptap) return;
-    const url = linkUrlValue.trim();
-    const text = linkTextValue.trim();
+    savedSelectionRef.current = tiptap.state.selection;
+    const { from, to } = tiptap.state.selection;
+    const coords = tiptap.view.coordsAtPos(from);
+    setLinkPopup({
+      x: coords.left,
+      y: coords.bottom + 8,
+      text: tiptap.state.doc.textBetween(from, to),
+      url: tiptap.getAttributes("link").href || "",
+    });
+  };
 
-    // 恢复选区
+  const applyLink = () => {
+    if (!tiptap || !linkPopup) return;
+    const url = linkPopup.url.trim();
+    const text = linkPopup.text.trim();
     if (savedSelectionRef.current) {
-      const { view } = tiptap;
-      view.dispatch(view.state.tr.setSelection(savedSelectionRef.current));
+      tiptap.view.dispatch(tiptap.state.tr.setSelection(savedSelectionRef.current));
     }
-
     if (!url) {
-      // URL 为空，移除链接
       tiptap.chain().focus().extendMarkRange("link").unsetLink().run();
     } else {
-      const href = url.match(/^https?:\/\//) ? url : `https://${url}`;
-
-      // 转义 HTML 特殊字符
-      const escapeHtml = (str: string) =>
-        str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-
-      // 如果有文本且文本不同于选中文本，删除选区并插入新内容
+      const href = /^https?:\/\//.test(url) ? url : `https://${url}`;
       const { from, to } = tiptap.state.selection;
-      const currentSelectedText = tiptap.state.doc.textBetween(from, to);
-
-      if (text && text !== currentSelectedText) {
+      const selectedText = tiptap.state.doc.textBetween(from, to);
+      if (text && text !== selectedText) {
         tiptap
           .chain()
           .focus()
-          .deleteSelection()
-          .insertContent(`<a href="${escapeHtml(href)}" class="tiptap-link">${escapeHtml(text)}</a>`)
+          .insertContent({ type: "text", text, marks: [{ type: "link", attrs: { href } }] })
           .run();
       } else {
         tiptap.chain().focus().extendMarkRange("link").setLink({ href }).run();
       }
     }
-
-    setLinkPopupOpen(false);
-    setLinkTextValue("");
-    setLinkUrlValue("");
+    setLinkPopup(null);
   };
 
-  const handleClick = (id: string) => () => {
-    if (!tiptap) return;
-    switch (id) {
-      case "undo":
-        tiptap.chain().focus().undo().run();
-        break;
-      case "redo":
-        tiptap.chain().focus().redo().run();
-        break;
-      case "clearFormat":
-        tiptap.chain().focus().unsetAllMarks().clearNodes().run();
-        break;
-      case "cursor":
-        tiptap.chain().focus().run();
-        break;
-      case "bold":
-        runInlineMarkCommand(tiptap, "bold");
-        break;
-      case "italic":
-        runInlineMarkCommand(tiptap, "italic");
-        break;
-      case "strike":
-        runInlineMarkCommand(tiptap, "strike");
-        break;
-      case "underline":
-        runInlineMarkCommand(tiptap, "underline");
-        break;
-      case "align-left":
-        tiptap.chain().focus().setTextAlign("left").run();
-        break;
-      case "align-center":
-        tiptap.chain().focus().setTextAlign("center").run();
-        break;
-      case "align-right":
-        tiptap.chain().focus().setTextAlign("right").run();
-        break;
-      case "align-justify":
-        tiptap.chain().focus().setTextAlign("justify").run();
-        break;
-      case "bullet-list":
-        tiptap.chain().focus().toggleBulletList().run();
-        break;
-      case "check-list":
-        tiptap.chain().focus().toggleTaskList().run();
-        break;
-      case "blockquote":
-        tiptap.chain().focus().toggleBlockquote().run();
-        break;
-      case "code-block":
-        tiptap.chain().focus().toggleCodeBlock().run();
-        break;
-      case "divider":
-        tiptap.chain().focus().setHorizontalRule().run();
-        break;
-      case "image":
-        savedSelectionRef.current = tiptap.state.selection;
-        imageInputRef.current?.click();
-        break;
-      default:
-        break;
-    }
-  };
-
-  const handleImageFileSelect = useCallback(
+  /* ---------------- 插入 ---------------- */
+  const handleImageFile = useCallback(
     async (file: File) => {
       if (!tiptap) return;
       if (!uploadImage) {
@@ -299,431 +386,525 @@ export default function DesktopToolbar({
     [message, tiptap, uploadImage],
   );
 
-  const getCurrentHeadingKey = (): string => {
-    return `${toolbarState.headingLevel}`;
-  };
-
-  const getCurrentCodeLanguage = (): string => {
-    return toolbarState.codeLanguage;
-  };
-
-  const dropdownHandlers: Record<string, (key: string) => void> = {
-    "text-mode": (key: string) => {
-      if (!tiptap) return;
-      const level = Number(key);
-      if (level === 0) {
-        tiptap.chain().focus().setParagraph().run();
-      } else if (level >= 1 && level <= 6) {
-        tiptap
-          .chain()
-          .focus()
-          .toggleHeading({ level: level as 1 | 2 | 3 | 4 | 5 | 6 })
-          .run();
-      }
-    },
-    "font-size": (key: string) => {
-      if (!tiptap) return;
-      const size = key.replace("px", "");
-      tiptap.chain().focus().setFontSize(size).run();
-    },
-    "text-align": (key: string) => {
-      if (!tiptap) return;
-      tiptap
-        .chain()
-        .focus()
-        .setTextAlign(key as "left" | "center" | "right" | "justify")
-        .run();
-    },
-    "ordered-list": (key: string) => {
-      if (!tiptap) return;
-      if (!tiptap.isActive("orderedList")) {
-        tiptap.chain().focus().toggleOrderedList().run();
-      }
-      tiptap.chain().focus().setOrderedListStyle(key).run();
-    },
-    "code-language": (key: string) => {
-      if (!tiptap) return;
-      if (!tiptap.isActive("codeBlock")) {
-        tiptap.chain().focus().setCodeBlock({ language: key }).run();
-        return;
-      }
-      tiptap.chain().focus().updateAttributes("codeBlock", { language: key }).run();
-    },
-    "line-height": (key: string) => {
-      if (!tiptap) return;
-      if (!key) {
-        tiptap.chain().focus().unsetLineHeight().run();
-      } else {
-        tiptap.chain().focus().setLineHeight(key).run();
-      }
-    },
-  };
-
-  const handleColorSelect = useCallback(
-    (color: string) => {
-      if (!tiptap) return;
-      setSelectedColor(color);
-      const { view } = tiptap;
-      if (savedSelectionRef.current) {
-        const sel = savedSelectionRef.current;
-        view.dispatch(view.state.tr.setSelection(sel));
-      }
-      view.focus();
-      tiptap.chain().setColor(color).run();
-    },
-    [tiptap],
-  );
-
-  const handleBgColorSelect = useCallback(
-    (color: string) => {
-      if (!tiptap) return;
-      const { view } = tiptap;
-      if (savedSelectionRef.current) {
-        const sel = savedSelectionRef.current;
-        view.dispatch(view.state.tr.setSelection(sel));
-      }
-      view.focus();
-      if (!color) {
-        // Empty string = clear background highlight
-        tiptap.chain().unsetHighlight().run();
-      } else {
-        setSelectedBgColor(color);
-        tiptap.chain().toggleHighlight({ color }).run();
-      }
-    },
-    [tiptap],
-  );
-
-  // 格式刷：加样式 - 复制选区格式到格式刷
-  const handleCopyStyle = useCallback(() => {
+  const handleInsertCard = (id: InsertCardId, options?: InsertCardOptions) => {
     if (!tiptap) return;
-    const { from, to } = tiptap.state.selection;
-    const marks: Array<{ type: string; attrs?: Record<string, any> }> = [];
-
-    tiptap.state.doc.nodesBetween(from, to, (node) => {
-      if (node.marks) {
-        node.marks.forEach((mark) => {
-          if (!marks.some((m) => m.type === mark.type.name)) {
-            marks.push({ type: mark.type.name, attrs: { ...mark.attrs } });
-          }
-        });
-      }
-    });
-
-    setCopiedMarks(marks);
-    message.success(marks.length > 0 ? `已复制 ${marks.length} 个格式` : "选区无格式");
-  }, [tiptap]);
-
-  // 格式刷：删除样式 - 清空格式刷
-  const handleClearCopiedStyle = useCallback(() => {
-    setCopiedMarks([]);
-    message.info("已清空格式刷");
-  }, []);
-
-  // 格式刷：应用样式 - 将格式刷格式应用到选区
-  const handleApplyStyle = useCallback(() => {
-    if (!tiptap || copiedMarks.length === 0) return;
-
-    copiedMarks.forEach(({ type, attrs }) => {
-      const isActive = tiptap.isActive(type, attrs);
-
-      switch (type) {
-        case "bold":
-          if (!isActive) tiptap.chain().focus().toggleBold().run();
-          break;
-        case "italic":
-          if (!isActive) tiptap.chain().focus().toggleItalic().run();
-          break;
-        case "strike":
-          if (!isActive) tiptap.chain().focus().toggleStrike().run();
-          break;
-        case "underline":
-          if (!isActive) tiptap.chain().focus().toggleUnderline().run();
-          break;
-        case "code":
-          if (!isActive) tiptap.chain().focus().toggleCode().run();
-          break;
-        case "highlight":
-          if (!isActive) tiptap.chain().focus().toggleHighlight({ color: attrs?.color }).run();
-          break;
-        case "textStyle":
-          // 处理字体颜色
-          if (attrs?.color && !tiptap.isActive("textStyle", { color: attrs.color })) {
-            tiptap.chain().focus().setColor(attrs.color).run();
-          }
-          // 处理字体大小
-          if (attrs?.fontSize) {
-            tiptap.chain().focus().setFontSize(attrs.fontSize).run();
-          }
-          break;
-      }
-    });
-
-    message.success("已应用格式");
-  }, [tiptap, copiedMarks]);
-
-  const handleGradientSelect = (gradientId: string) => {
-    message.info(`渐变色选择功能暂未实现。选择的渐变: ${gradientId}`);
-  };
-
-  const handleTableInsert = useCallback(
-    (rows: number, cols: number) => {
-      if (!tiptap) return;
-      setLastTableSize({ rows, cols });
-      tiptap
-        .chain()
-        .focus()
-        .insertTable({ rows, cols, withHeaderRow: true })
-        .run();
-    },
-    [tiptap, setLastTableSize],
-  );
-
-  const runCodeCleanupAction = useCallback(
-    (action: EditorCleanupActionKey) => {
-      const result = runEditorCleanupAction(tiptap, action);
-      const messages: Record<
-        EditorCleanupActionKey,
-        {
-          success: (count: number) => string;
-          unchanged: string;
-        }
-      > = {
-        removeTrailingBlankLines: {
-          success: (count) => `??? ${count} ?????????`,
-          unchanged: "???????????????",
-        },
-        removeEmptyCodeBlocks: {
-          success: (count) => `??? ${count} ?????`,
-          unchanged: "???????",
-        },
-        convertSelectedListsToInline: {
-          success: (count) => `已将 ${count} 个列表转为横排文本`,
-          unchanged: "选区中没有可转换的列表",
-        },
-        collapseStatusBars: {
-          success: (count) => `??? ${count} ????????`,
-          unchanged: "???????????",
-        },
-        expandStatusBars: {
-          success: (count) => `??? ${count} ????????`,
-          unchanged: "???????????",
-        },
-        enableLineNumbers: {
-          success: (count) => `??? ${count} ???????`,
-          unchanged: "??????????",
-        },
-        disableLineNumbers: {
-          success: (count) => `??? ${count} ???????`,
-          unchanged: "??????????",
-        },
-      };
-
-      const actionMessages = messages[action];
-      if (result.changed) {
-        message.success(actionMessages.success(result.affectedCount));
-      } else {
-        message.info(actionMessages.unchanged);
-      }
-    },
-    [message, tiptap],
-  );
-
-  const isActive = (id: string): boolean => {
-    return isToolbarItemActive(toolbarState, id);
-  };
-
-  const getCurrentHeadingLevel = (): string => {
-    return toolbarState.headingLevel > 0 ? `标题 ${toolbarState.headingLevel}` : "正文";
-  };
-
-  const getCurrentFontSize = (): string => {
-    return toolbarState.fontSize;
-  };
-
-  const blockInsertItemIds = ["highlight-block", "code-block", "table", "image"] as const;
-
-  const alignItems = [
-    { key: "left", label: "左对齐", icon: <AlignLeftIcon /> },
-    { key: "center", label: "居中", icon: <AlignCenterIcon /> },
-    { key: "right", label: "右对齐", icon: <AlignRightIcon /> },
-    {
-      key: "justify",
-      label: "两端对齐",
-      icon: <YuqueIcon name="NeTAlignmentJustify" />,
-    },
-  ].map((item) => ({
-    key: item.key,
-    label: item.label,
-    icon: item.icon,
-  }));
-
-  const getCurrentAlignment = (): { label: string; icon: ReactNode; key: string } => {
-    const align = toolbarState.textAlign;
-    const alignMap: Record<string, { label: string; icon: ReactNode }> = {
-      left: { label: "左对齐", icon: <AlignLeftIcon /> },
-      center: { label: "居中", icon: <AlignCenterIcon /> },
-      right: { label: "右对齐", icon: <AlignRightIcon /> },
-      justify: {
-        label: "两端对齐",
-        icon: <YuqueIcon name="NeTAlignmentJustify" />,
-      },
-    };
-    return { ...(alignMap[align] || alignMap.left), key: align };
-  };
-
-  const getCurrentOrderedListType = (): string => {
-    return toolbarState.orderedListType;
-  };
-
-  const getCurrentLineHeight = (): string => {
-    return toolbarState.lineHeight;
-  };
-
-  const visibleBlockInsertItems = blockInsertItemIds.filter((id) => {
-    if (!enabledItemIds) return true;
-    if (id === "code-block") {
-      return enabledItemIds.has("code-block") || enabledItemIds.has("code-language");
+    setOpenId(null);
+    if (id === "image") {
+      savedSelectionRef.current = tiptap.state.selection;
+      imageInputRef.current?.click();
+      return;
     }
-    return enabledItemIds.has(id);
+    runInsertCard(tiptap, id, options);
+  };
+
+  /* ---------------- 颜色 ---------------- */
+  const applyTextColor = (color: string | null) => {
+    if (!tiptap) return;
+    if (color) {
+      setTextColor(color);
+      tiptap.chain().focus().setColor(color).run();
+    } else {
+      tiptap.chain().focus().unsetColor().run();
+    }
+  };
+
+  const applyBgColor = (color: string | null) => {
+    if (!tiptap) return;
+    if (color) {
+      setBgColor(color);
+      tiptap.chain().focus().setHighlight({ color }).run();
+    } else {
+      tiptap.chain().focus().unsetHighlight().run();
+    }
+  };
+
+  const runCleanup = (action: EditorCleanupActionKey) => {
+    const result = runEditorCleanupAction(tiptap, action);
+    const messages = CLEANUP_MESSAGES[action];
+    if (result.changed) message.success(messages.success(result.affectedCount));
+    else message.info(messages.unchanged);
+  };
+
+  const chain = () => tiptap!.chain().focus();
+  const supActive = tiptap ? selectionContainsMark(tiptap, "superscript") : false;
+  const subActive = tiptap ? selectionContainsMark(tiptap, "subscript") : false;
+  const moreMarkActive = supActive || subActive || toolbarState.marks.code;
+  const currentTextColor = (tiptap?.getAttributes("textStyle").color as string | undefined) ?? null;
+  const currentBgColor = (tiptap?.getAttributes("highlight").color as string | undefined) ?? null;
+  const headingLabel = HEADING_ITEMS.find((item) => item.level === toolbarState.headingLevel)?.label ?? "正文";
+  const alignIcon = ALIGN_ITEMS.find((item) => item.key === toolbarState.textAlign)?.icon ?? "t-alignment-left";
+
+  /* ---------------- 控件工厂 ---------------- */
+  const dropdownProps = (id: string) => ({
+    open: openId === id,
+    onOpenChange: (open: boolean) => {
+      if (open && tiptap) savedSelectionRef.current = tiptap.state.selection;
+      setOpenId(open ? id : null);
+    },
+    trigger: ["click"] as ("click")[],
+    placement: "bottomLeft" as const,
+    align: { offset: [0, 4] as [number, number] },
+    disabled: !editorReady,
+    classNames: { root: "yq-overlay" },
   });
 
-  const handleBlockInsertAction = useCallback(
-    (id: (typeof blockInsertItemIds)[number], options?: { language?: string; rows?: number; cols?: number }) => {
-      if (!tiptap) return;
-      switch (id) {
-        case "highlight-block":
-          if (tiptap.state.selection.empty) {
-            tiptap.chain().focus().insertHighlightBlock({ backgroundColor: lastHighlightColor }).run();
-          } else {
-            tiptap.chain().focus().toggleHighlightBlockFromSelection({ backgroundColor: lastHighlightColor }).run();
-          }
-          break;
-        case "code-block":
-          tiptap
-            .chain()
-            .focus()
-            .setCodeBlock({ language: options?.language || getCurrentCodeLanguage() || "text" })
-            .run();
-          break;
-        case "table":
-          handleTableInsert(options?.rows || lastTableSize.rows, options?.cols || lastTableSize.cols);
-          break;
-        case "image":
-          savedSelectionRef.current = tiptap.state.selection;
-          imageInputRef.current?.click();
-          break;
-        default:
-          break;
-      }
-    },
-    [getCurrentCodeLanguage, handleTableInsert, lastHighlightColor, lastTableSize.cols, lastTableSize.rows, tiptap],
+  const closeAndRun = (fn: () => void) => () => {
+    setOpenId(null);
+    fn();
+  };
+
+  const button = (
+    id: string,
+    icon: YuqueIconName | ReactNode,
+    title: string,
+    onClick: () => void,
+    options: { shortcut?: string; active?: boolean; disabled?: boolean; onDoubleClick?: () => void } = {},
+  ): Widget => ({
+    id,
+    kind: "button",
+    render: () => (
+      <TbTooltip title={title} shortcut={options.shortcut}>
+        <button
+          type="button"
+          className={`yq-tb-btn${options.active ? " is-checked" : ""}`}
+          disabled={!editorReady || options.disabled}
+          aria-label={title}
+          data-testid={`toolbar-${id}`}
+          onMouseDown={preventMouseDown}
+          onClick={onClick}
+          onDoubleClick={options.onDoubleClick}
+        >
+          {typeof icon === "string" ? <YuqueIcon name={icon as YuqueIconName} /> : icon}
+        </button>
+      </TbTooltip>
+    ),
+  });
+
+  const arrowButton = (
+    id: string,
+    icon: YuqueIconName | ReactNode,
+    title: string,
+    overlay: () => ReactNode,
+    options: { shortcut?: string; active?: boolean } = {},
+  ): Widget => ({
+    id,
+    kind: "arrow",
+    render: () => (
+      <Dropdown {...dropdownProps(id)} popupRender={() => <div onMouseDown={preventMouseDown}>{overlay()}</div>}>
+        <span className="yq-tb-widget-wrap">
+          <TbTooltip title={title} shortcut={options.shortcut} hidden={openId === id}>
+            <button
+              type="button"
+              className={`yq-tb-arrow${options.active ? " is-checked" : ""}${openId === id ? " is-open" : ""}`}
+              disabled={!editorReady}
+              aria-label={title}
+              data-testid={`toolbar-${id}`}
+              onMouseDown={preventMouseDown}
+            >
+              <span className="yq-tb-arrow__icon">
+                {typeof icon === "string" ? <YuqueIcon name={icon as YuqueIconName} /> : icon}
+              </span>
+              <ArrowDown />
+            </button>
+          </TbTooltip>
+        </span>
+      </Dropdown>
+    ),
+  });
+
+  const selectButton = (id: string, value: string, title: string, overlay: () => ReactNode, shortcut?: string): Widget => ({
+    id,
+    kind: "select",
+    render: () => (
+      <Dropdown {...dropdownProps(id)} popupRender={() => <div onMouseDown={preventMouseDown}>{overlay()}</div>}>
+        <span className="yq-tb-widget-wrap">
+          <TbTooltip title={title} shortcut={shortcut} hidden={openId === id}>
+            <button
+              type="button"
+              className={`yq-tb-select${openId === id ? " is-open" : ""}`}
+              disabled={!editorReady}
+              aria-label={title}
+              data-testid={`toolbar-${id}`}
+              onMouseDown={preventMouseDown}
+            >
+              <span className="yq-tb-select__value">{value}</span>
+              <ArrowDown />
+            </button>
+          </TbTooltip>
+        </span>
+      </Dropdown>
+    ),
+  });
+
+  /** 分体按钮：左侧执行，右侧箭头展开（有序列表 / 字体颜色 / 背景颜色 / 代码清理） */
+  const splitButton = (
+    id: string,
+    kind: "split" | "color",
+    icon: ReactNode,
+    title: string,
+    onApply: () => void,
+    overlay: () => ReactNode,
+    options: { shortcut?: string; active?: boolean } = {},
+  ): Widget => ({
+    id,
+    kind,
+    render: () => (
+      <Dropdown {...dropdownProps(id)} popupRender={() => <div onMouseDown={preventMouseDown}>{overlay()}</div>}>
+        <div
+          className={`yq-tb-split yq-tb-split--${kind}${options.active ? " is-checked" : ""}${openId === id ? " is-open" : ""}`}
+          data-testid={`toolbar-${id}`}
+        >
+          <TbTooltip title={title} shortcut={options.shortcut} hidden={openId === id}>
+            <button
+              type="button"
+              className="yq-tb-split__main"
+              disabled={!editorReady}
+              aria-label={title}
+              onMouseDown={preventMouseDown}
+              onClick={(event) => {
+                event.stopPropagation();
+                onApply();
+              }}
+            >
+              {icon}
+            </button>
+          </TbTooltip>
+          <TbTooltip title={title} shortcut={options.shortcut} hidden={openId === id}>
+            <button
+              type="button"
+              className="yq-tb-split__arrow"
+              disabled={!editorReady}
+              aria-label={`${title}选项`}
+              onMouseDown={preventMouseDown}
+            >
+              <ArrowDown />
+            </button>
+          </TbTooltip>
+        </div>
+      </Dropdown>
+    ),
+  });
+
+  const divider = (id: string): Widget => ({ id, kind: "divider", render: () => <div className="yq-tb-divider" /> });
+
+  /* ---------------- 下拉面板 ---------------- */
+  const headingMenu = () => (
+    <div className="yq-menu yq-select-menu">
+      {HEADING_ITEMS.map((item) => (
+        <div
+          key={item.level}
+          className={`yq-select-item${toolbarState.headingLevel === item.level ? " is-selected" : ""}`}
+          onClick={closeAndRun(() =>
+            item.level === 0
+              ? chain().setParagraph().run()
+              : chain().setHeading({ level: item.level as 1 | 2 | 3 | 4 | 5 | 6 }).run(),
+          )}
+        >
+          <span className="yq-select-item__check">
+            <YuqueIcon name="check" />
+          </span>
+          <span className="yq-select-item__label">
+            <span className={item.className}>{item.label}</span>
+            <span className="yq-select-item__shortcut">{kbd("Alt", "Mod", String(item.level))}</span>
+          </span>
+        </div>
+      ))}
+    </div>
   );
 
-  // 分组与顺序对齐语雀（Lake 编辑器 DEFAULT_TOOLBAR）：
-  // 插入 | 撤销 重做 格式刷 清除格式 | 正文 字号 B I S U | 字体颜色 背景色 |
-  // 对齐 无序 有序 缩进 行高 | 待办 链接 引用 分割线 | 本项目扩展
-  const toolbarGroups: ToolbarItem[][] = [
-    [
-      { id: "undo", label: "撤销", content: <UndoIcon /> },
-      { id: "redo", label: "重做", content: <RedoIcon /> },
-      { id: "format-painter", label: "格式刷", content: <FormatPainterIcon />, type: "format-painter" },
-      { id: "clearFormat", label: "清除格式", content: <ClearFormatIcon /> },
-    ],
-    [
-      {
-        id: "text-mode",
-        label: "正文与标题",
-        content: <span className="text-label heading-text">{getCurrentHeadingLevel()}</span>,
-        type: "dropdown",
-      },
-      {
-        id: "font-size",
-        label: "字号",
-        content: <span className="text-label">{getCurrentFontSize()}</span>,
-        type: "dropdown",
-      },
-      { id: "bold", label: "加粗", content: <BoldIcon /> },
-      { id: "italic", label: "斜体", content: <ItalicIcon /> },
-      { id: "strike", label: "删除线", content: <StrikethroughIcon /> },
-      { id: "underline", label: "下划线", content: <UnderlineIcon /> },
-    ],
-    [
-      { id: "text-color", label: "字体颜色", content: null, type: "color-picker" },
-      { id: "bg-color", label: "背景颜色", content: null, type: "color-picker" },
-    ],
-    [
-      {
-        id: "text-align",
-        label: "对齐方式",
-        content: <span className="dropdown-icon-text">{getCurrentAlignment().icon}</span>,
-        type: "dropdown",
-      },
-      { id: "bullet-list", label: "无序列表", content: <UnorderedListIcon /> },
-      {
-        id: "ordered-list",
-        label: "有序列表",
-        content: <OrderedListIcon />,
-        type: "dropdown",
-      },
-      {
-        id: "indent",
-        label: "缩进",
-        content: <IndentIcon />,
-        type: "indent-picker",
-      },
-      {
-        id: "line-height",
-        label: "行高",
-        content: <LineHeightIcon />,
-        type: "dropdown",
-      },
-    ],
-    [
-      { id: "check-list", label: "任务列表", content: <CheckListIcon /> },
-      { id: "link", label: "链接", content: <LinkIcon />, type: "link-picker" },
-      { id: "blockquote", label: "引用", content: <QuoteIcon /> },
-      { id: "divider", label: "分割线", content: <DividerIcon /> },
-      { id: "image", label: "图片", content: <PictureIcon /> },
-      {
-        id: "code-language",
-        label: "代码语言",
-        content: <CodeIcon />,
-        type: "dropdown",
-      },
-      { id: "table", label: "表格", content: <TableIcon />, type: "dropdown" },
-      {
-        id: "highlight-block",
-        label: "高亮块",
-        content: (
-          <span className="color-icon-wrap">
-            <HighlightBlockIcon />
-            <span className="color-icon-indicator" style={{ backgroundColor: lastHighlightColor }} />
+  const fontSizeMenu = () => (
+    <div className="yq-menu yq-select-menu yq-select-menu--fontsize">
+      {FONT_SIZES.map((size) => (
+        <div
+          key={size}
+          className={`yq-select-item${toolbarState.fontSize === size ? " is-selected" : ""}`}
+          onClick={closeAndRun(() => chain().setFontSize(size.replace("px", "")).run())}
+        >
+          <span className="yq-select-item__check">
+            <YuqueIcon name="check" />
           </span>
+          <span className="yq-select-item__label">{size}</span>
+        </div>
+      ))}
+    </div>
+  );
+
+  const iconMenu = (items: Array<{ key: string; icon: YuqueIconName; label: string; active?: boolean; onClick: () => void }>) => (
+    <div className="yq-menu yq-icon-menu">
+      {items.map((item) => (
+        <div key={item.key} className={`yq-menu-item${item.active ? " is-active" : ""}`} onClick={closeAndRun(item.onClick)}>
+          <YuqueIcon name={item.icon} className="yq-menu-item__icon" />
+          <span>{item.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+
+  const lineHeightMenu = () => (
+    <div className="yq-menu yq-check-menu">
+      {LINE_HEIGHTS.map((item) => (
+        <div
+          key={item.key || "default"}
+          className="yq-menu-item"
+          onClick={closeAndRun(() =>
+            item.key ? chain().setLineHeight(item.key).run() : chain().unsetLineHeight().run(),
+          )}
+        >
+          {toolbarState.lineHeight === item.key && <YuqueIcon name="check" className="yq-check-menu__checked" />}
+          <span>{item.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+
+  const alignMenu = () => (
+    <div className="yq-inline-menu">
+      {ALIGN_ITEMS.map((item) => (
+        <TbTooltip key={item.key} title={item.label}>
+          <div
+            className={`yq-inline-menu__btn${toolbarState.textAlign === item.key ? " is-selected" : ""}`}
+            onClick={closeAndRun(() => chain().setTextAlign(item.key).run())}
+          >
+            <YuqueIcon name={item.icon} />
+          </div>
+        </TbTooltip>
+      ))}
+    </div>
+  );
+
+  const listStyleMenu = () => (
+    <div className="yq-list-type-selector">
+      {LIST_STYLE_CARDS.map((card) => (
+        <ul
+          key={card.key}
+          title={card.label}
+          className={toolbarState.nodes.orderedList && toolbarState.orderedListType === card.key ? "is-active" : ""}
+          onClick={closeAndRun(() => {
+            const c = chain();
+            if (!tiptap!.isActive("orderedList")) c.toggleOrderedList();
+            c.setOrderedListStyle(card.key).run();
+          })}
+        >
+          {card.preview.map(([level, symbol], index) => (
+            <li key={index}>
+              <span className="yq-list-type-selector__symbol" data-level={level}>
+                {symbol}
+              </span>
+              <span className="yq-list-type-selector__line" />
+            </li>
+          ))}
+        </ul>
+      ))}
+    </div>
+  );
+
+  const cleanupMenu = () => (
+    <div className="yq-menu yq-check-menu">
+      {codeCleanupItems.map((item) =>
+        isCodeCleanupActionItem(item) ? (
+          <div
+            key={item.key}
+            className="yq-menu-item"
+            onClick={closeAndRun(() => {
+              setCleanupAction(item.key);
+              runCleanup(item.key);
+            })}
+          >
+            {cleanupAction === item.key && <YuqueIcon name="check" className="yq-check-menu__checked" />}
+            <span>{item.label}</span>
+          </div>
+        ) : (
+          <div key={item.key} className="yq-menu-divider" />
         ),
-        type: "highlight-block-picker",
-      },
-    ],
-    [
-      { id: "cursor", label: "光标", content: <CursorIcon /> },
-      {
-        id: "code-cleanup",
-        label: "\u4ee3\u7801\u6e05\u7406",
-        content: <CodeCleanupIcon />,
-        type: "code-cleanup-picker",
-      },
-    ],
+      )}
+    </div>
+  );
+
+  /* ---------------- 控件列表（语雀 DEFAULT_TOOLBAR 顺序） ---------------- */
+  const has = (id: string) => !enabledItemIds || enabledItemIds.has(id);
+  const showInsert =
+    variant === "fixed" &&
+    (!enabledItemIds || ["image", "table", "code-block", "highlight-block"].some((id) => enabledItemIds.has(id)));
+
+  const allWidgets: Widget[] = [
+    ...(showInsert
+      ? [
+          {
+            id: "insert",
+            kind: "insert" as const,
+            render: () => (
+              <Dropdown
+                {...dropdownProps("insert")}
+                destroyOnHidden
+                align={{ offset: [-4, 5] }}
+                popupRender={() => (
+                  <BlockInsertPanel searchable className="yq-insert-panel--toolbar" onSelect={handleInsertCard} />
+                )}
+              >
+                <span className="yq-tb-widget-wrap">
+                  <TbTooltip title="插入" hidden={openId === "insert"}>
+                    <button
+                      type="button"
+                      className={`yq-tb-insert${openId === "insert" ? " is-open" : ""}`}
+                      disabled={!editorReady}
+                      aria-label="插入"
+                      data-testid="toolbar-insert"
+                      onMouseDown={preventMouseDown}
+                    >
+                      <YuqueIcon name="t-insert-card" />
+                    </button>
+                  </TbTooltip>
+                </span>
+              </Dropdown>
+            ),
+          },
+          divider("d-insert"),
+        ]
+      : []),
+    ...(has("undo") ? [button("undo", "EditorUndo", "撤销", () => chain().undo().run(), { shortcut: kbd("Mod", "Z"), disabled: !safeCan(tiptap, "undo") })] : []),
+    ...(has("redo") ? [button("redo", "EditorRedo", "重做", () => chain().redo().run(), { shortcut: kbd("Shift", "Mod", "Z"), disabled: !safeCan(tiptap, "redo") })] : []),
+    ...(has("format-painter")
+      ? [
+          button("format-painter", "EditorFormatPainter", "格式刷", () => startPainter(false), {
+            active: Boolean(painter),
+            onDoubleClick: () => startPainter(true),
+          }),
+        ]
+      : []),
+    ...(has("clearFormat") ? [button("clearFormat", "EditorClearFormat", "清除格式", () => chain().unsetAllMarks().run())] : []),
+    divider("d-history"),
+    ...(has("text-mode") ? [selectButton("text-mode", headingLabel, "正文与标题", headingMenu)] : []),
+    ...(has("font-size") ? [selectButton("font-size", toolbarState.fontSize, "字号调整", fontSizeMenu)] : []),
+    ...(has("bold") ? [button("bold", "t-bold", "粗体", () => runInlineMarkCommand(tiptap, "bold"), { shortcut: kbd("Mod", "B"), active: toolbarState.marks.bold })] : []),
+    ...(has("italic") ? [button("italic", "t-italic", "斜体", () => runInlineMarkCommand(tiptap, "italic"), { shortcut: kbd("Mod", "I"), active: toolbarState.marks.italic })] : []),
+    ...(has("strike") ? [button("strike", "t-strikethrough", "删除线", () => runInlineMarkCommand(tiptap, "strike"), { shortcut: kbd("Shift", "Mod", "S"), active: toolbarState.marks.strike })] : []),
+    ...(has("underline") ? [button("underline", "t-underline", "下划线", () => runInlineMarkCommand(tiptap, "underline"), { shortcut: kbd("Mod", "U"), active: toolbarState.marks.underline })] : []),
+    ...(has("more-mark")
+      ? [
+          arrowButton(
+            "more-mark",
+            "t-moremark",
+            "更多文本样式",
+            () =>
+              iconMenu([
+                { key: "sup", icon: "t-superscript", label: "上标", active: supActive, onClick: () => chain().toggleSuperscript().run() },
+                { key: "sub", icon: "t-subscript", label: "下标", active: subActive, onClick: () => chain().toggleSubscript().run() },
+                { key: "code", icon: "t-code", label: "行内代码", active: toolbarState.marks.code, onClick: () => runInlineMarkCommand(tiptap, "code") },
+              ]),
+            { active: moreMarkActive },
+          ),
+        ]
+      : []),
+    divider("d-mark"),
+    ...(has("text-color")
+      ? [
+          splitButton(
+            "text-color",
+            "color",
+            <YuqueIcon name="t-font-color" color={textColor} />,
+            "字体颜色",
+            () => applyTextColor(textColor),
+            () => <ColorBoard kind="text" value={currentTextColor} onChange={(color) => { setOpenId(null); applyTextColor(color); }} />,
+          ),
+        ]
+      : []),
+    ...(has("bg-color")
+      ? [
+          splitButton(
+            "bg-color",
+            "color",
+            <YuqueIcon name="t-bg-color" color={bgColor} />,
+            "背景颜色",
+            () => applyBgColor(bgColor),
+            () => <ColorBoard kind="background" value={currentBgColor} onChange={(color) => { setOpenId(null); applyBgColor(color); }} />,
+          ),
+        ]
+      : []),
+    divider("d-color"),
+    ...(has("text-align") ? [arrowButton("text-align", alignIcon, "对齐方式", alignMenu)] : []),
+    ...(has("bullet-list") ? [button("bullet-list", "t-unorder-list", "无序列表", () => chain().toggleBulletList().run(), { shortcut: kbd("Shift", "Mod", "8"), active: toolbarState.nodes.bulletList })] : []),
+    ...(has("ordered-list")
+      ? [
+          splitButton(
+            "ordered-list",
+            "split",
+            <YuqueIcon name="t-order-list" />,
+            "有序列表",
+            () => chain().toggleOrderedList().run(),
+            listStyleMenu,
+            { shortcut: kbd("Shift", "Mod", "7"), active: toolbarState.nodes.orderedList },
+          ),
+        ]
+      : []),
+    ...(has("indent")
+      ? [
+          arrowButton("indent", "EditorIndent", "缩进调整", () =>
+            iconMenu([
+              { key: "indent", icon: "EditorIndent", label: "增加缩进", onClick: () => chain().indent().run() },
+              { key: "outdent", icon: "EditorOutdent", label: "减少缩进", onClick: () => chain().outdent().run() },
+            ]),
+          ),
+        ]
+      : []),
+    ...(has("line-height") ? [arrowButton("line-height", "EditorLineHeight", "行高调整", lineHeightMenu)] : []),
+    divider("d-block"),
+    ...(has("check-list") ? [button("check-list", "t-task-list", "任务列表", () => chain().toggleTaskList().run(), { shortcut: kbd("Shift", "Mod", "9"), active: toolbarState.nodes.taskList })] : []),
+    ...(has("link") ? [button("link", "t-link", "插入链接", openLinkPopup, { active: toolbarState.marks.link })] : []),
+    ...(has("blockquote") ? [button("blockquote", "t-quote", "插入引用", () => chain().toggleBlockquote().run(), { shortcut: kbd("Shift", "Mod", "B"), active: toolbarState.nodes.blockquote })] : []),
+    ...(has("divider") ? [button("divider", "t-hr", "插入分割线", () => chain().setHorizontalRule().run())] : []),
+    divider("d-extra"),
+    ...(has("code-cleanup")
+      ? [
+          splitButton(
+            "code-cleanup",
+            "split",
+            <CodeCleanupIcon />,
+            "代码清理",
+            () => runCleanup(cleanupAction),
+            cleanupMenu,
+          ),
+        ]
+      : []),
   ];
 
-  const hiddenToolbarItemIds = new Set(["highlight-block", "image", "code-language", "table"]);
-  const visibleToolbarGroups = toolbarGroups
-    .map((group) =>
-      group.filter((item) => !hiddenToolbarItemIds.has(item.id) && (!enabledItemIds || enabledItemIds.has(item.id))),
-    )
-    .filter((group) => group.length > 0);
+  const widgets = normalizeDividers(allWidgets);
+
+  // 计算放得下的控件数量（只依赖控件 id/类型序列与可用宽度；渲染函数每次取最新的，避免闭包过期）
+  const layoutKey = widgets.map((widget) => `${widget.id}:${widget.kind}`).join(",");
+  const fitCount = useMemo(() => {
+    const kinds = layoutKey.split(",").map((item) => item.split(":")[1] as WidgetKind);
+    if (variant !== "fixed" || availableWidth === null) return kinds.length;
+    let total = 0;
+    let prev: WidgetKind | null = null;
+    const offsets: number[] = [];
+    for (const kind of kinds) {
+      total += widgetMargin(prev, kind) + WIDGET_WIDTH[kind];
+      offsets.push(total);
+      prev = kind;
+    }
+    if (total <= availableWidth) return kinds.length;
+    let count = 0;
+    while (count < kinds.length && offsets[count] + MORE_WIDTH <= availableWidth) count += 1;
+    return count;
+  }, [availableWidth, layoutKey, variant]);
+  const visible = normalizeDividers(widgets.slice(0, fitCount));
+  const overflow = normalizeDividers(widgets.slice(fitCount));
+
+  const renderRow = (list: Widget[]) => {
+    let prev: WidgetKind | null = null;
+    return list.map((widget) => {
+      const marginLeft = widgetMargin(prev, widget.kind);
+      prev = widget.kind;
+      return (
+        <div key={widget.id} className={`yq-tb-widget yq-tb-widget--${widget.kind}`} style={{ marginLeft }}>
+          {widget.render()}
+        </div>
+      );
+    });
+  };
 
   return (
-    <div className={`toolbar toolbar--${variant}`}>
+    <div ref={rootRef} className={`yq-toolbar yq-toolbar--${variant}`} data-testid={`yq-toolbar-${variant}`}>
       <input
         ref={imageInputRef}
         type="file"
@@ -732,837 +913,50 @@ export default function DesktopToolbar({
         onChange={(event) => {
           const file = event.target.files?.[0];
           event.target.value = "";
-          if (file) void handleImageFileSelect(file);
+          if (file) void handleImageFile(file);
         }}
       />
-      {visibleBlockInsertItems.length > 0 && (
-        <div className="toolbar-group">
-          <Dropdown
-            trigger={["click"]}
-            disabled={!editorReady}
-            open={openDropdown === "block-insert"}
-            onOpenChange={(open) => {
-              setOpenDropdown(open ? "block-insert" : null);
-            }}
-            popupRender={() => (
-              <div className="ant-dropdown-menu block-insert-menu">
-                {visibleBlockInsertItems.map((id) => {
-                  const itemConfig: Record<
-                    (typeof blockInsertItemIds)[number],
-                    { icon: ReactNode; label: string; popover?: ReactNode }
-                  > = {
-                    "highlight-block": {
-                      icon: <YuqueIcon name="EditorMainHighlightBlock" />,
-                      label: "高亮块",
-                      popover: (
-                        <div className="block-insert-popover-content">
-                          <div className="block-insert-popover-title">高亮块颜色</div>
-                          <div className="block-insert-color-grid">
-                            {highlightBlockColors.map((color) => (
-                              <div
-                                key={color}
-                                className={`color-swatch ${lastHighlightColor === color ? "selected" : ""}`}
-                                style={{ backgroundColor: color }}
-                                onClick={() => setLastHighlightColor(color)}
-                                title={color}
-                              >
-                                {lastHighlightColor === color && <span className="color-checkmark">✓</span>}
-                              </div>
-                            ))}
-                          </div>
-                          <button
-                            type="button"
-                            className="block-insert-action-btn"
-                            onClick={() => {
-                              handleBlockInsertAction("highlight-block");
-                              setOpenDropdown(null);
-                            }}
-                          >
-                            插入高亮块
-                          </button>
-                        </div>
-                      ),
-                    },
-                    "code-block": {
-                      icon: <YuqueIcon name="EditorMainCodeBlock" />,
-                      label: "代码块",
-                      popover: (
-                        <div className="block-insert-popover-content">
-                          <div className="block-insert-popover-title">代码语言</div>
-                          <div className="block-insert-option-list">
-                            {codeLanguageItems.map((langItem) => (
-                              <div
-                                key={langItem.key}
-                                className="block-insert-option-item"
-                                onClick={() => {
-                                  handleBlockInsertAction("code-block", { language: langItem.key });
-                                  setOpenDropdown(null);
-                                }}
-                              >
-                                {langItem.label}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ),
-                    },
-                    table: {
-                      icon: <YuqueIcon name="EditorMainTable" />,
-                      label: "表格",
-                      popover: (
-                        <div className="block-insert-popover-content">
-                          <div className="block-insert-popover-title">表格尺寸</div>
-                          <TablePicker
-                            onSelect={(rows, cols) => {
-                              handleBlockInsertAction("table", { rows, cols });
-                              setOpenDropdown(null);
-                            }}
-                          />
-                        </div>
-                      ),
-                    },
-                    image: {
-                      icon: <YuqueIcon name="EditorMainImage" />,
-                      label: "图片",
-                    },
-                  };
-
-                  const content = (
-                    <div
-                      className="ant-dropdown-menu-item block-insert-menu-item"
-                      onClick={() => {
-                        if (!itemConfig[id].popover) {
-                          handleBlockInsertAction(id);
-                          setOpenDropdown(null);
-                        }
-                      }}
-                    >
-                      <span className="block-insert-menu-icon">{itemConfig[id].icon}</span>
-                      <span className="block-insert-menu-label">{itemConfig[id].label}</span>
-                      {itemConfig[id].popover ? <YuqueIcon name="ArrowRight" className="block-insert-menu-caret" /> : null}
-                    </div>
-                  );
-
-                  return itemConfig[id].popover ? (
-                    <Popover key={id} placement="rightTop" trigger="hover" mouseEnterDelay={0.1} content={itemConfig[id].popover}>
-                      {content}
-                    </Popover>
-                  ) : (
-                    <div key={id}>{content}</div>
-                  );
-                })}
-              </div>
-            )}
-          >
-            <Tooltip title="插入块" placement="bottom" trigger="hover" mouseEnterDelay={0.5}>
-              <button
-                type="button"
-                className={`toolbar-button toolbar-insert-button${variant === "fixed" ? " has-label" : ""}`}
-                disabled={!editorReady}
-                aria-label="插入块"
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                }}
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                }}
-              >
-                <YuqueIcon name="NeTInsertCard" className="toolbar-insert-icon" />
-                {variant === "fixed" && <span className="toolbar-insert-button__label">插入</span>}
-                <YuqueIcon name="ToolbarArrowDown" className="toolbar-arrow-down" />
-              </button>
-            </Tooltip>
-          </Dropdown>
-        </div>
-      )}
-      {visibleToolbarGroups.map((group, index) => (
-        <div className="toolbar-group" key={`toolbar-group-${index}`}>
-          {group.map((item) =>
-            item.type === "code-cleanup-picker" ? (
-              <SplitDropdown
-                key={item.id}
-                content={item.content}
-                label={item.label}
-                disabled={!editorReady}
-                open={openDropdown === item.id}
-                onOpenChange={(open) => {
-                  setOpenDropdown(open ? item.id : null);
-                }}
-                onApply={() => {
-                  runCodeCleanupAction(defaultCodeCleanupAction);
-                }}
-                dropdownContent={
-                  <div className="ant-dropdown-menu" style={{ borderRadius: "4px", border: "1px solid var(--app-border)", boxShadow: "none" }}>
-                    {codeCleanupItems.map((cleanupItem) => {
-                      if (!isCodeCleanupActionItem(cleanupItem)) {
-                        return <div key={cleanupItem.key} className="ant-dropdown-menu-item-divider" />;
-                      }
-
-                      const active = cleanupItem.key === defaultCodeCleanupAction;
-                      return (
-                        <div
-                          key={cleanupItem.key}
-                          className={`ant-dropdown-menu-item ${active ? "ant-dropdown-menu-item-selected" : ""}`}
-                          onClick={() => {
-                            setDefaultCodeCleanupAction(cleanupItem.key);
-                            runCodeCleanupAction(cleanupItem.key);
-                            setOpenDropdown(null);
-                          }}
-                        >
-                          <span className="menu-check-mark">{active ? "✓" : ""}</span>
-                          {cleanupItem.label}
-                        </div>
-                      );
-                    })}
-                  </div>
-                }
-              />
-            ) : item.type === "dropdown" ? (
-              <SplitDropdown
-                key={item.id}
-                content={item.content}
-                label={item.label}
-                disabled={!editorReady}
-                active={isActive(item.id)}
-                overlayClassName={item.id === "text-align" ? "align-dropdown" : undefined}
-                open={openDropdown === item.id}
-                onOpenChange={(open) => {
-                  setOpenDropdown(open ? item.id : null);
-                }}
-                onApply={() => {
-                  // 左侧按钮点击：应用当前/上次选择的功能
-                  let lastValue = "";
-                  switch (item.id) {
-                    case "text-mode": {
-                      const handler = dropdownHandlers[item.id];
-                      if (handler) {
-                        lastValue = getCurrentHeadingKey();
-                        if (lastValue === "0") {
-                          handler("1");
-                        } else {
-                          handler(lastValue);
-                        }
-                      }
-                      break;
-                    }
-                    case "font-size": {
-                      const handler = dropdownHandlers[item.id];
-                      if (handler) {
-                        lastValue = getCurrentFontSize();
-                        handler(lastValue);
-                      }
-                      break;
-                    }
-                    case "text-align": {
-                      const handler = dropdownHandlers[item.id];
-                      if (handler) {
-                        lastValue = getCurrentAlignment().key;
-                        handler(lastValue);
-                      }
-                      break;
-                    }
-                    case "ordered-list": {
-                      const handler = dropdownHandlers[item.id];
-                      if (handler && !tiptap?.isActive("orderedList")) {
-                        handler(getCurrentOrderedListType());
-                      }
-                      break;
-                    }
-                    case "code-language": {
-                      const handler = dropdownHandlers[item.id];
-                      if (handler) {
-                        lastValue = getCurrentCodeLanguage();
-                        handler(lastValue);
-                      }
-                      break;
-                    }
-                    case "line-height": {
-                      const handler = dropdownHandlers[item.id];
-                      if (handler) {
-                        lastValue = getCurrentLineHeight();
-                        if (lastValue) {
-                          handler(lastValue);
-                        } else {
-                          handler("1.5");
-                        }
-                      }
-                      break;
-                    }
-                    case "table":
-                      handleTableInsert(lastTableSize.rows, lastTableSize.cols);
-                      break;
-                    default:
-                      break;
-                  }
-                }}
-                dropdownContent={
-                  item.id === "text-align" ? (
-                    <div className="align-menu-panel">
-                      <div className="align-menu-row">
-                        {alignItems.map((alignItem) => {
-                          const active = alignItem.key === getCurrentAlignment().key;
-                          return (
-                            <Tooltip key={alignItem.key} title={alignItem.label} placement="bottom">
-                              <button
-                                type="button"
-                                className={active ? "align-menu-btn is-active" : "align-menu-btn"}
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  dropdownHandlers["text-align"]?.(alignItem.key);
-                                  setOpenDropdown(null);
-                                }}
-                              >
-                                {alignItem.icon}
-                              </button>
-                            </Tooltip>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ) : item.id === "table" ? (
-                    <TablePicker
-                      onSelect={(rows, cols) => {
-                        handleTableInsert(rows, cols);
-                        setOpenDropdown(null);
-                      }}
-                    />
-                  ) : (
-                    <div className="ant-dropdown-menu" style={{ borderRadius: "4px", border: "1px solid var(--app-border)", boxShadow: "none" }}>
-                      {item.id === "text-mode" &&
-                        titleLevelItems.map((levelItem) => {
-                          const active = levelItem.key === getCurrentHeadingKey();
-                          return (
-                            <div
-                              key={levelItem.key}
-                              className={`ant-dropdown-menu-item ${active ? "ant-dropdown-menu-item-selected" : ""}`}
-                              onClick={() => {
-                                dropdownHandlers["text-mode"]?.(levelItem.key);
-                                setOpenDropdown(null);
-                              }}
-                            >
-                              <div className="heading-menu-item">
-                                <div className="heading-menu-left">
-                                  <span className="heading-menu-check">{active ? "✓" : ""}</span>
-                                  <span
-                                    className={
-                                      levelItem.key === "0"
-                                        ? "heading-menu-label is-body"
-                                        : `heading-menu-label is-${levelItem.size}`
-                                    }
-                                  >
-                                    {levelItem.label}
-                                  </span>
-                                </div>
-                                <div className="heading-menu-shortcut">{levelItem.shortcut}</div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      {item.id === "font-size" &&
-                        fontSizeItems.map((sizeItem) => {
-                          const active = sizeItem.key === getCurrentFontSize();
-                          return (
-                            <div
-                              key={sizeItem.key}
-                              className={`ant-dropdown-menu-item ${active ? "ant-dropdown-menu-item-selected" : ""}`}
-                              onClick={() => {
-                                dropdownHandlers["font-size"]?.(sizeItem.key);
-                                setOpenDropdown(null);
-                              }}
-                            >
-                              <div className="font-size-menu-item">
-                                <span className="font-size-menu-check">{active ? "✓" : ""}</span>
-                                <span className="font-size-menu-label">{sizeItem.label}</span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      {item.id === "ordered-list" &&
-                        orderedListTypeItems.map((listItem) => {
-                          const active = listItem.key === getCurrentOrderedListType();
-                          return (
-                            <div
-                              key={listItem.key}
-                              className={`ant-dropdown-menu-item ${active ? "ant-dropdown-menu-item-selected" : ""}`}
-                              onClick={() => {
-                                dropdownHandlers["ordered-list"]?.(listItem.key);
-                                setOpenDropdown(null);
-                              }}
-                            >
-                              <span className="menu-check-mark">{active ? "✓ " : ""}</span>
-                              {listItem.label}
-                            </div>
-                          );
-                        })}
-                      {item.id === "code-language" &&
-                        codeLanguageItems.map((langItem) => {
-                          const active = langItem.key === getCurrentCodeLanguage();
-                          return (
-                            <div
-                              key={langItem.key}
-                              className={`ant-dropdown-menu-item ${active ? "ant-dropdown-menu-item-selected" : ""}`}
-                              onClick={() => {
-                                dropdownHandlers["code-language"]?.(langItem.key);
-                                setOpenDropdown(null);
-                              }}
-                            >
-                              <span className="menu-check-mark">{active ? "✓ " : ""}</span>
-                              {langItem.label}
-                            </div>
-                          );
-                        })}
-                      {item.id === "line-height" &&
-                        lineHeightItems.map((lineHeightItem) => {
-                          const active = lineHeightItem.key === getCurrentLineHeight();
-                          return (
-                            <div
-                              key={lineHeightItem.key}
-                              className={`ant-dropdown-menu-item ${active ? "ant-dropdown-menu-item-selected" : ""}`}
-                              onClick={() => {
-                                dropdownHandlers["line-height"]?.(lineHeightItem.key);
-                                setOpenDropdown(null);
-                              }}
-                            >
-                              <span className="menu-check-mark">{active ? "✓ " : ""}</span>
-                              {lineHeightItem.label}
-                            </div>
-                          );
-                        })}
-                    </div>
-                  )
-                }
-              />
-            ) : item.type === "combined-color-picker" ? (() => {
-              return (
-                <div className={`split-color-button ${openColorPicker === item.id ? "is-open" : ""}`} key={item.id}>
-                  <Dropdown
-                    placement="bottomLeft"
-                    align={{ offset: [0, 4] }}
-                    classNames={{ root: "toolbar-color-dropdown" }}
-                    onOpenChange={(open) => {
-                      setOpenColorPicker(open ? item.id : null);
-                      if (open && tiptap) {
-                        savedSelectionRef.current = tiptap.state.selection;
-                      }
-                    }}
-                    popupRender={() => (
-                      <ColorPickerPanel
-                        selectedTextColor={selectedColor}
-                        selectedBgColor={selectedBgColor}
-                        onTextColorSelect={handleColorSelect}
-                        onBgColorSelect={handleBgColorSelect}
-                      />
-                    )}
-                    trigger={["click"]}
-                    disabled={!editorReady}
+      <div className="yq-toolbar__content">
+        {renderRow(visible)}
+        {overflow.length > 0 && (
+          <div className="yq-tb-more">
+            <Popover
+              open={moreOpen}
+              onOpenChange={setMoreOpen}
+              trigger="click"
+              placement="bottomRight"
+              arrow={false}
+              align={{ offset: [0, 4] }}
+              classNames={{ root: "yq-overlay yq-tb-more-overlay" }}
+              content={<div className="yq-tb-more-overlay__row" onMouseDown={preventMouseDown}>{renderRow(overflow)}</div>}
+            >
+              <span className="yq-tb-widget-wrap">
+                <TbTooltip title="更多" hidden={moreOpen}>
+                  <button
+                    type="button"
+                    className={`yq-tb-btn${moreOpen ? " is-checked" : ""}`}
+                    aria-label="更多"
+                    data-testid="toolbar-more"
+                    onMouseDown={preventMouseDown}
                   >
-                    <Tooltip title={item.label} trigger="hover" mouseEnterDelay={0.5}>
-                      <button
-                        type="button"
-                        className="toolbar-button"
-                        disabled={!editorReady}
-                        aria-label={item.label}
-                        onMouseDown={(event) => event.preventDefault()}
-                      >
-                        {item.content}
-                      </button>
-                    </Tooltip>
-                  </Dropdown>
-                </div>
-              );
-            })() : item.type === "color-picker" ? (() => {
-              const isBgColor = item.id === "bg-color";
-              const currentColor = isBgColor ? selectedBgColor : selectedColor;
-              const handleSelect = isBgColor ? handleBgColorSelect : handleColorSelect;
-              return (
-                <div className={`split-color-button ${openColorPicker === item.id ? "is-open" : ""}`} key={item.id}>
-                  <Tooltip title={item.label} trigger="hover" mouseEnterDelay={0.5}>
-                    <button
-                      type="button"
-                      className="toolbar-button color-apply-btn"
-                      disabled={!editorReady}
-                      aria-label={item.label}
-                      onMouseDown={() => {
-                        if (tiptap) {
-                          savedSelectionRef.current = tiptap.state.selection;
-                        }
-                      }}
-                      onClick={() => {
-                        if (!tiptap) return;
-                        const { view } = tiptap;
-                        const color = currentColor;
-                        if (savedSelectionRef.current) {
-                          view.dispatch(view.state.tr.setSelection(savedSelectionRef.current));
-                        }
-                        view.focus();
-                        if (isBgColor) {
-                          setSelectedBgColor(color);
-                          tiptap.chain().toggleHighlight({ color }).run();
-                        } else {
-                          setSelectedColor(color);
-                          tiptap.chain().setColor(color).run();
-                        }
-                      }}
-                    >
-                      {isBgColor ? <BgColorIcon color={currentColor} /> : <TextColorIcon color={currentColor} />}
-                    </button>
-                  </Tooltip>
-                  <Dropdown
-                    placement="bottomLeft"
-                    align={{ offset: [0, 4] }}
-                    classNames={{ root: "toolbar-color-dropdown" }}
-                    onOpenChange={(open) => {
-                      setOpenColorPicker(open ? item.id : null);
-                      if (open) {
-                        if (tiptap) {
-                          savedSelectionRef.current = tiptap.state.selection;
-                        }
-                      }
-                    }}
-                    popupRender={() => (
-                      <div className="color-picker-dropdown">
-                        <div className="color-picker-section">
-                          <div className="color-picker-header">
-                            <span>默认</span>
-                          </div>
-                          <div className="color-grid">
-                            {solidColors.map((row, rowIndex) => (
-                              <div key={rowIndex} className="color-grid-row">
-                                {row.map((color) => (
-                                  <div
-                                    key={color}
-                                    className={`color-swatch ${currentColor === color ? "selected" : ""}`}
-                                    style={{ backgroundColor: color }}
-                                    onClick={() => handleSelect(color)}
-                                    title={color}
-                                  >
-                                    {currentColor === color && (
-                                      <span className="color-checkmark">✓</span>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
+                    <YuqueIcon name="MoreHorizontal" />
+                  </button>
+                </TbTooltip>
+              </span>
+            </Popover>
+          </div>
+        )}
+      </div>
 
-                        <div className="color-picker-section">
-                          <div className="color-picker-header">
-                            <span>渐变色</span>
-                          </div>
-                          <div className="gradient-grid">
-                            {gradientColors.map((gradient) => (
-                              <div
-                                key={gradient.id}
-                                className="gradient-swatch"
-                                style={{
-                                  background: `linear-gradient(to right, ${gradient.colors[0]}, ${gradient.colors[1]})`,
-                                }}
-                                onClick={() => handleGradientSelect(gradient.id)}
-                              />
-                            ))}
-                          </div>
-                        </div>
-
-                        <div className="color-picker-section">
-                          <div className="color-picker-header">
-                            <span>最近使用自定义颜色</span>
-                          </div>
-                          <div className="color-picker-empty">暂无</div>
-                        </div>
-
-                        <Divider style={{ margin: "6px 0" }} />
-
-                        <div className="color-picker-section">
-                          <div className="color-picker-header-advanced">
-                            <div className="color-picker-header">
-                              <BgColorIcon style={{ fontSize: "12px" }} />
-                              <span>更多颜色</span>
-                            </div>
-                            <div className="color-picker-advanced">
-                              <ColorPicker
-                                value={currentColor}
-                                onChange={(color) => {
-                                  const hexColor = color.toHexString();
-                                  handleSelect(hexColor);
-                                }}
-                                showText
-                                size="small"
-                                getPopupContainer={(triggerNode) => {
-                                  const dropdown = triggerNode.closest(
-                                    ".ant-dropdown",
-                                  ) as HTMLElement;
-                                  return dropdown || document.body;
-                                }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                    trigger={["click"]}
-                    disabled={!editorReady}
-                  >
-                    <button
-                      type="button"
-                      className="color-dropdown-trigger"
-                      disabled={!editorReady}
-                      aria-label={`${item.label} - 选择颜色`}
-                    >
-                      <ChevronIcon className="color-dropdown-arrow" />
-                    </button>
-                  </Dropdown>
-                </div>
-              );
-            })() : item.type === "highlight-block-picker" ? (() => {
-              return (
-                <div className={`split-color-button ${openColorPicker === item.id ? "is-open" : ""}`} key={item.id}>
-                  <Tooltip title={item.label} trigger="hover" mouseEnterDelay={0.5}>
-                    <button
-                      type="button"
-                      className="toolbar-button color-apply-btn"
-                      disabled={!editorReady}
-                      aria-label={item.label}
-                      onClick={() => {
-                        if (!tiptap) return;
-                        tiptap
-                          .chain()
-                          .focus()
-                          .toggleHighlightBlockFromSelection({
-                            backgroundColor: lastHighlightColor,
-                          })
-                          .run();
-                      }}
-                    >
-                      <span className="color-icon-wrap">
-                        <HighlightBlockIcon />
-                        <span className="color-icon-indicator" style={{ backgroundColor: lastHighlightColor }} />
-                      </span>
-                    </button>
-                  </Tooltip>
-                  <Dropdown
-                    placement="bottomLeft"
-                    align={{ offset: [0, 4] }}
-                    classNames={{ root: "toolbar-color-dropdown" }}
-                    onOpenChange={(open) => {
-                      setOpenColorPicker(open ? item.id : null);
-                    }}
-                    popupRender={() => (
-                      <div className="color-picker-dropdown" style={{ padding: "8px 10px" }}>
-                        <div className="color-picker-section">
-                          <div className="color-picker-header">选择背景色</div>
-                          <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
-                            {highlightBlockColors.map((color) => (
-                              <div
-                                key={color}
-                                className={`color-swatch ${lastHighlightColor === color ? "selected" : ""}`}
-                                style={{ backgroundColor: color }}
-                                onClick={() => setLastHighlightColor(color)}
-                                title={color}
-                              >
-                                {lastHighlightColor === color && <span className="color-checkmark">✓</span>}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                    trigger={["click"]}
-                    disabled={!editorReady}
-                  >
-                    <button
-                      type="button"
-                      className="color-dropdown-trigger"
-                      disabled={!editorReady}
-                      aria-label={`${item.label} - 选择颜色`}
-                    >
-                      <ChevronIcon className="color-dropdown-arrow" />
-                    </button>
-                  </Dropdown>
-                </div>
-              );
-            })() : item.type === "indent-picker" ? (() => {
-              return (
-                <div className={`split-color-button ${openColorPicker === item.id ? "is-open" : ""}`} key={item.id}>
-                  <Tooltip title={item.label} trigger="hover" mouseEnterDelay={0.5}>
-                    <button
-                      type="button"
-                      className="toolbar-button color-apply-btn"
-                      disabled={!editorReady}
-                      aria-label={item.label}
-                      onClick={() => {
-                        if (!tiptap) return;
-                        if (lastIndentAction === "indent") {
-                          tiptap.chain().focus().indent().run();
-                        } else {
-                          tiptap.chain().focus().outdent().run();
-                        }
-                      }}
-                    >
-                      {lastIndentAction === "indent" ? <IndentIcon /> : <OutdentIcon />}
-                    </button>
-                  </Tooltip>
-                  <Dropdown
-                    placement="bottomLeft"
-                    align={{ offset: [0, 4] }}
-                    classNames={{ root: "toolbar-color-dropdown" }}
-                    onOpenChange={(open) => {
-                      setOpenColorPicker(open ? item.id : null);
-                    }}
-                    popupRender={() => (
-                      <div className="ant-dropdown-menu" style={{ borderRadius: "4px", border: "1px solid var(--app-border)", boxShadow: "none" }}>
-                        <div
-                          className={`ant-dropdown-menu-item ${lastIndentAction === "indent" ? "ant-dropdown-menu-item-selected" : ""}`}
-                          onClick={() => {
-                            setLastIndentAction("indent");
-                            if (tiptap) tiptap.chain().focus().indent().run();
-                          }}
-                        >
-                          <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-                            <IndentIcon /> 增加缩进
-                          </span>
-                        </div>
-                        <div
-                          className={`ant-dropdown-menu-item ${lastIndentAction === "outdent" ? "ant-dropdown-menu-item-selected" : ""}`}
-                          onClick={() => {
-                            setLastIndentAction("outdent");
-                            if (tiptap) tiptap.chain().focus().outdent().run();
-                          }}
-                        >
-                          <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-                            <OutdentIcon /> 减少缩进
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                    trigger={["click"]}
-                    disabled={!editorReady}
-                  >
-                    <button
-                      type="button"
-                      className="color-dropdown-trigger"
-                      disabled={!editorReady}
-                      aria-label={`${item.label} - 选择操作`}
-                    >
-                      <ChevronIcon className="color-dropdown-arrow" />
-                    </button>
-                  </Dropdown>
-                </div>
-              );
-            })() : item.type === "link-picker" ? (
-              <Tooltip
-                key={item.id}
-                placement="bottom"
-                title={item.label}
-                trigger="hover"
-                mouseEnterDelay={0.5}
-                open={tooltipOpen[item.id] && !linkPopupOpen}
-                onOpenChange={(open) => {
-                  setTooltipOpen((prev) => ({ ...prev, [item.id]: open }));
-                }}
-              >
-                <button
-                  type="button"
-                  className={`toolbar-button ${isActive(item.id) ? "active" : ""}`}
-                  disabled={!editorReady}
-                  aria-label={item.label}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    if (tiptap) {
-                      savedSelectionRef.current = tiptap.state.selection;
-                    }
-                  }}
-                  onClick={() => {
-                    setTooltipOpen((prev) => ({ ...prev, [item.id]: false }));
-                    openLinkPopup();
-                  }}
-                >
-                  <span className="toolbar-content">{item.content}</span>
-                </button>
-              </Tooltip>
-            ) : item.type === "format-painter" ? (
-              <Dropdown
-                key={item.id}
-                menu={{
-                  items: [
-                    {
-                      key: "copy",
-                      label: "加样式",
-                      icon: <PlusOutlined />,
-                    },
-                    {
-                      key: "clear",
-                      label: "删除样式",
-                      icon: <DeleteOutlined />,
-                      disabled: copiedMarks.length === 0,
-                    },
-                    {
-                      key: "apply",
-                      label: "应用样式",
-                      icon: <CheckOutlined />,
-                      disabled: copiedMarks.length === 0,
-                    },
-                  ],
-                  onClick: ({ key }) => {
-                    if (key === "copy") handleCopyStyle();
-                    else if (key === "clear") handleClearCopiedStyle();
-                    else if (key === "apply") handleApplyStyle();
-                  },
-                }}
-                trigger={["click"]}
-                disabled={!editorReady}
-              >
-                <button
-                  type="button"
-                  className={`toolbar-button ${copiedMarks.length > 0 ? "active" : ""}`}
-                  disabled={!editorReady}
-                  aria-label={item.label}
-                  onMouseDown={(event) => event.preventDefault()}
-                >
-                  <Tooltip placement="bottom" title={item.label}>
-                    <span className="toolbar-content">{item.content}</span>
-                  </Tooltip>
-                </button>
-              </Dropdown>
-            ) : (
-              <button
-                key={item.id}
-                type="button"
-                className={`toolbar-button ${isActive(item.id) ? "active" : ""}`}
-                disabled={!editorReady}
-                aria-label={item.label}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={handleClick(item.id)}
-              >
-                <Tooltip placement="bottom" title={item.label}>
-                  <span className="toolbar-content">{item.content}</span>
-                </Tooltip>
-              </button>
-            ),
-          )}
-        </div>
-      ))}
-
-      {/* 链接弹出框 - 自定义定位 */}
-      {linkPopupOpen && (
-        <div
-          className="link-picker-popup-overlay"
-          style={{
-            position: "fixed",
-            left: linkPopupPos.x,
-            top: linkPopupPos.y,
-            zIndex: 1000,
-          }}
-        >
+      {linkPopup && (
+        <div className="link-picker-popup-overlay" style={{ position: "fixed", left: linkPopup.x, top: linkPopup.y, zIndex: 1000 }}>
           <LinkPickerPopup
-            textValue={linkTextValue}
-            linkValue={linkUrlValue}
-            onTextChange={setLinkTextValue}
-            onLinkChange={setLinkUrlValue}
-            onConfirm={applyLinkFromPopup}
-            onClose={() => setLinkPopupOpen(false)}
+            textValue={linkPopup.text}
+            linkValue={linkPopup.url}
+            onTextChange={(text) => setLinkPopup((current) => (current ? { ...current, text } : current))}
+            onLinkChange={(url) => setLinkPopup((current) => (current ? { ...current, url } : current))}
+            onConfirm={applyLink}
+            onClose={() => setLinkPopup(null)}
           />
         </div>
       )}

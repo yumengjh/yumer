@@ -19,9 +19,9 @@ const AUTO_SCROLL_ZONE = 40;
 const AUTO_SCROLL_MAX_SPEED = 12;
 const GHOST_OFFSET_X = 12;
 const GHOST_OFFSET_Y = 6;
-/** 语雀块手柄宽度（24px）+ 与正文的间距 */
+/** 语雀块手柄宽度（24px）+ 与正文的间距（手柄右缘距正文 4px） */
 const HANDLE_GROUP_WIDTH = 24;
-const HANDLE_GAP = 8;
+const HANDLE_GAP = 4;
 
 /** 空段落（含只剩换行）：语雀在此显示「+」插入入口 */
 function isEmptyParagraphBlock(block: HTMLElement | null): boolean {
@@ -38,13 +38,13 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
   const [highlightRects, setHighlightRects] = useState<BlockToolbarHighlightRect[]>([]);
   const [toolbarHovered, setToolbarHovered] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
-  const [menuState, setMenuState] = useState<'closed' | 'open' | 'closing'>('closed');
+  const [menuState, setMenuState] = useState<'closed' | 'open'>('closed');
   // menu：块操作菜单；insert：点击「+」打开的插入面板
   const [menuMode, setMenuMode] = useState<'menu' | 'insert'>('menu');
   const [ready, setReady] = useState(false);
   const [shouldAnimate, setShouldAnimate] = useState(false);
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const menuAnchorRef = useRef<HTMLDivElement>(null);
+  const handleWrapperRef = useRef<HTMLDivElement>(null);
   const prevBlockRef = useRef<HTMLElement | null>(null);
   const prevAnchorRef = useRef<HTMLElement | null>(null);
   const hoveredBlockRef = useRef<HTMLElement | null>(null);
@@ -74,7 +74,7 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
 
   const openMenu = useCallback(() => setMenuState('open'), []);
   const closeMenu = useCallback(() => {
-    setMenuState('closing');
+    setMenuState('closed');
     setToolbarHovered(false);
   }, []);
   const menuVisible = menuState !== 'closed';
@@ -377,12 +377,19 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
     if (!menuVisible) return;
     const handler = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      if (!target.closest('.block-menu-popover') && !target.closest('.block-handle__btn') && !target.closest('.ant-popover')) {
+      if (!target.closest('.block-menu-popover') && !target.closest('.yq-brick-trigger') && !target.closest('.ant-popover') && !target.closest('.ant-color-picker')) {
         closeMenu();
       }
     };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeMenu();
+    };
     document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      document.removeEventListener('keydown', onKeyDown);
+    };
   }, [menuVisible, closeMenu]);
 
   // ---- Drag: move block via ProseMirror delete + insert ----
@@ -677,14 +684,16 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
           key={`${rect.top}-${rect.left}-${rect.width}-${rect.height}-${index}`}
           className="block-toolbar-hover-layer"
           style={{
-            top: rect.top,
-            left: rect.left,
-            width: rect.width,
-            height: rect.height,
+            // 语雀 ne-brick-highlight：左右各外扩 6px、上下各外扩 2px
+            top: rect.top - 2,
+            left: rect.left - 6,
+            width: rect.width + 12,
+            height: rect.height + 4,
           }}
         />
       ))}
       <div
+        ref={handleWrapperRef}
         className={`block-handle-wrapper${shouldAnimate ? ' block-handle-wrapper--animate' : ''}`}
         style={{ top: position.top, left: position.left }}
         onMouseEnter={handleToolbarMouseEnter}
@@ -697,21 +706,14 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
           active={menuVisible}
         />
         {menuVisible && (
-          <div
-            ref={menuAnchorRef}
-            className={`block-menu-anchor${menuState === 'closing' ? ' block-menu-anchor--closing' : ''}`}
-            onAnimationEnd={() => {
-              if (menuState === 'closing') setMenuState('closed');
-            }}
-          >
-            <BlockMenu
-              mode={menuMode}
-              onClose={closeMenu}
-              hoveredBlock={hoveredBlock}
-              hoveredTableCell={hoveredTableCell}
-              onWillDeleteBlock={handleWillDeleteBlock}
-            />
-          </div>
+          <BlockMenu
+            mode={menuMode}
+            anchorRef={handleWrapperRef}
+            onClose={closeMenu}
+            hoveredBlock={hoveredBlock}
+            hoveredTableCell={hoveredTableCell}
+            onWillDeleteBlock={handleWillDeleteBlock}
+          />
         )}
       </div>
     </>

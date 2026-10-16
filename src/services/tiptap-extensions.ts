@@ -31,6 +31,8 @@ import {
   Indent,
   LineHeight,
   OrderedListStyle,
+  Subscript,
+  Superscript,
 } from "@/modules/editor-kit/shared";
 
 export const serializationExtensions = [
@@ -52,6 +54,8 @@ export const serializationExtensions = [
   Strike,
   HorizontalRule,
   Underline,
+  Superscript,
+  Subscript,
   TaskList,
   TaskItem.configure({ nested: true }),
   Link.configure({ openOnClick: false }),

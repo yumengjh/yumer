@@ -96,6 +96,8 @@ export default function FloatingSelectionToolbar({
       const target = event.target;
       if (!(target instanceof Node)) return;
       if (shellRef.current?.contains(target)) return;
+      // 下拉浮层（颜色板等）挂在 body 上，点击其中内容不应隐藏浮动工具栏
+      if (target instanceof Element && target.closest(".yq-overlay")) return;
       if (editor.view.dom.contains(target)) return;
       if (timerRef.current) {
         window.clearTimeout(timerRef.current);

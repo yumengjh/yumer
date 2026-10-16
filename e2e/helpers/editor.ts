@@ -101,7 +101,7 @@ export async function dragBlockToGap(
       );
       await page.waitForTimeout(120);
 
-      const handle = page.locator(".block-handle-wrapper .block-handle__btn").first();
+      const handle = page.locator(".block-handle-wrapper [data-testid=\"block-handle\"]").first();
       for (let hoverAttempt = 0; hoverAttempt < 6; hoverAttempt += 1) {
         if (await handle.isVisible().catch(() => false)) break;
         await page.mouse.move(hoverX, hoverY, { steps: 2 });

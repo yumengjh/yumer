@@ -272,6 +272,31 @@
   line-height: 1.74;
 }
 
+/* 有序列表层级样式（对齐语雀工具栏三种列表样式卡片） */
+.tiptap-editor :where(ol ol) {
+  list-style-type: lower-alpha;
+}
+
+.tiptap-editor :where(ol ol ol) {
+  list-style-type: lower-roman;
+}
+
+.tiptap-editor ol[style*="cjk-ideographic"] ol {
+  list-style-type: none;
+}
+
+.tiptap-editor ol[style*="cjk-ideographic"] > li > ol > li::marker {
+  content: "(" counter(list-item, cjk-ideographic) ") ";
+}
+
+.tiptap-editor ol[style*="cjk-ideographic"] > li > ol ol > li::marker {
+  content: counter(list-item) ". ";
+}
+
+.tiptap-editor ol[style*="decimal-nested"] li::marker {
+  content: counters(list-item, ".") ". ";
+}
+
 .tiptap-editor :where(ul ul) {
   list-style-type: circle;
 }

@@ -1,31 +1,28 @@
-import { useMemo, useCallback, useRef, useState } from 'react';
+import { useMemo, useCallback, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Menu, message } from 'antd';
-import type { MenuProps } from 'antd';
-import { DeleteOutlined, ClearOutlined, PlusCircleOutlined } from '@ant-design/icons';
+import { createPortal } from 'react-dom';
+import { message } from 'antd';
 import { TextSelection } from '@tiptap/pm/state';
 import { useMarkdownEditor, useMarkdownEditorContext } from '../EditorContext';
 import { getTableElementFromToolbarTarget } from './blockTarget';
 import { getHeadingAnchorIdFromBlock } from './blockMenuItems';
 import { buildAnchorUrl } from '../utils/anchorId';
-import { createBlockInsertContent } from './blockInsertContent';
-import type { BlockInsertType } from './blockInsertMenuItems';
-import BlockInsertPanel from './BlockInsertPanel';
+import { runInsertCard } from './blockInsertContent';
+import BlockInsertPanel, { type InsertCardId, type InsertCardOptions } from './BlockInsertPanel';
 import YuqueIcon, { type YuqueIconName } from '../Toolbar/icons/YuqueIcon';
 
 interface BlockMenuProps {
-  /** menu：块操作菜单（默认）；insert：「+」按钮打开的插入面板（插入到下方） */
+  /** menu：块操作菜单（默认）；insert：空段落「+」打开的插入面板（插入到下方） */
   mode?: 'menu' | 'insert';
+  /** 块手柄元素，菜单相对它定位 */
+  anchorRef: React.RefObject<HTMLElement | null>;
   onClose: () => void;
   hoveredBlock: HTMLElement | null;
   hoveredTableCell?: HTMLTableCellElement | null;
   onWillDeleteBlock?: (fallbackBlock: HTMLElement | null) => void;
 }
 
-function getPMDepth(
-  el: HTMLElement,
-  view: import('prosemirror-view').EditorView
-): number {
+function getPMDepth(el: HTMLElement, view: import('prosemirror-view').EditorView): number {
   try {
     const $pos = view.state.doc.resolve(view.posAtDOM(el, 0));
     return Math.max(1, $pos.depth);
@@ -37,7 +34,7 @@ function getPMDepth(
 
 function getBlockRange(
   el: HTMLElement,
-  view: import('prosemirror-view').EditorView
+  view: import('prosemirror-view').EditorView,
 ): { from: number; to: number; depth: number } | null {
   try {
     const { doc } = view.state;
@@ -51,10 +48,7 @@ function getBlockRange(
   }
 }
 
-function getTopLevelAncestor(
-  el: HTMLElement,
-  editorDom: Element
-): HTMLElement {
+function getTopLevelAncestor(el: HTMLElement, editorDom: Element): HTMLElement {
   let cur: HTMLElement = el;
   while (cur.parentElement && cur.parentElement !== editorDom) {
     cur = cur.parentElement;
@@ -73,26 +67,31 @@ type ConvertTarget =
   | 'bulletList'
   | 'orderedList'
   | 'taskList'
-  | 'blockquote'
-  | 'codeBlock';
+  | 'codeBlock'
+  | 'highlightBlock'
+  | 'blockquote';
 
-// 语雀「转换」面板：6 列图标网格
-const CONVERT_ITEMS: Array<{ key: ConvertTarget; label: string; icon: YuqueIconName }> = [
-  { key: 'paragraph', label: '正文', icon: 'EditorParagraph' },
-  { key: 'heading1', label: '标题 1', icon: 'EditorH1' },
-  { key: 'heading2', label: '标题 2', icon: 'EditorH2' },
-  { key: 'heading3', label: '标题 3', icon: 'EditorH3' },
-  { key: 'heading4', label: '标题 4', icon: 'EditorH4' },
-  { key: 'heading5', label: '标题 5', icon: 'EditorH5' },
-  { key: 'heading6', label: '标题 6', icon: 'EditorH6' },
-  { key: 'orderedList', label: '有序列表', icon: 'EditorOrderedList' },
-  { key: 'bulletList', label: '无序列表', icon: 'EditorUnorderedList' },
-  { key: 'taskList', label: '任务列表', icon: 'EditorTaskList' },
-  { key: 'blockquote', label: '引用', icon: 'EditorQuote' },
+// 语雀「转化为」面板：上方 6 列图标网格，下方两列卡片
+const CONVERT_ICONS: Array<{ key: ConvertTarget; label: string; icon: YuqueIconName }> = [
+  { key: 'heading1', label: '标题 1', icon: 'card-h1' },
+  { key: 'heading2', label: '标题 2', icon: 'card-h2' },
+  { key: 'heading3', label: '标题 3', icon: 'card-h3' },
+  { key: 'heading4', label: '标题 4', icon: 'card-h4' },
+  { key: 'heading5', label: '标题 5', icon: 'card-h5' },
+  { key: 'heading6', label: '标题 6', icon: 'card-h6' },
+  { key: 'paragraph', label: '正文', icon: 'EditorFontsize' },
+  { key: 'orderedList', label: '有序列表', icon: 't-order-list' },
+  { key: 'bulletList', label: '无序列表', icon: 't-unorder-list' },
+  { key: 'taskList', label: '任务列表', icon: 't-task-list' },
   { key: 'codeBlock', label: '代码块', icon: 'EditorCodeblock' },
 ];
 
-/** 当前块对应的「转换」类型，用于高亮 */
+const CONVERT_CARDS: Array<{ key: ConvertTarget; label: string; icon: YuqueIconName }> = [
+  { key: 'highlightBlock', label: '高亮块', icon: 'EditorMainHighlightBlock' },
+  { key: 'blockquote', label: '引用', icon: 'EditorMainReference' },
+];
+
+/** 当前块对应的「转化为」类型，用于高亮 */
 function detectConvertTarget(block: HTMLElement | null): ConvertTarget | null {
   if (!block) return null;
   const tag = block.tagName;
@@ -116,30 +115,108 @@ type BrickMenuEntry =
       key: string;
       icon: YuqueIconName;
       label: string;
-      desc?: string;
       submenu?: SubmenuKey;
+      disabled?: boolean;
       onClick?: () => void;
     };
 
-export function BlockMenu({ mode = 'menu', onClose, hoveredBlock, hoveredTableCell, onWillDeleteBlock }: BlockMenuProps) {
+const VIEWPORT_GAP = 8;
+
+function BrickItem({
+  entry,
+  open,
+  onEnter,
+  onSelect,
+}: {
+  entry: Exclude<BrickMenuEntry, '|'>;
+  open?: boolean;
+  onEnter?: (element: HTMLElement) => void;
+  onSelect: (element: HTMLElement) => void;
+}) {
+  return (
+    <div
+      className={`yq-brick-item${open ? ' is-open' : ''}${entry.disabled ? ' is-disabled' : ''}`}
+      data-action={entry.key}
+      data-testid={`brick-menu-${entry.key}`}
+      onMouseEnter={(event) => onEnter?.(event.currentTarget)}
+      onClick={(event) => {
+        if (entry.disabled) return;
+        onSelect(event.currentTarget);
+      }}
+    >
+      <YuqueIcon name={entry.icon} className="yq-brick-item__icon" />
+      <span className="yq-brick-item__text">{entry.label}</span>
+      {entry.submenu && <YuqueIcon name="ArrowRight" className="yq-brick-item__arrow" />}
+    </div>
+  );
+}
+
+export function BlockMenu({
+  mode = 'menu',
+  anchorRef,
+  onClose,
+  hoveredBlock,
+  hoveredTableCell,
+  onWillDeleteBlock,
+}: BlockMenuProps) {
   const editor = useMarkdownEditor();
   const { uploadImage } = useMarkdownEditorContext();
-  const menuRootRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const subRef = useRef<HTMLDivElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const submenuHideTimerRef = useRef<number | null>(null);
+  const submenuItemRef = useRef<HTMLElement | null>(null);
   const [activeSubmenu, setActiveSubmenu] = useState<SubmenuKey | null>(null);
-  const [submenuTop, setSubmenuTop] = useState(0);
-  const [pendingImageSide, setPendingImageSide] = useState<'above' | 'below' | null>(null);
+  const [menuPos, setMenuPos] = useState<{ left: number; top: number } | null>(null);
+  const [subPos, setSubPos] = useState<{ key: SubmenuKey; left: number; top: number } | null>(null);
 
-  const tableElement = useMemo(
-    () => getTableElementFromToolbarTarget(hoveredBlock),
-    [hoveredBlock],
-  );
+  const tableElement = useMemo(() => getTableElementFromToolbarTarget(hoveredBlock), [hoveredBlock]);
   const isTableTarget = Boolean(tableElement);
-  const headingAnchorId = useMemo(
-    () => getHeadingAnchorIdFromBlock(hoveredBlock),
-    [hoveredBlock],
-  );
+  const headingAnchorId = useMemo(() => getHeadingAnchorIdFromBlock(hoveredBlock), [hoveredBlock]);
+
+  /* ---------------- 定位：菜单右缘对齐手柄右缘，位于手柄下方 4px；放不下时翻到上方 ---------------- */
+  useLayoutEffect(() => {
+    const update = () => {
+      const anchor = anchorRef.current;
+      const menu = menuRef.current;
+      if (!anchor || !menu) return;
+      const a = anchor.getBoundingClientRect();
+      const width = menu.offsetWidth;
+      const height = menu.offsetHeight;
+      let left = mode === 'insert' ? a.left : a.right - width;
+      left = Math.max(VIEWPORT_GAP, Math.min(left, window.innerWidth - width - VIEWPORT_GAP));
+      let top = a.bottom + 4;
+      if (top + height > window.innerHeight - VIEWPORT_GAP) {
+        top = Math.max(VIEWPORT_GAP, a.top - 4 - height);
+      }
+      setMenuPos((prev) => (prev && prev.left === left && prev.top === top ? prev : { left, top }));
+    };
+    update();
+    window.addEventListener('scroll', update, true);
+    window.addEventListener('resize', update);
+    return () => {
+      window.removeEventListener('scroll', update, true);
+      window.removeEventListener('resize', update);
+    };
+  }, [anchorRef, mode, isTableTarget]);
+
+  /* ---------------- 子菜单：出现在菜单右侧 4px，垂直居中于菜单项并限制在视口内 ---------------- */
+  useLayoutEffect(() => {
+    if (!activeSubmenu) return;
+    const item = submenuItemRef.current;
+    const menu = menuRef.current;
+    const sub = subRef.current;
+    if (!item || !menu || !sub) return;
+    const itemRect = item.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    const width = sub.offsetWidth;
+    const height = sub.offsetHeight;
+    let left = menuRect.right + 4;
+    if (left + width > window.innerWidth - VIEWPORT_GAP) left = menuRect.left - 4 - width;
+    const centered = itemRect.top + itemRect.height / 2 - height / 2;
+    const top = Math.max(VIEWPORT_GAP, Math.min(centered, window.innerHeight - height - VIEWPORT_GAP));
+    setSubPos({ key: activeSubmenu, left, top });
+  }, [activeSubmenu, menuPos]);
 
   const clearSubmenuHideTimer = useCallback(() => {
     if (submenuHideTimerRef.current) {
@@ -158,12 +235,11 @@ export function BlockMenu({ mode = 'menu', onClose, hoveredBlock, hoveredTableCe
 
   const openSubmenu = useCallback((key: SubmenuKey, itemElement: HTMLElement) => {
     clearSubmenuHideTimer();
-    const menuRect = menuRootRef.current?.getBoundingClientRect();
-    const itemRect = itemElement.getBoundingClientRect();
-    if (menuRect) setSubmenuTop(Math.max(0, itemRect.top - menuRect.top - 8));
+    submenuItemRef.current = itemElement;
     setActiveSubmenu(key);
   }, [clearSubmenuHideTimer]);
 
+  /* ---------------- 块操作 ---------------- */
   const deleteBlock = useCallback(async () => {
     if (!editor || !hoveredBlock) return;
     const { view } = editor;
@@ -171,28 +247,22 @@ export function BlockMenu({ mode = 'menu', onClose, hoveredBlock, hoveredTableCe
     const range = getBlockRange(hoveredBlock, view);
     if (!range) return;
 
-    // Remember the block's viewport position BEFORE delete for fallback resolution
     const blockRect = hoveredBlock.getBoundingClientRect();
     const centerX = blockRect.left + blockRect.width / 2;
     const centerY = blockRect.top + blockRect.height / 2;
 
-    // Execute the delete transaction
     const tr = view.state.tr;
-    if (range.depth > 1 && hoveredBlock.parentElement &&
-        hoveredBlock.parentElement.children.length <= 1) {
+    if (range.depth > 1 && hoveredBlock.parentElement && hoveredBlock.parentElement.children.length <= 1) {
       const parentRange = getBlockRange(hoveredBlock.parentElement, view);
-      if (parentRange) {
-        tr.delete(parentRange.from, parentRange.to);
-      }
+      if (parentRange) tr.delete(parentRange.from, parentRange.to);
     } else if (view.state.doc.childCount <= 1) {
-      tr.delete(0, doc.content.size)
-        .insert(0, view.state.schema.nodes.paragraph.create());
+      tr.delete(0, doc.content.size).insert(0, view.state.schema.nodes.paragraph.create());
     } else {
       tr.delete(range.from, range.to);
     }
     view.dispatch(tr);
 
-    // AFTER the transaction: resolve fallback using mapped position + coords fallback
+    // 删除后按映射位置 / 原坐标找到相邻块，供手柄重新定位
     let fallbackEl: HTMLElement | null = null;
     try {
       const mappedPos = tr.mapping.map(range.from);
@@ -200,17 +270,14 @@ export function BlockMenu({ mode = 'menu', onClose, hoveredBlock, hoveredTableCe
       const $mapped = view.state.doc.resolve(clampedPos);
       if ($mapped.depth >= 1) {
         const topLevelPos = $mapped.before(1);
-        const topLevelNode = view.state.doc.nodeAt(topLevelPos);
-        if (topLevelNode) {
+        if (view.state.doc.nodeAt(topLevelPos)) {
           const domNode = view.nodeDOM(topLevelPos);
-          fallbackEl = domNode instanceof HTMLElement ? domNode : (domNode as Node)?.parentElement as HTMLElement | null;
+          fallbackEl = domNode instanceof HTMLElement ? domNode : ((domNode as Node)?.parentElement as HTMLElement | null);
         }
       }
     } catch {
-      // Position mapping failed, will use coords fallback below
+      // 位置映射失败时用坐标兜底
     }
-
-    // If position mapping didn't find a valid element, use coordinates
     if (!fallbackEl || !view.dom.contains(fallbackEl)) {
       const domEl = document.elementFromPoint(centerX, centerY);
       if (domEl && view.dom.contains(domEl)) {
@@ -218,12 +285,9 @@ export function BlockMenu({ mode = 'menu', onClose, hoveredBlock, hoveredTableCe
         fallbackEl = el ? getTopLevelAncestor(el, view.dom) : null;
       }
     }
-
-    // If still no fallback, try to find ANY top-level child in the editor
-    if (!fallbackEl || fallbackEl === view.dom as HTMLElement) {
+    if (!fallbackEl || fallbackEl === (view.dom as HTMLElement)) {
       fallbackEl = view.dom.firstElementChild as HTMLElement | null;
     }
-
     onWillDeleteBlock?.(fallbackEl);
   }, [editor, hoveredBlock, onWillDeleteBlock]);
 
@@ -245,10 +309,8 @@ export function BlockMenu({ mode = 'menu', onClose, hoveredBlock, hoveredTableCe
 
   const copyAnchorLink = useCallback(async () => {
     if (!headingAnchorId) return;
-
     const url = buildAnchorUrl(window.location.href, headingAnchorId);
     window.history.replaceState(null, '', url);
-
     try {
       await navigator.clipboard.writeText(url);
       message.success('锚点链接已复制');
@@ -260,7 +322,7 @@ export function BlockMenu({ mode = 'menu', onClose, hoveredBlock, hoveredTableCe
   const canConvert = Boolean(hoveredBlock && CONVERTIBLE_TAGS.has(hoveredBlock.tagName) && !isTableTarget);
   const currentConvertTarget = useMemo(() => detectConvertTarget(hoveredBlock), [hoveredBlock]);
 
-  // 转换：先把列表/引用拆回段落，再应用目标类型
+  // 转化：先把列表/引用拆回段落，再应用目标类型
   const convertBlock = useCallback((target: ConvertTarget) => {
     if (!editor || !hoveredBlock || !canConvert) return;
     const range = getBlockRange(hoveredBlock, editor.view);
@@ -287,26 +349,11 @@ export function BlockMenu({ mode = 'menu', onClose, hoveredBlock, hoveredTableCe
       case 'taskList': chain.setParagraph().toggleTaskList(); break;
       case 'blockquote': chain.setParagraph().wrapIn('blockquote'); break;
       case 'codeBlock': chain.setNode('codeBlock'); break;
+      case 'highlightBlock': chain.toggleHighlightBlockFromSelection(); break;
       default: break;
     }
     chain.run();
   }, [editor, hoveredBlock, canConvert]);
-
-  const insertBlock = useCallback((where: 'above' | 'below', type: BlockInsertType = 'paragraph') => {
-    if (!editor || !hoveredBlock || isTableTarget) return;
-    const range = getBlockRange(hoveredBlock, editor.view);
-    if (!range) return;
-    const insertAt = where === 'above' ? range.from : range.to;
-    editor.chain().focus().insertContentAt(insertAt, createBlockInsertContent(type)).run();
-  }, [editor, hoveredBlock, isTableTarget]);
-
-  const insertTable = useCallback((where: 'above' | 'below', rows: number, cols: number) => {
-    if (!editor || !hoveredBlock || isTableTarget) return;
-    const range = getBlockRange(hoveredBlock, editor.view);
-    if (!range) return;
-    const insertAt = where === 'above' ? range.from : range.to;
-    editor.chain().focus().setTextSelection(insertAt).insertTable({ rows, cols, withHeaderRow: true }).run();
-  }, [editor, hoveredBlock, isTableTarget]);
 
   const runIndent = useCallback((direction: 'indent' | 'outdent') => {
     if (!editor || !hoveredBlock) return;
@@ -318,17 +365,63 @@ export function BlockMenu({ mode = 'menu', onClose, hoveredBlock, hoveredTableCe
     else chain.outdent().run();
   }, [editor, hoveredBlock]);
 
+  const insertCardBelow = useCallback((id: InsertCardId, options?: InsertCardOptions) => {
+    if (!editor || !hoveredBlock) return;
+    if (id === 'image') {
+      if (!uploadImage) {
+        message.error('未选择工作空间');
+        return;
+      }
+      imageInputRef.current?.click();
+      return;
+    }
+    const range = getBlockRange(hoveredBlock, editor.view);
+    if (!range) return;
+    runInsertCard(editor, id, options, range.to);
+    onClose();
+  }, [editor, hoveredBlock, onClose, uploadImage]);
+
+  const handleImageFile = useCallback(async (file: File) => {
+    if (!editor || !uploadImage || !hoveredBlock) return;
+    const range = getBlockRange(hoveredBlock, editor.view);
+    if (!range) return;
+    try {
+      const image = await uploadImage(file);
+      editor
+        .chain()
+        .focus()
+        .insertContentAt(range.to, {
+          type: 'imageBlock',
+          attrs: {
+            imageId: image.imageId,
+            src: image.publicUrl || image.url,
+            filename: image.filename,
+            mimeType: image.mimeType,
+            size: image.size,
+            naturalWidth: image.width,
+            naturalHeight: image.height,
+            width: image.width,
+            height: image.height,
+            alt: image.filename,
+          },
+        })
+        .run();
+      onClose();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '图片上传失败');
+    }
+  }, [editor, hoveredBlock, onClose, uploadImage]);
+
+  /* ---------------- 表格 ---------------- */
   const focusTableCell = useCallback(() => {
     if (!editor || !tableElement) return;
     const cell = hoveredTableCell ?? tableElement.querySelector<HTMLTableCellElement>('td,th');
     if (!cell) return;
-
     try {
       const { view } = editor;
       const pos = view.posAtDOM(cell, 0);
       const safePos = Math.min(pos + 1, view.state.doc.content.size);
-      const selection = TextSelection.near(view.state.doc.resolve(safePos));
-      view.dispatch(view.state.tr.setSelection(selection));
+      view.dispatch(view.state.tr.setSelection(TextSelection.near(view.state.doc.resolve(safePos))));
       view.focus();
     } catch (error) {
       console.error('[BlockMenu] focus table cell failed:', error);
@@ -339,7 +432,6 @@ export function BlockMenu({ mode = 'menu', onClose, hoveredBlock, hoveredTableCe
   const runTableCommand = useCallback((key: string) => {
     if (!editor || !tableElement) return;
     focusTableCell();
-
     const chain = editor.chain().focus();
     switch (key) {
       case 'addRowBefore': chain.addRowBefore().run(); break;
@@ -356,68 +448,30 @@ export function BlockMenu({ mode = 'menu', onClose, hoveredBlock, hoveredTableCe
     }
   }, [editor, tableElement, focusTableCell]);
 
-  const handleImageFile = useCallback(async (file: File) => {
-    if (!editor || !uploadImage || !pendingImageSide || !hoveredBlock) return;
-    const range = getBlockRange(hoveredBlock, editor.view);
-    if (!range) return;
+  const tableEntries: BrickMenuEntry[] = [
+    { key: 'addRowBefore', icon: 'Add', label: '上方插入行', onClick: () => runTableCommand('addRowBefore') },
+    { key: 'addRowAfter', icon: 'Add', label: '下方插入行', onClick: () => runTableCommand('addRowAfter') },
+    { key: 'deleteRow', icon: 'c-tb-delete', label: '删除当前行', onClick: () => runTableCommand('deleteRow') },
+    '|',
+    { key: 'addColumnBefore', icon: 'Add', label: '左侧插入列', onClick: () => runTableCommand('addColumnBefore') },
+    { key: 'addColumnAfter', icon: 'Add', label: '右侧插入列', onClick: () => runTableCommand('addColumnAfter') },
+    { key: 'deleteColumn', icon: 'c-tb-delete', label: '删除当前列', onClick: () => runTableCommand('deleteColumn') },
+    '|',
+    { key: 'mergeCells', icon: 'EditorMainTable', label: '合并单元格', onClick: () => runTableCommand('mergeCells') },
+    { key: 'splitCell', icon: 'EditorMainTable', label: '拆分单元格', onClick: () => runTableCommand('splitCell') },
+    { key: 'toggleHeaderRow', icon: 'EditorMainTable', label: '切换表头行', onClick: () => runTableCommand('toggleHeaderRow') },
+    '|',
+    { key: 'deleteTable', icon: 'c-tb-delete', label: '删除表格', onClick: () => runTableCommand('deleteTable') },
+  ];
 
-    try {
-      const image = await uploadImage(file);
-      const insertAt = pendingImageSide === 'above' ? range.from : range.to;
-      editor
-        .chain()
-        .focus()
-        .insertContentAt(insertAt, {
-          type: 'imageBlock',
-          attrs: {
-            imageId: image.imageId,
-            src: image.publicUrl || image.url,
-            filename: image.filename,
-            mimeType: image.mimeType,
-            size: image.size,
-            naturalWidth: image.width,
-            naturalHeight: image.height,
-            width: image.width,
-            height: image.height,
-            alt: image.filename,
-          },
-        })
-        .run();
-      setPendingImageSide(null);
-      onClose();
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '图片上传失败');
-    }
-  }, [editor, hoveredBlock, onClose, pendingImageSide, uploadImage]);
-
-  const tableItems: MenuProps['items'] = useMemo(() => [
-    { key: 'addRowBefore', icon: <PlusCircleOutlined />, label: '上方插入行' },
-    { key: 'addRowAfter', icon: <PlusCircleOutlined />, label: '下方插入行' },
-    { key: 'deleteRow', icon: <DeleteOutlined />, label: '删除当前行' },
-    { type: 'divider' },
-    { key: 'addColumnBefore', icon: <PlusCircleOutlined />, label: '左侧插入列' },
-    { key: 'addColumnAfter', icon: <PlusCircleOutlined />, label: '右侧插入列' },
-    { key: 'deleteColumn', icon: <DeleteOutlined />, label: '删除当前列' },
-    { type: 'divider' },
-    { key: 'mergeCells', icon: <ClearOutlined />, label: '合并单元格' },
-    { key: 'splitCell', icon: <ClearOutlined />, label: '拆分单元格' },
-    { key: 'toggleHeaderRow', icon: <ClearOutlined />, label: '切换表头行' },
-    { type: 'divider' },
-    { key: 'deleteTable', icon: <DeleteOutlined />, danger: true, label: '删除表格' },
-  ], []);
-
-  // 语雀块菜单：转换 | 删除 复制 剪切 | 缩进 复制链接 | 在下方添加
-  const headingLevel = /^H([1-6])$/.exec(hoveredBlock?.tagName ?? '')?.[1];
+  // 语雀块菜单：转化为 | 删除 复制 剪切 | 缩进 (复制链接) | 在下方添加
   const brickEntries: BrickMenuEntry[] = [
     ...(canConvert
-      ? ([
-          { key: 'turnInto', icon: 'Change', label: '转换', desc: headingLevel ? `H${headingLevel}` : undefined, submenu: 'turnInto' },
-          '|',
-        ] as BrickMenuEntry[])
+      ? ([{ key: 'turnInto', icon: 'Change', label: '转化为', submenu: 'turnInto' }, '|'] as BrickMenuEntry[])
       : []),
-    { key: 'delete', icon: 'NeDelete', label: '删除', onClick: () => void deleteBlock() },
-    { key: 'copy', icon: 'NeCopy', label: '复制', onClick: () => void copyBlock() },
-    { key: 'cut', icon: 'NeCut', label: '剪切', onClick: () => void copyBlock().then(() => deleteBlock()) },
+    { key: 'delete', icon: 'c-tb-delete', label: '删除', onClick: () => void deleteBlock() },
+    { key: 'copy', icon: 'c-tb-copy', label: '复制', onClick: () => void copyBlock() },
+    { key: 'cut', icon: 'cut', label: '剪切', onClick: () => void copyBlock().then(() => deleteBlock()) },
     '|',
     { key: 'indent', icon: 'EditorIndent', label: '缩进', submenu: 'indent' },
     ...(headingAnchorId
@@ -426,11 +480,6 @@ export function BlockMenu({ mode = 'menu', onClose, hoveredBlock, hoveredTableCe
     '|',
     { key: 'addBelow', icon: 'Add', label: '在下方添加', submenu: 'addBelow' },
   ];
-
-  const handleTableClick: MenuProps['onClick'] = useCallback(({ key }: { key: string }) => {
-    runTableCommand(key);
-    onClose();
-  }, [runTableCommand, onClose]);
 
   const imageInput = (
     <input
@@ -446,146 +495,131 @@ export function BlockMenu({ mode = 'menu', onClose, hoveredBlock, hoveredTableCe
     />
   );
 
-  const renderInsertPanel = (side: 'above' | 'below', extra?: { onMouseEnter?: () => void; onMouseLeave?: () => void }) => (
-    <BlockInsertPanel
-      onMouseEnter={extra?.onMouseEnter}
-      onMouseLeave={extra?.onMouseLeave}
-      onInsertBlock={(type) => {
-        insertBlock(side, type);
-        onClose();
-      }}
-      onInsertTable={(rows, cols) => {
-        insertTable(side, rows, cols);
-        onClose();
-      }}
-      onInsertImage={() => {
-        if (!uploadImage) {
-          message.error('未选择工作空间');
-          return;
-        }
-        setPendingImageSide(side);
-        imageInputRef.current?.click();
-      }}
-      onClose={onClose}
-    />
-  );
-
-  if (isTableTarget) {
-    return (
-      <div ref={menuRootRef} className="block-menu-popover block-menu-popover--table">
-        <Menu
-          items={tableItems}
-          onClick={handleTableClick}
-          selectable={false}
-          style={{ border: 'none', borderRadius: 6 }}
+  const renderEntries = (entries: BrickMenuEntry[], withSubmenus: boolean) =>
+    entries.map((entry, index) => {
+      if (entry === '|') return <div key={`divider-${index}`} className="yq-brick-divider" />;
+      return (
+        <BrickItem
+          key={entry.key}
+          entry={entry}
+          open={Boolean(entry.submenu && activeSubmenu === entry.submenu)}
+          onEnter={(element) => {
+            if (!withSubmenus) return;
+            if (entry.submenu) openSubmenu(entry.submenu, element);
+            else scheduleCloseSubmenu();
+          }}
+          onSelect={(element) => {
+            if (entry.submenu) {
+              openSubmenu(entry.submenu, element);
+              return;
+            }
+            entry.onClick?.();
+            onClose();
+          }}
         />
-      </div>
-    );
-  }
-
-  if (mode === 'insert') {
-    return (
-      <div ref={menuRootRef} className="block-menu-popover block-menu-popover--insert">
-        {imageInput}
-        {renderInsertPanel('below')}
-      </div>
-    );
-  }
+      );
+    });
 
   let submenuContent: ReactNode = null;
   if (activeSubmenu === 'turnInto') {
     submenuContent = (
-      <div className="brick-turn-into">
-        <div className="brick-turn-into__icons">
-          {CONVERT_ITEMS.map((item) => (
-            <button
+      <div className="yq-turn-into">
+        <div className="yq-turn-into__icons">
+          {CONVERT_ICONS.map((item) => (
+            <div
               key={item.key}
-              type="button"
               title={item.label}
               aria-label={item.label}
-              className={`brick-turn-into__icon${currentConvertTarget === item.key ? ' is-selected' : ''}`}
-              onMouseDown={(event) => event.preventDefault()}
+              data-testid={`turn-into-${item.key}`}
+              className={`yq-turn-into__icon${currentConvertTarget === item.key ? ' is-selected' : ''}`}
               onClick={() => {
                 convertBlock(item.key);
                 onClose();
               }}
             >
               <YuqueIcon name={item.icon} />
-            </button>
+            </div>
+          ))}
+        </div>
+        <div className="yq-turn-into__cards">
+          {CONVERT_CARDS.map((item) => (
+            <div
+              key={item.key}
+              data-testid={`turn-into-${item.key}`}
+              className={`yq-turn-into__card${currentConvertTarget === item.key ? ' is-selected' : ''}`}
+              onClick={() => {
+                convertBlock(item.key);
+                onClose();
+              }}
+            >
+              <span className="yq-turn-into__card-icon">
+                <YuqueIcon name={item.icon} />
+              </span>
+              <span>{item.label}</span>
+            </div>
           ))}
         </div>
       </div>
     );
   } else if (activeSubmenu === 'indent') {
     submenuContent = (
-      <div className="brick-menu brick-menu--sub">
-        {([
-          ['indent', 'EditorIndent', '增加缩进'],
-          ['outdent', 'EditorOutdent', '减少缩进'],
-        ] as const).map(([key, icon, label]) => (
-          <div
-            key={key}
-            className="brick-menu__item"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => {
-              runIndent(key);
-              onClose();
-            }}
-          >
-            <YuqueIcon name={icon} className="brick-menu__icon" />
-            <span className="brick-menu__text">{label}</span>
-          </div>
-        ))}
+      <div className="yq-brick-menu__list">
+        {renderEntries(
+          [
+            { key: 'indent-right', icon: 'EditorIndent', label: '增加缩进', onClick: () => runIndent('indent') },
+            { key: 'indent-left', icon: 'EditorOutdent', label: '减少缩进', onClick: () => runIndent('outdent') },
+          ],
+          false,
+        )}
       </div>
     );
   } else if (activeSubmenu === 'addBelow') {
-    submenuContent = renderInsertPanel('below');
+    submenuContent = <BlockInsertPanel className="yq-insert-panel--brick" onSelect={insertCardBelow} />;
   }
 
-  return (
-    <div ref={menuRootRef} className="block-menu-popover block-menu-popover--brick">
+  const hiddenUntilPlaced: React.CSSProperties = menuPos
+    ? { left: menuPos.left, top: menuPos.top }
+    : { left: -9999, top: -9999, visibility: 'hidden' };
+
+  let body: ReactNode;
+  if (isTableTarget) {
+    body = <div className="yq-brick-menu__list">{renderEntries(tableEntries, false)}</div>;
+  } else if (mode === 'insert') {
+    body = <BlockInsertPanel className="yq-insert-panel--brick" onSelect={insertCardBelow} />;
+  } else {
+    body = (
+      <div className="yq-brick-menu__list" onMouseLeave={scheduleCloseSubmenu}>
+        {renderEntries(brickEntries, true)}
+      </div>
+    );
+  }
+
+  return createPortal(
+    <>
       {imageInput}
-      <div className="brick-menu" onMouseLeave={scheduleCloseSubmenu}>
-        {brickEntries.map((entry, index) => {
-          if (entry === '|') return <div key={`divider-${index}`} className="brick-menu__divider" />;
-          const isOpen = entry.submenu && activeSubmenu === entry.submenu;
-          return (
-            <div
-              key={entry.key}
-              className={`brick-menu__item${isOpen ? ' is-open' : ''}`}
-              data-testid={`brick-menu-${entry.key}`}
-              onMouseEnter={(event) => {
-                if (entry.submenu) openSubmenu(entry.submenu, event.currentTarget);
-                else scheduleCloseSubmenu();
-              }}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={(event) => {
-                if (entry.submenu) {
-                  openSubmenu(entry.submenu, event.currentTarget);
-                  return;
-                }
-                entry.onClick?.();
-                onClose();
-              }}
-            >
-              <YuqueIcon name={entry.icon} className="brick-menu__icon" />
-              <span className="brick-menu__text">{entry.label}</span>
-              {entry.desc && <span className="brick-menu__desc">{entry.desc}</span>}
-              {entry.submenu && <YuqueIcon name="ArrowRight" className="brick-menu__arrow" />}
-            </div>
-          );
-        })}
+      <div
+        ref={menuRef}
+        className={`block-menu-popover ${mode === 'insert' && !isTableTarget ? 'yq-brick-insert' : 'yq-brick-menu'}`}
+        style={hiddenUntilPlaced}
+        onMouseDown={(event) => {
+          if (!(event.target as HTMLElement).closest('input')) event.preventDefault();
+        }}
+      >
+        {body}
       </div>
       {submenuContent && (
         <div
-          className="brick-submenu"
-          style={{ top: submenuTop }}
+          ref={subRef}
+          className={`block-menu-popover yq-brick-sub yq-brick-sub--${activeSubmenu}`}
+          style={subPos && subPos.key === activeSubmenu ? { left: subPos.left, top: subPos.top } : { left: -9999, top: -9999, visibility: 'hidden' }}
           onMouseEnter={clearSubmenuHideTimer}
           onMouseLeave={scheduleCloseSubmenu}
+          onMouseDown={(event) => event.preventDefault()}
         >
           {submenuContent}
         </div>
       )}
-    </div>
+    </>,
+    document.body,
   );
 }

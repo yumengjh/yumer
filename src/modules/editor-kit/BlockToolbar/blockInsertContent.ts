@@ -36,6 +36,17 @@ function tableRow(header = false): JSONContent {
   };
 }
 
+/** 指定行列的表格（首行为表头） */
+export function createTableContent(rows: number, cols: number): JSONContent {
+  return {
+    type: "table",
+    content: Array.from({ length: rows }, (_, row) => ({
+      type: "tableRow",
+      content: Array.from({ length: cols }, () => tableCell(row === 0 ? "tableHeader" : "tableCell")),
+    })),
+  };
+}
+
 export function createBlockInsertContent(type: BlockInsertType): JSONContent {
   switch (type) {
     case "paragraph":
@@ -86,4 +97,49 @@ export function createBlockInsertContent(type: BlockInsertType): JSONContent {
         content: [tableRow(true), tableRow(), tableRow()],
       };
   }
+}
+
+/**
+ * 执行插入面板（BlockInsertPanel）的卡片插入。
+ * at 为空时在当前选区插入（工具栏「+」），否则插入到指定文档位置（块菜单「在下方添加」）。
+ * 图片需要先上传，由调用方处理。
+ */
+export function runInsertCard(
+  editor: import("@tiptap/core").Editor,
+  id: Exclude<import("./BlockInsertPanel").InsertCardId, "image">,
+  options?: { rows?: number; cols?: number },
+  at?: number,
+): boolean {
+  const rows = options?.rows ?? 3;
+  const cols = options?.cols ?? 3;
+  const chain = editor.chain().focus();
+  if (typeof at === "number") {
+    switch (id) {
+      case "table":
+        return chain.insertContentAt(at, createTableContent(rows, cols)).run();
+      case "codeBlock":
+        return chain.insertContentAt(at, { type: "codeBlock", attrs: { language: "plaintext" } }).run();
+      case "highlightBlock":
+        return chain.insertContentAt(at, { type: "highlightBlock", content: [paragraph()] }).run();
+      case "blockquote":
+        return chain.insertContentAt(at, createBlockInsertContent("blockquote")).run();
+      case "divider":
+        return chain.insertContentAt(at, [{ type: "horizontalRule" }, paragraph()]).run();
+    }
+  }
+  switch (id) {
+    case "table":
+      return chain.insertTable({ rows, cols, withHeaderRow: true }).run();
+    case "codeBlock":
+      return chain.setCodeBlock({ language: "plaintext" }).run();
+    case "highlightBlock":
+      return editor.state.selection.empty
+        ? chain.insertHighlightBlock().run()
+        : chain.toggleHighlightBlockFromSelection().run();
+    case "blockquote":
+      return chain.toggleBlockquote().run();
+    case "divider":
+      return chain.setHorizontalRule().run();
+  }
+  return false;
 }

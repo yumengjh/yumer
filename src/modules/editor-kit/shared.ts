@@ -58,6 +58,7 @@ export type {
   ImageStyleOption,
 } from "./extensions/imageBlock";
 export { HeadingAnchor } from "./extensions/headingAnchor";
+export { Superscript, Subscript } from "./extensions/scriptMarks";
 export type {
   EditorContent,
   EditorImageUploadHandler,

@@ -40,6 +40,7 @@ import { TableHeader } from "@tiptap/extension-table-header";
 import HorizontalRule from "@tiptap/extension-horizontal-rule";
 import { createPasteHandlerExtension } from "./extensions/pasteHandler";
 import { createFontSizeExtension } from "./extensions/fontSize";
+import { Superscript, Subscript } from "./extensions/scriptMarks";
 import { ListTypography } from "./extensions/listTypography";
 import { TableIndexColumn } from "./extensions/tableIndexColumn";
 import { OrderedListStyle } from "./extensions/orderedListStyle";
@@ -739,6 +740,8 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
           placeholder,
         }),
         Underline,
+        Superscript,
+        Subscript,
         TaskList.configure({
           HTMLAttributes: {
             class: "task-list",

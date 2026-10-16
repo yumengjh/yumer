@@ -89,6 +89,13 @@
   --yq-arrow: #848484;
   --yq-overlay-bg: #1f1f1f;
   --yq-overlay-shadow: 0 1px 4px -2px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.32), 0 8px 16px 4px rgba(0, 0, 0, 0.24);
+  --yq-icon-primary: #e2e2e2;
+  --yq-border-light: rgba(255, 255, 255, 0.06);
+  --yq-focus-bg: rgba(17, 124, 238, 0.32);
+  --yq-card-border-hover: #3f78b8;
+  --yq-card-border-selected: #4c9bf5;
+  --yq-tooltip-bg: rgba(64, 64, 64, 0.96);
+  --yq-popover-shadow: 0 8px 16px 4px rgba(0, 0, 0, 0.32);
   --toolbar-bg: #1f1f1f;
   --toolbar-border: #303030;
   --toolbar-text: rgba(255, 255, 255, 0.88);
