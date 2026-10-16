@@ -3,7 +3,7 @@ import { useMarkdownEditor } from '../EditorContext';
 import { BlockHandle } from './BlockHandle';
 import { BlockMenu } from './BlockMenu';
 import { collectBlockToolbarHighlightRects, type BlockToolbarHighlightRect } from './blockHighlight';
-import { resolveBlockToolbarTarget, type BlockToolbarTarget, type BlockToolbarTargetKind } from './blockTarget';
+import { getTopLevelBlockRange, resolveBlockToolbarTarget, type BlockToolbarTarget, type BlockToolbarTargetKind } from './blockTarget';
 import { computeBlockHandlePosition, type PositionKind } from './blockPosition';
 import { shouldRetainHoveredTarget } from './targetTransition';
 import { planExplicitMoveSortKey, withExplicitMoveSortKeyAttrs } from './sortKeyReorder';
@@ -407,10 +407,11 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
 
       const sourceBlock = allBlockEls[sourceIdx];
 
-      // 获取源块?ProseMirror 位置
-      const $source = doc.resolve(view.posAtDOM(sourceBlock, 0));
-      const sourceStart = $source.before(1);
-      const sourceEnd = $source.after(1);
+      // 源块位置：按顶层序号换算（代码块等 NodeView 用 posAtDOM 会落到上一个块）
+      const sourceRange = getTopLevelBlockRange(view, sourceBlock);
+      if (!sourceRange) return;
+      const sourceStart = sourceRange.from;
+      const sourceEnd = sourceRange.to;
       const sourceNode = doc.nodeAt(sourceStart);
       if (!sourceNode) return;
 
@@ -431,14 +432,13 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
       // 计算插入位置：在目标 gap 位置之前
       let insertPos: number;
       if (targetGapIndex >= allBlockEls.length) {
-        const $last = doc.resolve(view.posAtDOM(allBlockEls[allBlockEls.length - 1], 0));
-        insertPos = $last.after(1);
+        insertPos = doc.content.size;
       } else if (targetGapIndex <= 0) {
-        const $first = doc.resolve(view.posAtDOM(allBlockEls[0], 0));
-        insertPos = $first.before(1);
+        insertPos = 0;
       } else {
-        const $target = doc.resolve(view.posAtDOM(allBlockEls[targetGapIndex], 0));
-        insertPos = $target.before(1);
+        const targetRange = getTopLevelBlockRange(view, allBlockEls[targetGapIndex]);
+        if (!targetRange) return;
+        insertPos = targetRange.from;
       }
 
       // 两步事务：先删后插，?mapping.mapPos 确保位置正确

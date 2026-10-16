@@ -185,3 +185,24 @@ export function resolveBlockToolbarTarget(
   const topLevel = getTopLevelChild(element, editorDom);
   return topLevel ? { kind: "block", element: topLevel, anchorElement: topLevel } : null;
 }
+
+/**
+ * 顶层块在文档中的范围。
+ * 代码块等 NodeView 的外层 DOM 不是 contentDOM，posAtDOM(el, 0) 会落到上一个块的末尾，
+ * 导致删除 / 拖拽误操作上一个块；顶层块按其在编辑器 DOM 中的序号换算位置。
+ */
+export function getTopLevelBlockRange(
+  view: import('prosemirror-view').EditorView,
+  element: HTMLElement,
+): { from: number; to: number; index: number } | null {
+  if (element.parentElement !== view.dom) return null;
+  const index = Array.prototype.indexOf.call(view.dom.children, element) as number;
+  const { doc } = view.state;
+  if (index < 0 || index >= doc.childCount) return null;
+  let from = 0;
+  for (let i = 0; i < index; i += 1) from += doc.child(i).nodeSize;
+  // 编辑器 DOM 子节点与文档顶层节点一一对应时才可用（防止装饰/组件插入额外 DOM）
+  const nodeDom = view.nodeDOM(from);
+  if (nodeDom !== element && !(nodeDom instanceof Node && element.contains(nodeDom))) return null;
+  return { from, to: from + doc.child(index).nodeSize, index };
+}

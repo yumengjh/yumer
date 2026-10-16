@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { message } from 'antd';
 import { TextSelection } from '@tiptap/pm/state';
 import { useMarkdownEditor, useMarkdownEditorContext } from '../EditorContext';
-import { getTableElementFromToolbarTarget } from './blockTarget';
+import { getTableElementFromToolbarTarget, getTopLevelBlockRange } from './blockTarget';
 import { getHeadingAnchorIdFromBlock } from './blockMenuItems';
 import { buildAnchorUrl } from '../utils/anchorId';
 import { runInsertCard } from './blockInsertContent';
@@ -36,16 +36,25 @@ function getBlockRange(
   el: HTMLElement,
   view: import('prosemirror-view').EditorView,
 ): { from: number; to: number; depth: number } | null {
+  const topLevel = getTopLevelBlockRange(view, el);
+  if (topLevel) return { from: topLevel.from, to: topLevel.to, depth: 1 };
   try {
     const { doc } = view.state;
     const $pos = doc.resolve(view.posAtDOM(el, 0));
     const depth = Math.min(getPMDepth(el, view), $pos.depth);
-    if (depth < 1) return null;
-    return { from: $pos.before(depth), to: $pos.after(depth), depth };
+    if (depth >= 1) {
+      const range = { from: $pos.before(depth), to: $pos.after(depth), depth };
+      // 校验解析出的节点确实对应该元素；NodeView 内部元素（如代码块的 pre）会解析到相邻块
+      const nodeDom = view.nodeDOM(range.from);
+      if (nodeDom instanceof Node && (nodeDom === el || nodeDom.contains(el))) return range;
+    }
   } catch (error) {
     console.error('[BlockMenu] resolve block range failed:', error);
-    return null;
   }
+  // 兜底：按所在顶层块计算
+  const top = getTopLevelAncestor(el, view.dom);
+  const fallback = getTopLevelBlockRange(view, top);
+  return fallback ? { from: fallback.from, to: fallback.to, depth: 1 } : null;
 }
 
 function getTopLevelAncestor(el: HTMLElement, editorDom: Element): HTMLElement {
