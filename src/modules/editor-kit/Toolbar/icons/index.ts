@@ -27,3 +27,5 @@ export { default as LineHeightIcon } from "./LineHeightIcon";
 export { default as HighlightBlockIcon } from "./HighlightBlockIcon";
 export { default as IndentIcon } from "./IndentIcon";
 export { default as OutdentIcon } from "./OutdentIcon";
+export { default as YuqueIcon } from "./YuqueIcon";
+export type { YuqueIconName } from "./YuqueIcon";

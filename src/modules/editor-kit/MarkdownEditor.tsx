@@ -695,6 +695,17 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
     [onUploadImage],
   );
 
+  // useEditor 在依赖变化（代码高亮主题切换、上传回调变化、热更新等）时会重建编辑器。
+  // 父组件的 content 只在加载/外部替换时更新，打字内容不会回写到它；
+  // 若用 content 初始化新编辑器，会把用户刚输入的内容回滚，同步层随后会把这些块当成删除。
+  // 因此重建时优先用旧编辑器的实时文档作为初始内容。
+  const liveEditorRef = useRef<Editor | null>(null);
+  const carryOverDocRef = useRef<{
+    doc: object;
+    selection: { from: number; to: number };
+    focused: boolean;
+  } | null>(null);
+
   const editor = useEditor(
     {
       extensions: [
@@ -811,9 +822,59 @@ const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(functi
         },
       },
       onUpdate: handleUpdate,
+      onDestroy: () => {
+        // 记录即将销毁的编辑器文档，供重建后的新编辑器恢复
+        const destroyed = liveEditorRef.current;
+        try {
+          carryOverDocRef.current = destroyed
+            ? {
+                doc: destroyed.getJSON(),
+                selection: {
+                  from: destroyed.state.selection.from,
+                  to: destroyed.state.selection.to,
+                },
+                focused: destroyed.isFocused,
+              }
+            : null;
+        } catch {
+          carryOverDocRef.current = null;
+        }
+      },
+      onCreate: ({ editor: created }) => {
+        const previous = liveEditorRef.current;
+        const carried =
+          carryOverDocRef.current ??
+          (previous && previous !== created && !previous.isDestroyed
+            ? {
+                doc: previous.getJSON(),
+                selection: {
+                  from: previous.state.selection.from,
+                  to: previous.state.selection.to,
+                },
+                focused: previous.isFocused,
+              }
+            : null);
+        carryOverDocRef.current = null;
+        if (!carried) return;
+        created.commands.setContent(carried.doc, { emitUpdate: false });
+        // 恢复光标与焦点，用户可以无感继续输入
+        const size = created.state.doc.content.size;
+        const from = Math.min(carried.selection.from, size);
+        const to = Math.min(carried.selection.to, size);
+        try {
+          created.commands.setTextSelection({ from, to });
+        } catch {
+          // 位置失效时忽略，保持默认选区
+        }
+        if (carried.focused) created.commands.focus();
+      },
     },
     [codeBlockExtension, handleUploadImageFile],
   );
+
+  useEffect(() => {
+    liveEditorRef.current = editor ?? null;
+  }, [editor]);
 
   const handleTitleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

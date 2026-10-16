@@ -75,6 +75,22 @@
 
   /* ========== Component Specific ========== */
   /* Toolbar */
+  /* 语雀（Yuque）编辑器色板 */
+  --yq-grey-100: #fafafa;
+  --yq-grey-200: #f4f5f5;
+  --yq-grey-300: #eff0f0;
+  --yq-grey-400: #e7e9e8;
+  --yq-grey-500: #d8dad9;
+  --yq-grey-600: #bec0bf;
+  --yq-grey-700: #8a8f8d;
+  --yq-grey-800: #585a5a;
+  --yq-grey-900: #262626;
+  --yq-theme: #00b96b;
+  --yq-blue-50: #ecf4fd;
+  --yq-blue-600: #117cee;
+  --yq-arrow: #8c8c8c;
+  --yq-overlay-bg: #ffffff;
+  --yq-overlay-shadow: 0 1px 4px -2px rgba(0, 0, 0, 0.13), 0 2px 8px rgba(0, 0, 0, 0.08), 0 8px 16px 4px rgba(0, 0, 0, 0.04);
   --toolbar-bg: #ffffff;
   --toolbar-border: #ebebeb;
   --toolbar-text: rgba(0, 0, 0, 0.88);

@@ -226,7 +226,7 @@ const ACTIONS: FuzzAction[] = [
       await page.evaluate(async (text) => {
         await navigator.clipboard.writeText(text);
       }, lines.join("\n"));
-      await page.keyboard.press("Control+V");
+      await page.keyboard.press("ControlOrMeta+V");
     },
   },
   {
@@ -269,9 +269,9 @@ const ACTIONS: FuzzAction[] = [
     weight: 2,
     run: async (page, rng) => {
       await placeCaretInBlock(page, rng, "random");
-      await page.keyboard.press("Control+B");
+      await page.keyboard.press("ControlOrMeta+B");
       await page.keyboard.type(`B${rng.int(0, 99)}`, { delay: 0 });
-      await page.keyboard.press("Control+B");
+      await page.keyboard.press("ControlOrMeta+B");
     },
   },
   {
@@ -279,14 +279,14 @@ const ACTIONS: FuzzAction[] = [
     weight: 2,
     run: async (page, rng) => {
       const times = rng.int(1, 3);
-      for (let index = 0; index < times; index += 1) await page.keyboard.press("Control+Z");
+      for (let index = 0; index < times; index += 1) await page.keyboard.press("ControlOrMeta+Z");
     },
   },
   {
     name: "redo",
     weight: 1,
     run: async (page) => {
-      await page.keyboard.press("Control+Shift+Z");
+      await page.keyboard.press("ControlOrMeta+Shift+Z");
     },
   },
   {
@@ -305,7 +305,7 @@ const ACTIONS: FuzzAction[] = [
     name: "select-all-delete-retype",
     weight: 1,
     run: async (page, rng, step) => {
-      await page.keyboard.press("Control+A");
+      await page.keyboard.press("ControlOrMeta+A");
       await page.keyboard.press("Backspace");
       await page.keyboard.type(`reset${step} ${randomWord(rng)}`, { delay: 0 });
     },

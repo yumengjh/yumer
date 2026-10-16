@@ -1104,3 +1104,206 @@
   height: 3px;
   border-radius: 1px;
 }
+
+/* =====================================================
+   语雀（Yuque / Lake）风格：尺寸、间距、颜色对齐语雀编辑器
+   - 按钮 26×26、圆角 6px、图标 16px（#585A5A）
+   - hover #EFF0F0；选中 #E7E9E8 + #262626
+   - 下拉箭头为 #8C8C8C 实心三角（16px）
+   ===================================================== */
+.toolbar.toolbar--fixed {
+  min-height: 48px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--yq-grey-400);
+}
+
+.toolbar .toolbar-group {
+  gap: 6px;
+  padding: 0 10px;
+}
+
+.toolbar .toolbar-group:first-child {
+  padding-left: 0;
+}
+
+.toolbar .toolbar-group + .toolbar-group::before {
+  height: 18px;
+  background: var(--yq-grey-400);
+}
+
+.toolbar .toolbar-button {
+  min-width: 26px;
+  height: 26px;
+  padding: 0 5px;
+  border-radius: 6px;
+  color: var(--yq-grey-800);
+  font-size: 16px;
+}
+
+.toolbar .toolbar-button:hover,
+.toolbar .split-dropdown:hover,
+.toolbar .split-color-button:hover,
+.toolbar .split-dropdown.is-open,
+.toolbar .split-color-button.is-open {
+  background: var(--yq-grey-300);
+  color: var(--yq-grey-900);
+}
+
+.toolbar .toolbar-button.active,
+.toolbar .split-dropdown.is-active {
+  background: var(--yq-grey-400);
+  color: var(--yq-grey-900);
+}
+
+.toolbar .toolbar-button.active .anticon,
+.toolbar .split-dropdown.is-active .split-dropdown-main {
+  color: var(--yq-grey-900);
+}
+
+.toolbar .toolbar-button:disabled,
+.toolbar .split-dropdown-main:disabled {
+  opacity: 0.25;
+}
+
+/* 分栏下拉：整体一个 hover 区，左图标 26px + 右箭头 16px */
+.toolbar .split-dropdown,
+.toolbar .split-color-button {
+  height: 26px;
+  border-radius: 6px;
+}
+
+.toolbar .split-dropdown-main,
+.toolbar .split-dropdown-main:hover,
+.toolbar .split-dropdown-main.active,
+.toolbar .split-color-button .color-apply-btn,
+.toolbar .split-color-button .color-apply-btn:hover {
+  min-width: 26px;
+  height: 26px;
+  padding: 0 0 0 5px;
+  background: transparent;
+  border-radius: 6px 0 0 6px;
+  color: var(--yq-grey-800);
+  font-size: 16px;
+}
+
+.toolbar .split-dropdown-trigger,
+.toolbar .split-dropdown-trigger:hover,
+.toolbar .split-color-button .color-dropdown-trigger,
+.toolbar .split-color-button .color-dropdown-trigger:hover {
+  width: 16px;
+  height: 26px;
+  margin-right: 2px;
+  background: transparent;
+  border-radius: 0 6px 6px 0;
+}
+
+.toolbar .split-dropdown-arrow,
+.toolbar .split-color-button .color-dropdown-arrow,
+.toolbar .toolbar-arrow-down {
+  font-size: 16px;
+  color: var(--yq-arrow);
+  transform: none;
+}
+
+.toolbar .split-dropdown.is-open .split-dropdown-arrow,
+.toolbar .split-color-button.is-open .color-dropdown-arrow {
+  transform: none;
+}
+
+/* 正文 / 字号：文字选择框 */
+.toolbar .split-dropdown-main .text-label {
+  display: inline-block;
+  min-width: 40px;
+  padding-left: 5px;
+  font-size: 14px;
+  line-height: 26px;
+  text-align: left;
+  color: var(--yq-grey-800);
+  white-space: nowrap;
+}
+
+.toolbar .split-dropdown-main .heading-text {
+  min-width: 48px;
+}
+
+/* 插入：语雀绿圆形加号 */
+.toolbar .toolbar-insert-button.has-label,
+.toolbar .toolbar-insert-button {
+  gap: 4px;
+  padding: 0 2px 0 6px;
+  color: var(--yq-grey-900);
+}
+
+.toolbar .toolbar-insert-icon {
+  font-size: 18px;
+  color: var(--yq-theme);
+}
+
+.toolbar .toolbar-insert-button__label {
+  font-size: 14px;
+  color: var(--yq-grey-900);
+}
+
+/* 颜色图标自带色条，不再额外显示指示条 */
+.toolbar .split-color-button .color-apply-btn .yq-icon {
+  font-size: 16px;
+}
+
+/* 插入菜单（语雀卡片菜单） */
+.block-insert-menu.ant-dropdown-menu {
+  min-width: 182px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--yq-grey-400);
+  background: var(--yq-overlay-bg);
+  box-shadow: var(--yq-overlay-shadow);
+}
+
+.block-insert-menu .block-insert-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 14px;
+  color: var(--yq-grey-900);
+}
+
+.block-insert-menu .block-insert-menu-item:hover {
+  background: var(--yq-grey-300);
+}
+
+.block-insert-menu .block-insert-menu-icon {
+  display: inline-flex;
+  font-size: 24px;
+  color: var(--yq-grey-900);
+}
+
+.block-insert-menu .block-insert-menu-label {
+  flex: 1;
+}
+
+.block-insert-menu .block-insert-menu-caret {
+  font-size: 16px;
+  color: var(--yq-grey-700);
+}
+
+/* 下拉菜单统一为语雀浮层样式 */
+.toolbar-color-dropdown .ant-dropdown-menu,
+.ant-dropdown .ant-dropdown-menu:has(.heading-menu-item),
+.ant-dropdown .ant-dropdown-menu:has(.font-size-menu-item) {
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--yq-grey-400) !important;
+  box-shadow: var(--yq-overlay-shadow) !important;
+}
+
+.ant-dropdown .ant-dropdown-menu:has(.heading-menu-item) .ant-dropdown-menu-item,
+.ant-dropdown .ant-dropdown-menu:has(.font-size-menu-item) .ant-dropdown-menu-item {
+  border-radius: 6px;
+}
+
+.ant-dropdown .ant-dropdown-menu .ant-dropdown-menu-item-selected {
+  background: var(--yq-grey-300);
+}

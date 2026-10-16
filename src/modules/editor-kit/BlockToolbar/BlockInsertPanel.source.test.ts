@@ -13,10 +13,10 @@ describe("BlockInsertPanel structure", () => {
     expect(source).toContain("常用语法");
     expect(source).toContain("图片");
     expect(source).toContain("表格");
-    expect(source).toContain("H4");
-    expect(source).toContain("H5");
-    expect(source).toContain("H6");
-    expect(source).toContain("LinkOutlined");
+    expect(source).toContain("EditorH4");
+    expect(source).toContain("EditorH5");
+    expect(source).toContain("EditorH6");
+    expect(source).toContain("EditorLink");
     expect(source).toContain("TablePicker");
     expect(source).toContain("loadRecentBlockInsertItems");
     expect(source).toContain("removeRecentBlockInsertItem");

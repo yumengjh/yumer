@@ -19,8 +19,15 @@ const AUTO_SCROLL_ZONE = 40;
 const AUTO_SCROLL_MAX_SPEED = 12;
 const GHOST_OFFSET_X = 12;
 const GHOST_OFFSET_Y = 6;
-/** 「+」与拖拽手柄并排后的总宽度，用于计算手柄位置 */
-const HANDLE_GROUP_WIDTH = 44;
+/** 语雀块手柄宽度（24px）+ 与正文的间距 */
+const HANDLE_GROUP_WIDTH = 24;
+const HANDLE_GAP = 8;
+
+/** 空段落（含只剩换行）：语雀在此显示「+」插入入口 */
+function isEmptyParagraphBlock(block: HTMLElement | null): boolean {
+  if (!block || block.tagName !== 'P') return false;
+  return (block.textContent ?? '').length === 0 && !block.querySelector('img');
+}
 
 export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
   const editor = useMarkdownEditor();
@@ -142,7 +149,7 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
   const updatePosition = useCallback((block: HTMLElement, kind?: PositionKind) => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
-    setPosition(computeBlockHandlePosition(block, wrapper, { kind, handleWidth: HANDLE_GROUP_WIDTH }));
+    setPosition(computeBlockHandlePosition(block, wrapper, { kind, handleWidth: HANDLE_GROUP_WIDTH, minGap: HANDLE_GAP }));
   }, [wrapperRef]);
 
   useEffect(() => {
@@ -370,7 +377,7 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
     if (!menuVisible) return;
     const handler = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      if (!target.closest('.block-menu-popover') && !target.closest('.block-handle__group') && !target.closest('.ant-popover')) {
+      if (!target.closest('.block-menu-popover') && !target.closest('.block-handle__btn') && !target.closest('.ant-popover')) {
         closeMenu();
       }
     };
@@ -637,27 +644,21 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
     document.addEventListener('mouseup', onMouseUp);
   }, [hoveredBlock, editor, createGhost, createDropIndicator, updateDragVisuals, moveBlock, cleanupDrag]);
 
+  const emptyBlock = hoveredTargetKind !== 'table' && isEmptyParagraphBlock(hoveredBlock);
+
   const handleHandleClick = useCallback(() => {
     if (justDraggedRef.current) {
       justDraggedRef.current = false;
       return;
     }
-    if (menuState === 'open' && menuMode === 'menu') {
+    if (menuState === 'open') {
       closeMenu();
-    } else {
-      setMenuMode('menu');
-      openMenu();
+      return;
     }
-  }, [menuState, menuMode, closeMenu, openMenu]);
-
-  const handleInsertClick = useCallback(() => {
-    if (menuState === 'open' && menuMode === 'insert') {
-      closeMenu();
-    } else {
-      setMenuMode('insert');
-      openMenu();
-    }
-  }, [menuState, menuMode, closeMenu, openMenu]);
+    // 空段落点击「+」直接打开插入面板，其余块打开块菜单（与语雀一致）
+    setMenuMode(emptyBlock ? 'insert' : 'menu');
+    openMenu();
+  }, [menuState, emptyBlock, closeMenu, openMenu]);
 
   useEffect(() => {
     return () => {
@@ -692,7 +693,7 @@ export default function BlockToolbar({ wrapperRef }: BlockToolbarProps) {
         <BlockHandle
           onClick={handleHandleClick}
           onMouseDown={handleHandleMouseDown}
-          onInsertClick={hoveredTargetKind === 'table' ? undefined : handleInsertClick}
+          isEmptyBlock={emptyBlock}
           active={menuVisible}
         />
         {menuVisible && (

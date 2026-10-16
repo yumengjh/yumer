@@ -38,6 +38,7 @@ import {
   HighlightBlockIcon,
   IndentIcon,
   OutdentIcon,
+  YuqueIcon,
 } from "./icons";
 import { useMarkdownEditorContext } from "../EditorContext";
 import {
@@ -540,25 +541,16 @@ export default function DesktopToolbar({
     return toolbarState.fontSize;
   };
 
-  const strokeToolbarIconProps = { style: { fontSize: 19 }, strokeWidth: 2.35 };
-  const strokeMenuIconProps = { style: { fontSize: 20 }, strokeWidth: 2.45 };
-  const indentToolbarIconProps = { style: { fontSize: 19 }, strokeWidth: 2.7 };
-  const bulletListIconProps = { style: { fontSize: 21 }, strokeWidth: 2.7 };
-  const orderedListIconProps = { style: { fontSize: 19 } };
-  const checkListIconProps = { style: { fontSize: 20 } };
-  const codeIconProps = { style: { fontSize: 19 } };
-  const pictureIconProps = { style: { fontSize: 19 }, strokeWidth: 3.25 };
-  const tableIconProps = { style: { fontSize: 19 } };
   const blockInsertItemIds = ["highlight-block", "code-block", "table", "image"] as const;
 
   const alignItems = [
-    { key: "left", label: "左对齐", icon: <AlignLeftIcon {...strokeMenuIconProps} /> },
-    { key: "center", label: "居中", icon: <AlignCenterIcon {...strokeMenuIconProps} /> },
-    { key: "right", label: "右对齐", icon: <AlignRightIcon {...strokeMenuIconProps} /> },
+    { key: "left", label: "左对齐", icon: <AlignLeftIcon /> },
+    { key: "center", label: "居中", icon: <AlignCenterIcon /> },
+    { key: "right", label: "右对齐", icon: <AlignRightIcon /> },
     {
       key: "justify",
       label: "两端对齐",
-      icon: <AlignLeftIcon {...strokeMenuIconProps} style={{ ...strokeMenuIconProps.style, transform: "scaleX(-1)" }} />,
+      icon: <YuqueIcon name="NeTAlignmentJustify" />,
     },
   ].map((item) => ({
     key: item.key,
@@ -569,12 +561,12 @@ export default function DesktopToolbar({
   const getCurrentAlignment = (): { label: string; icon: ReactNode; key: string } => {
     const align = toolbarState.textAlign;
     const alignMap: Record<string, { label: string; icon: ReactNode }> = {
-      left: { label: "左对齐", icon: <AlignLeftIcon {...strokeToolbarIconProps} /> },
-      center: { label: "居中", icon: <AlignCenterIcon {...strokeToolbarIconProps} /> },
-      right: { label: "右对齐", icon: <AlignRightIcon {...strokeToolbarIconProps} /> },
+      left: { label: "左对齐", icon: <AlignLeftIcon /> },
+      center: { label: "居中", icon: <AlignCenterIcon /> },
+      right: { label: "右对齐", icon: <AlignRightIcon /> },
       justify: {
         label: "两端对齐",
-        icon: <AlignLeftIcon {...strokeToolbarIconProps} style={{ ...strokeToolbarIconProps.style, transform: "scaleX(-1)" }} />,
+        icon: <YuqueIcon name="NeTAlignmentJustify" />,
       },
     };
     return { ...(alignMap[align] || alignMap.left), key: align };
@@ -628,18 +620,20 @@ export default function DesktopToolbar({
     [getCurrentCodeLanguage, handleTableInsert, lastHighlightColor, lastTableSize.cols, lastTableSize.rows, tiptap],
   );
 
+  // 分组与顺序对齐语雀（Lake 编辑器 DEFAULT_TOOLBAR）：
+  // 插入 | 撤销 重做 格式刷 清除格式 | 正文 字号 B I S U | 字体颜色 背景色 |
+  // 对齐 无序 有序 缩进 行高 | 待办 链接 引用 分割线 | 本项目扩展
   const toolbarGroups: ToolbarItem[][] = [
     [
       { id: "undo", label: "撤销", content: <UndoIcon /> },
       { id: "redo", label: "重做", content: <RedoIcon /> },
-      { id: "clearFormat", label: "清除格式", content: <ClearFormatIcon /> },
       { id: "format-painter", label: "格式刷", content: <FormatPainterIcon />, type: "format-painter" },
+      { id: "clearFormat", label: "清除格式", content: <ClearFormatIcon /> },
     ],
-    [{ id: "cursor", label: "光标", content: <CursorIcon /> }],
     [
       {
         id: "text-mode",
-        label: "标题",
+        label: "正文与标题",
         content: <span className="text-label heading-text">{getCurrentHeadingLevel()}</span>,
         type: "dropdown",
       },
@@ -649,36 +643,55 @@ export default function DesktopToolbar({
         content: <span className="text-label">{getCurrentFontSize()}</span>,
         type: "dropdown",
       },
-      {
-        id: "code-cleanup",
-        label: "\u4ee3\u7801\u6e05\u7406",
-        content: <CodeCleanupIcon />,
-        type: "code-cleanup-picker",
-      },
-    ],
-    [
       { id: "bold", label: "加粗", content: <BoldIcon /> },
       { id: "italic", label: "斜体", content: <ItalicIcon /> },
       { id: "strike", label: "删除线", content: <StrikethroughIcon /> },
       { id: "underline", label: "下划线", content: <UnderlineIcon /> },
     ],
     [
+      { id: "text-color", label: "字体颜色", content: null, type: "color-picker" },
+      { id: "bg-color", label: "背景颜色", content: null, type: "color-picker" },
+    ],
+    [
       {
-        id: "text-color",
-        label: "文字颜色",
-        content: (
-          <span className="combined-color-icon-wrap">
-            <TextColorIcon />
-            <span className="color-indicator-row">
-              <span className="color-dot" style={{ backgroundColor: selectedColor }} />
-              <span className="color-dot" style={{ backgroundColor: selectedBgColor }} />
-            </span>
-          </span>
-        ),
-        type: "combined-color-picker",
+        id: "text-align",
+        label: "对齐方式",
+        content: <span className="dropdown-icon-text">{getCurrentAlignment().icon}</span>,
+        type: "dropdown",
+      },
+      { id: "bullet-list", label: "无序列表", content: <UnorderedListIcon /> },
+      {
+        id: "ordered-list",
+        label: "有序列表",
+        content: <OrderedListIcon />,
+        type: "dropdown",
+      },
+      {
+        id: "indent",
+        label: "缩进",
+        content: <IndentIcon />,
+        type: "indent-picker",
+      },
+      {
+        id: "line-height",
+        label: "行高",
+        content: <LineHeightIcon />,
+        type: "dropdown",
       },
     ],
     [
+      { id: "check-list", label: "任务列表", content: <CheckListIcon /> },
+      { id: "link", label: "链接", content: <LinkIcon />, type: "link-picker" },
+      { id: "blockquote", label: "引用", content: <QuoteIcon /> },
+      { id: "divider", label: "分割线", content: <DividerIcon /> },
+      { id: "image", label: "图片", content: <PictureIcon /> },
+      {
+        id: "code-language",
+        label: "代码语言",
+        content: <CodeIcon />,
+        type: "dropdown",
+      },
+      { id: "table", label: "表格", content: <TableIcon />, type: "dropdown" },
       {
         id: "highlight-block",
         label: "高亮块",
@@ -692,59 +705,13 @@ export default function DesktopToolbar({
       },
     ],
     [
+      { id: "cursor", label: "光标", content: <CursorIcon /> },
       {
-        id: "text-align",
-        label: "对齐",
-        content: <span className="dropdown-icon-text">{getCurrentAlignment().icon}</span>,
-        type: "dropdown",
+        id: "code-cleanup",
+        label: "\u4ee3\u7801\u6e05\u7406",
+        content: <CodeCleanupIcon />,
+        type: "code-cleanup-picker",
       },
-    ],
-    [
-      {
-        id: "line-height",
-        label: "行高",
-        content: <LineHeightIcon {...strokeToolbarIconProps} />,
-        type: "dropdown",
-      },
-    ],
-    [
-      {
-        id: "indent",
-        label: "缩进",
-        content: <IndentIcon {...indentToolbarIconProps} />,
-        type: "indent-picker",
-      },
-    ],
-    [
-      { id: "bullet-list", label: "无序列表", content: <UnorderedListIcon {...bulletListIconProps} /> },
-      {
-        id: "ordered-list",
-        label: "有序列表",
-        content: (
-          <span className="dropdown-icon-text">
-            <OrderedListIcon {...orderedListIconProps} />
-            <span className="text-label">
-              {orderedListTypeItems.find((item) => item.key === getCurrentOrderedListType())
-                ?.label || "1."}
-            </span>
-          </span>
-        ),
-        type: "dropdown",
-      },
-      { id: "check-list", label: "待办列表", content: <CheckListIcon {...checkListIconProps} /> },
-    ],
-    [
-      { id: "blockquote", label: "引用", content: <QuoteIcon /> },
-      { id: "divider", label: "分割线", content: <DividerIcon /> },
-      { id: "image", label: "图片", content: <PictureIcon {...pictureIconProps} /> },
-      {
-        id: "code-language",
-        label: "代码语言",
-        content: <CodeIcon {...codeIconProps} />,
-        type: "dropdown",
-      },
-      { id: "link", label: "链接", content: <LinkIcon />, type: "link-picker" },
-      { id: "table", label: "表格", content: <TableIcon {...tableIconProps} />, type: "dropdown" },
     ],
   ];
 
@@ -778,22 +745,14 @@ export default function DesktopToolbar({
               setOpenDropdown(open ? "block-insert" : null);
             }}
             popupRender={() => (
-              <div
-                className="ant-dropdown-menu block-insert-menu"
-                style={{ borderRadius: "4px", border: "1px solid var(--app-border)", boxShadow: "none" }}
-              >
+              <div className="ant-dropdown-menu block-insert-menu">
                 {visibleBlockInsertItems.map((id) => {
                   const itemConfig: Record<
                     (typeof blockInsertItemIds)[number],
                     { icon: ReactNode; label: string; popover?: ReactNode }
                   > = {
                     "highlight-block": {
-                      icon: (
-                        <span className="color-icon-wrap">
-                          <HighlightBlockIcon />
-                          <span className="color-icon-indicator" style={{ backgroundColor: lastHighlightColor }} />
-                        </span>
-                      ),
+                      icon: <YuqueIcon name="EditorMainHighlightBlock" />,
                       label: "高亮块",
                       popover: (
                         <div className="block-insert-popover-content">
@@ -825,7 +784,7 @@ export default function DesktopToolbar({
                       ),
                     },
                     "code-block": {
-                      icon: <CodeIcon {...codeIconProps} />,
+                      icon: <YuqueIcon name="EditorMainCodeBlock" />,
                       label: "代码块",
                       popover: (
                         <div className="block-insert-popover-content">
@@ -848,7 +807,7 @@ export default function DesktopToolbar({
                       ),
                     },
                     table: {
-                      icon: <TableIcon {...tableIconProps} />,
+                      icon: <YuqueIcon name="EditorMainTable" />,
                       label: "表格",
                       popover: (
                         <div className="block-insert-popover-content">
@@ -863,7 +822,7 @@ export default function DesktopToolbar({
                       ),
                     },
                     image: {
-                      icon: <PictureIcon {...pictureIconProps} />,
+                      icon: <YuqueIcon name="EditorMainImage" />,
                       label: "图片",
                     },
                   };
@@ -880,7 +839,7 @@ export default function DesktopToolbar({
                     >
                       <span className="block-insert-menu-icon">{itemConfig[id].icon}</span>
                       <span className="block-insert-menu-label">{itemConfig[id].label}</span>
-                      {itemConfig[id].popover ? <span className="block-insert-menu-caret">›</span> : null}
+                      {itemConfig[id].popover ? <YuqueIcon name="ArrowRight" className="block-insert-menu-caret" /> : null}
                     </div>
                   );
 
@@ -909,8 +868,9 @@ export default function DesktopToolbar({
                   event.stopPropagation();
                 }}
               >
-                <PlusOutlined />
+                <YuqueIcon name="NeTInsertCard" className="toolbar-insert-icon" />
                 {variant === "fixed" && <span className="toolbar-insert-button__label">插入</span>}
+                <YuqueIcon name="ToolbarArrowDown" className="toolbar-arrow-down" />
               </button>
             </Tooltip>
           </Dropdown>
@@ -1246,10 +1206,7 @@ export default function DesktopToolbar({
                         }
                       }}
                     >
-                      <span className="color-icon-wrap">
-                        {isBgColor ? <BgColorIcon /> : <TextColorIcon />}
-                        <span className="color-icon-indicator" style={{ backgroundColor: currentColor }} />
-                      </span>
+                      {isBgColor ? <BgColorIcon color={currentColor} /> : <TextColorIcon color={currentColor} />}
                     </button>
                   </Tooltip>
                   <Dropdown

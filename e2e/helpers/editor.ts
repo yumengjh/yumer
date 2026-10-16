@@ -174,7 +174,7 @@ export async function pasteMultilineBlocks(page: Page, lines: string[]): Promise
     await page.evaluate(async (text) => {
       await navigator.clipboard.writeText(text);
     }, payload);
-    await page.keyboard.press("Control+V");
+    await page.keyboard.press("ControlOrMeta+V");
     const text = await editor.innerText();
     if (pastedLinesMatch(text)) {
       return;
@@ -200,7 +200,7 @@ export async function createParagraphBlocks(page: Page, count: number, prefix = 
 export async function selectAllInEditor(page: Page): Promise<void> {
   const editor = page.locator(EDITOR_SELECTOR).first();
   await editor.click();
-  await page.keyboard.press("Control+A");
+  await page.keyboard.press("ControlOrMeta+A");
 }
 
 export async function deleteSelection(page: Page): Promise<void> {

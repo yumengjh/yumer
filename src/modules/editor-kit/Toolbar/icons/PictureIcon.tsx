@@ -1,17 +1,7 @@
 import type { IconProps } from "./IconProps";
+import YuqueIcon from "./YuqueIcon";
 
-export default function PictureIcon({ className, style, strokeWidth = 4 }: IconProps) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" className={className} style={style}>
-      <path d="M0 0h24v24H0z" fill="none" />
-      <mask id="toolbar-picture-icon-mask" fill="#fff">
-        <path d="M2 10c0-3.771 0-5.657 1.172-6.828S6.229 2 10 2h4c3.771 0 5.657 0 6.828 1.172S22 6.229 22 10v4c0 3.771 0 5.657-1.172 6.828S17.771 22 14 22h-4c-3.771 0-5.657 0-6.828-1.172S2 17.771 2 14z" />
-      </mask>
-      <g fill="none">
-        <path fill="currentColor" fillRule="evenodd" d="M3.172 3.172C2 4.343 2 6.229 2 10v4c0 3.771 0 5.657 1.172 6.828S6.229 22 10 22h4c3.771 0 5.657 0 6.828-1.172S22 17.771 22 14v-4c0-2.84 0-4.61-.5-5.811V17a3.62 3.62 0 0 1-2.56-1.06l-.752-.752c-.722-.722-1.082-1.082-1.491-1.234a2 2 0 0 0-1.394 0c-.409.152-.77.512-1.49 1.234l-.114.113c-.585.585-.878.878-1.189.932a1 1 0 0 1-.699-.134c-.268-.166-.431-.547-.758-1.308L11 14.667c-.75-1.75-1.124-2.624-1.778-2.952a2 2 0 0 0-1.065-.205c-.729.062-1.401.735-2.747 2.08L3.5 15.5V2.887q-.174.129-.328.285" clipRule="evenodd" />
-        <path stroke="currentColor" strokeWidth={strokeWidth} d="M2 10c0-3.771 0-5.657 1.172-6.828S6.229 2 10 2h4c3.771 0 5.657 0 6.828 1.172S22 6.229 22 10v4c0 3.771 0 5.657-1.172 6.828S17.771 22 14 22h-4c-3.771 0-5.657 0-6.828-1.172S2 17.771 2 14z" mask="url(#toolbar-picture-icon-mask)" />
-        <circle cx="15" cy="9" r="2" fill="currentColor" />
-      </g>
-    </svg>
-  );
+// 语雀原版图标：EditorImage
+export default function PictureIcon({ className, style }: IconProps) {
+  return <YuqueIcon name="EditorImage" className={className} style={style} />;
 }

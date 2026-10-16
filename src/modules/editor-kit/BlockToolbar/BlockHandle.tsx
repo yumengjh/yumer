@@ -1,59 +1,48 @@
+import { Tooltip } from 'antd';
+import YuqueIcon from '../Toolbar/icons/YuqueIcon';
 import './style.css';
-
-function DragHandleIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-      <circle cx="4" cy="2" r="1.2" />
-      <circle cx="10" cy="2" r="1.2" />
-      <circle cx="4" cy="7" r="1.2" />
-      <circle cx="10" cy="7" r="1.2" />
-      <circle cx="4" cy="12" r="1.2" />
-      <circle cx="10" cy="12" r="1.2" />
-    </svg>
-  );
-}
-
-function PlusIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-      <path d="M6 1.5v9M1.5 6h9" />
-    </svg>
-  );
-}
 
 interface BlockHandleProps {
   onClick: () => void;
   onMouseDown: (e: React.MouseEvent) => void;
-  /** 点击「+」：在当前块下方插入 */
-  onInsertClick?: () => void;
+  /** 当前块为空段落：与语雀一致显示「+」，点击打开插入面板 */
+  isEmptyBlock?: boolean;
+  /** 菜单已打开（focused 态） */
   active?: boolean;
 }
 
-export function BlockHandle({ onClick, onMouseDown, onInsertClick, active }: BlockHandleProps) {
+// 语雀块手柄的提示：「可拖拽和点击」，动词高亮
+const HANDLE_TOOLTIP = (
+  <div className="block-handle-tooltip">
+    <span>可</span>
+    <span>拖拽</span>
+    <span>和</span>
+    <span>点击</span>
+  </div>
+);
+
+export function BlockHandle({ onClick, onMouseDown, isEmptyBlock, active }: BlockHandleProps) {
+  const trigger = (
+    <button
+      type="button"
+      className={`block-handle__btn${active ? ' is-active' : ''}${isEmptyBlock ? ' is-insert' : ''}`}
+      onClick={onClick}
+      onMouseDown={onMouseDown}
+      aria-label={isEmptyBlock ? '插入' : '块菜单'}
+    >
+      <YuqueIcon name={isEmptyBlock ? 'Add' : 'Drag'} />
+    </button>
+  );
+
+  if (active) return trigger;
   return (
-    <div className="block-handle__group">
-      {onInsertClick && (
-        <button
-          type="button"
-          className="block-handle__insert"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={onInsertClick}
-          title="在下方插入"
-          aria-label="在下方插入"
-        >
-          <PlusIcon />
-        </button>
-      )}
-      <button
-        type="button"
-        className={`block-handle__btn${active ? ' is-active' : ''}`}
-        onClick={onClick}
-        onMouseDown={onMouseDown}
-        title="点击打开菜单 / 拖拽移动块"
-        aria-label="块菜单"
-      >
-        <DragHandleIcon />
-      </button>
-    </div>
+    <Tooltip
+      title={isEmptyBlock ? '点击插入' : HANDLE_TOOLTIP}
+      placement="top"
+      mouseEnterDelay={0.4}
+      classNames={{ root: 'block-handle-tooltip-overlay' }}
+    >
+      {trigger}
+    </Tooltip>
   );
 }

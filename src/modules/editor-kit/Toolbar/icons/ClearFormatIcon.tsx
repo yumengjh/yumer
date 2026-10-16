@@ -1,12 +1,7 @@
-﻿import type { IconProps } from "./IconProps";
+import type { IconProps } from "./IconProps";
+import YuqueIcon from "./YuqueIcon";
 
+// 语雀原版图标：EditorClearFormat
 export default function ClearFormatIcon({ className, style }: IconProps) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" className={className} style={style}>
-      <path d="M0 0h24v24H0z" fill="none" />
-      <g transform="translate(2 2) scale(0.625)">
-        <path fill="currentColor" d="M31.72 30.522l-2.152-12.41h0.727c0.585 0 1.056-0.471 1.056-1.056v-7.797c0-0.585-0.471-1.056-1.056-1.056h-9.99v-7.391c0-0.585-0.471-1.056-1.056-1.056h-6.497c-0.585 0-1.056 0.471-1.056 1.056v7.391h-9.99c-0.585 0-1.056 0.471-1.056 1.056v7.797c0 0.585 0.471 1.056 1.056 1.056h0.727l-2.152 12.41c-0.010 0.054-0.016 0.117-0.016 0.181 0 0.582 0.472 1.054 1.054 1.054 0 0 0.001 0 0.001 0h29.36c0.061 0 0.122-0.004 0.179-0.016 0.501-0.086 0.877-0.518 0.877-1.036 0-0.064-0.006-0.127-0.017-0.188l0.001 0.006zM3.492 11.046h11.046v-8.447h2.924v8.447h11.046v4.223h-25.015v-4.223zM22.497 28.914v-6.335c0-0.179-0.146-0.325-0.325-0.325h-1.949c-0.179 0-0.325 0.146-0.325 0.325v6.335h-7.797v-6.335c0-0.179-0.146-0.325-0.325-0.325h-1.949c-0.179 0-0.325 0.146-0.325 0.325v6.335h-6.059l1.831-10.558h21.446l1.831 10.558h-6.055z" />
-      </g>
-    </svg>
-  );
+  return <YuqueIcon name="EditorClearFormat" className={className} style={style} />;
 }

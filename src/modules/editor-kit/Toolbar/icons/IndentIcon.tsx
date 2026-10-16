@@ -1,10 +1,7 @@
 import type { IconProps } from "./IconProps";
+import YuqueIcon from "./YuqueIcon";
 
-export default function IndentIcon({ className, style, strokeWidth = 2 }: IconProps) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" className={className} style={style}>
-      <path d="M0 0h24v24H0z" fill="none" />
-      <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth={strokeWidth} d="M21 5H11m10 7H11m10 7H11M7 8l-4 4l4 4" />
-    </svg>
-  );
+// 语雀原版图标：EditorIndent
+export default function IndentIcon({ className, style }: IconProps) {
+  return <YuqueIcon name="EditorIndent" className={className} style={style} />;
 }

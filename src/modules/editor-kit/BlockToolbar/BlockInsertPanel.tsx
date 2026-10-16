@@ -1,16 +1,5 @@
 import { useMemo, useState } from "react";
-import {
-  CheckSquareOutlined,
-  CodeOutlined,
-  PictureOutlined,
-  LinkOutlined,
-  OrderedListOutlined,
-  TableOutlined,
-  UnorderedListOutlined,
-  FolderOpenOutlined,
-  TagOutlined,
-  RightOutlined,
-} from "@ant-design/icons";
+import YuqueIcon from "../Toolbar/icons/YuqueIcon";
 import { message } from "antd";
 import TablePicker from "../Toolbar/TablePicker";
 import type { BlockInsertType } from "./blockInsertMenuItems";
@@ -37,26 +26,27 @@ type PanelItem = {
   icon: React.ReactNode;
 };
 
+// 图标使用语雀原版：常用语法为工具栏线性图标，基础卡片为语雀插入菜单的彩色卡片图标
 const COMMON_SYNTAX_ITEMS: PanelItem[] = [
-  { id: "paragraph", label: "文本", icon: <span className="block-insert-panel__symbol" style={{ fontFamily: 'serif', fontSize: 16 }}>T</span> },
-  { id: "heading1", label: "H1", icon: <span className="block-insert-panel__symbol">H1</span> },
-  { id: "heading2", label: "H2", icon: <span className="block-insert-panel__symbol">H2</span> },
-  { id: "heading3", label: "H3", icon: <span className="block-insert-panel__symbol">H3</span> },
-  { id: "heading4", label: "H4", icon: <span className="block-insert-panel__symbol">H4</span> },
-  { id: "heading5", label: "H5", icon: <span className="block-insert-panel__symbol">H5</span> },
-  { id: "heading6", label: "H6", icon: <span className="block-insert-panel__symbol">H6</span> },
-  { id: "bulletList", label: "无序列表", icon: <UnorderedListOutlined /> },
-  { id: "orderedList", label: "有序列表", icon: <OrderedListOutlined /> },
-  { id: "taskList", label: "代办列表", icon: <CheckSquareOutlined /> },
-  { id: "link", label: "链接", icon: <LinkOutlined /> },
-  { id: "codeBlock", label: "代码块", icon: <CodeOutlined /> },
+  { id: "paragraph", label: "正文", icon: <YuqueIcon name="EditorParagraph" /> },
+  { id: "heading1", label: "标题 1", icon: <YuqueIcon name="EditorH1" /> },
+  { id: "heading2", label: "标题 2", icon: <YuqueIcon name="EditorH2" /> },
+  { id: "heading3", label: "标题 3", icon: <YuqueIcon name="EditorH3" /> },
+  { id: "heading4", label: "标题 4", icon: <YuqueIcon name="EditorH4" /> },
+  { id: "heading5", label: "标题 5", icon: <YuqueIcon name="EditorH5" /> },
+  { id: "heading6", label: "标题 6", icon: <YuqueIcon name="EditorH6" /> },
+  { id: "bulletList", label: "无序列表", icon: <YuqueIcon name="EditorUnorderedList" /> },
+  { id: "orderedList", label: "有序列表", icon: <YuqueIcon name="EditorOrderedList" /> },
+  { id: "taskList", label: "任务列表", icon: <YuqueIcon name="EditorTaskList" /> },
+  { id: "link", label: "链接", icon: <YuqueIcon name="EditorLink" /> },
+  { id: "codeBlock", label: "代码块", icon: <YuqueIcon name="EditorCodeblock" /> },
 ];
 
 const QUICK_CARD_ITEMS: PanelItem[] = [
-  { id: "image", label: "图片", icon: <PictureOutlined /> },
-  { id: "table", label: "表格", icon: <TableOutlined /> },
-  { id: "attachment", label: "附件", icon: <FolderOpenOutlined /> },
-  { id: "status", label: "状态", icon: <TagOutlined /> },
+  { id: "image", label: "图片", icon: <YuqueIcon name="EditorMainImage" /> },
+  { id: "table", label: "表格", icon: <YuqueIcon name="EditorMainTable" /> },
+  { id: "attachment", label: "附件", icon: <YuqueIcon name="EditorMainLocalFile" /> },
+  { id: "status", label: "状态", icon: <YuqueIcon name="EditorMainStatus" /> },
 ];
 
 const RECENT_ITEM_META = new Map<BlockInsertRecentItemId, PanelItem>(
@@ -114,10 +104,11 @@ export default function BlockInsertPanel({
               <button
                 key={item.id}
                 type="button"
-                className="block-insert-panel__recent-chip"
+                className="block-insert-panel__syntax-button"
+                title={item.label}
                 onClick={() => handleInsert(item.id)}
               >
-                <span>{item.label}</span>
+                {item.icon}
               </button>
             ))
           ) : (
@@ -167,7 +158,7 @@ export default function BlockInsertPanel({
             >
               <span className="block-insert-panel__card-icon">{QUICK_CARD_ITEMS[1].icon}</span>
               <span className="block-insert-panel__card-label">表格</span>
-              <span className="block-insert-panel__card-arrow"><RightOutlined /></span>
+              <span className="block-insert-panel__card-arrow"><YuqueIcon name="ArrowRight" /></span>
             </button>
             {tablePickerOpen && (
               <div className="block-insert-panel__table-picker-popover">
